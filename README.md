@@ -1,6 +1,6 @@
-# 🧠 Agentic LLM: Autonomous LangGraph Task Agent
+# 🧠 Aegis: Autonomous LangGraph Task Agent
 
-This project is a fully modular, airgap-safe, LangGraph-powered autonomous agent that uses a local LLM (via Ollama) to plan, execute, and evaluate complex tasks across multiple VMs.
+This project, Aegis, is a fully modular, airgap-safe, LangGraph-powered autonomous agent that uses a local LLM (via Ollama) to plan, execute, and evaluate complex tasks across multiple VMs.
 
 ---
 
