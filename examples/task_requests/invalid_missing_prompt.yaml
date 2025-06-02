@@ -1,0 +1,4 @@
+task_name: "IncompleteRequest"
+machines:
+  - "192.168.100.1"
+# Missing: task_prompt

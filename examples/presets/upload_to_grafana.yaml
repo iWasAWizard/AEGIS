@@ -1,0 +1,2 @@
+- name: "Upload Metrics"
+  prompt: "Send collected system metrics to Grafana dashboard"

@@ -1,0 +1,58 @@
+# .gitignore for Agentic Agent project (reposted due to canvas reset)
+
+# Python cache and artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Pycharm
+.idea/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+virtenv/
+virenv/
+
+# Logs and runtime data
+logs/
+*.log
+reports/
+
+# Secrets and credentials
+.env
+.env.*
+secrets.yaml
+
+# Editor and OS files
+.DS_Store
+.vscode/
+*.swp
+
+# Test and coverage output
+.coverage
+htmlcov/
+.tox/
+pytest_cache/
+
+# Constructed packages
+*.zip
+*.tar
+*.tar.gz
+
+# Default config profiles (keep only user-added ones)
+presets/*.example.yaml
+!presets/*.yaml
+
+# Node or web-related (if added later)
+node_modules/
+build/
+dist/
+
+# Custom
+scratch.txt
+tmp/
+temp/

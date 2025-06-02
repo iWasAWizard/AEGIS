@@ -1,0 +1,5 @@
+# Example presets
+- name: Basic Scan
+  prompt: Scan 192.168.1.1 for open ports
+- name: System Info
+  prompt: Get OS details from target machine

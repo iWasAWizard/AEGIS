@@ -1,0 +1,6 @@
+task_name: "HealthCheckMultiple"
+task_prompt: "Check system health across all dev VMs"
+machines:
+  - "ubuntu-qemu"
+  - "win10-esxi"
+profile: "default"

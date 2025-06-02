@@ -1,0 +1,100 @@
+run_guest_command:
+  description: Execute a shell command inside a VM or container
+  inputs:
+    - name: command
+      type: str
+      description: Shell command to run
+  output: ToolResult with stdout/stderr
+  safe_mode: true
+  tags: [shell, guest, exec]
+
+kill_process:
+  description: Terminate a process by name or PID
+  inputs:
+    - name: target
+      type: str
+      description: Name or PID of the process
+  output: ToolResult with kill confirmation
+  safe_mode: true
+  tags: [guest, process, danger]
+
+nmap_scan:
+  description: Run an Nmap scan on a target IP or hostname
+  inputs:
+    - name: target
+      type: str
+      description: IP or range to scan
+  output: ToolResult with raw Nmap output
+  safe_mode: true
+  tags: [network, scan]
+
+tcpdump_capture:
+  description: Capture live packets on a network interface
+  inputs:
+    - name: interface
+      type: str
+      description: Interface to listen on
+    - name: duration
+      type: int
+      description: Timeout for capture in seconds
+  output: ToolResult with pcap output metadata
+  safe_mode: true
+  tags: [network, capture]
+
+json_api_poster:
+  description: POST data to an external API endpoint
+  inputs:
+    - name: url
+      type: str
+      description: Target API endpoint
+    - name: payload
+      type: dict
+      description: JSON payload
+  output: ToolResult with response and headers
+  safe_mode: true
+  tags: [integration, api]
+
+grafana_upload:
+  description: Send data to a Grafana/Prometheus endpoint
+  inputs:
+    - name: url
+      type: str
+      description: Target Grafana push endpoint
+    - name: payload
+      type: dict
+      description: Formatted metrics or log payload
+  output: ToolResult with response metadata
+  safe_mode: true
+  tags: [metrics, grafana]
+
+list_processes:
+  description: Get a list of running processes from a remote system
+  inputs: []
+  output: ToolResult with process list output
+  safe_mode: true
+  tags: [guest, process, info]
+
+llm_chat:
+  description: Send a message to a local Ollama LLM model
+  inputs:
+    - name: prompt
+      type: str
+      description: Message to send to the LLM
+    - name: model
+      type: str
+      description: Model name (e.g. qwen:7b)
+  output: ToolResult with LLM response in stdout
+  safe_mode: true
+  tags: [llm, chat, language]
+
+
+
+remote_sysinfo:
+  description: "Collects basic system information from a remote machine via SSH"
+  safe_mode: true
+  inputs:
+    - name: target
+      type: str
+      description: "Hostname or IP address of the target machine"
+  output: dict
+  tags: [system, ssh, inventory]

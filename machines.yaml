@@ -1,0 +1,63 @@
+# === WINDOWS 10 VM ON ESXI ===
+win10-esxi:
+  name: win10-esxi              # [REQUIRED] VM nickname used by agent
+  ip: 192.168.1.50              # [REQUIRED] Host or guest IP address
+  platform: windows             # [REQUIRED] OS type: 'windows' | 'linux' | 'mac'
+  provider: esxi                # [REQUIRED] VM backend: 'qemu' | 'esxi' | 'vmware' | 'proxmox'
+  type: vm                      # [REQUIRED] Used for conditional logic (e.g., 'vm', 'physical', 'container')
+  shell: powershell             # [REQUIRED] Shell to use inside guest: 'bash', 'sh', 'zsh', 'powershell'
+
+  username: Administrator       # [REQUIRED] Login username for guest interaction
+  password: supersecret         # [REQUIRED] Login password (you *could* swap for private_key)
+  ssh_port: 22                  # [OPTIONAL] Used only if guest access is via SSH
+  vmtools_path: C:\Program Files\VMware\VMware Tools\vmtoolsd.exe  # [OPTIONAL] Path for VMTools guest command exec
+
+  esxi_host: 192.168.1.10       # [REQUIRED for ESXi] IP or hostname of the vCenter or ESXi host
+  esxi_user: root               # [REQUIRED for ESXi] Credentials to control VM via vSphere API
+  esxi_password: vmware123      # [REQUIRED for ESXi]
+
+  tags:                         # [OPTIONAL] For filtering or routing
+    - prod
+    - windows
+    - scan-target
+
+  notes: "Internal QA testbed - Win10 22H2"  # [OPTIONAL] Freeform description
+
+# === UBUNTU 24.04 ON QEMU ===
+ubuntu-qemu:
+  name: ubuntu-qemu
+  ip: 10.0.0.6
+  platform: linux
+  provider: qemu
+  type: vm
+  shell: bash
+
+  username: root
+  password: toor
+  ssh_port: 22
+  vmtools_path: /usr/bin/qemu-guest-agent
+
+  tags:
+    - linux
+    - infra
+    - scanner-target
+
+  notes: "Fresh Ubuntu LTS image, minimal install."
+
+# === BONUS: HEADLESS SSH-ONLY NODE ===
+external-linux-box:
+  name: external-linux-box
+  ip: 10.0.0.100
+  platform: linux
+  provider: physical
+  type: physical
+  shell: bash
+
+  username: deploy
+  password: changeme
+  ssh_port: 22
+
+  tags:
+    - external
+    - monitoring
+    - don't-touch

@@ -1,0 +1,11 @@
+# presets/system_health.yaml
+state_type: aegis.agents.task_state.TaskState
+entrypoint: reflect
+edges:
+  - [reflect, plan]
+  - [plan, route]
+  - [route, summarize]
+condition_node: summarize
+condition_map:
+  next: summarize
+middleware: []

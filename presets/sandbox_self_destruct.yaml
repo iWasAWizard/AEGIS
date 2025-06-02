@@ -1,0 +1,17 @@
+# presets/sandbox_self_destruct.yaml
+state_type: aegis.agents.task_state.TaskState
+entrypoint: reflect
+edges:
+  - [reflect, plan]
+  - [plan, route]
+  - [route, summarize]
+  - [summarize, reflect]  # just to loop forever for dramatic effect
+condition_node: summarize
+condition_map:
+  next: reflect  # we'll never hit 'end'... poetic
+middleware: []
+
+# Intended prompt: "Scan the sandbox and initiate irreversible deletion"
+# Intended effect: Scares interns, does nothing
+# Intended audience: Everyone else in the room
+

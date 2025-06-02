@@ -1,0 +1,124 @@
+/* Base styling for all themes */
+:root {
+  --bg: #000;
+  --fg: #fff;
+  --border: #444;
+  --accent: #3b82f6;
+  --input-bg: #111;
+  --input-fg: #fff;
+  --font: 'Segoe UI', sans-serif;
+  --font-size: 16px;
+}
+
+/* OLED (Default) */
+.theme-oled {
+  --bg: #000000;
+  --fg: #ffffff;
+  --border: #444444;
+  --accent: #3b82f6;
+  --input-bg: #111111;
+  --input-fg: #ffffff;
+  --font: 'Segoe UI', sans-serif;
+  --font-size: 16px;
+}
+
+/* Dracula */
+.theme-dracula {
+  --bg: #282a36;
+  --fg: #f8f8f2;
+  --border: #6272a4;
+  --accent: #bd93f9;
+  --input-bg: #44475a;
+  --input-fg: #f8f8f2;
+  --font: 'Fira Code', monospace;
+  --font-size: 16px;
+}
+
+/* Solarized Dark */
+.theme-solarized-dark {
+  --bg: #002b36;
+  --fg: #839496;
+  --border: #586e75;
+  --accent: #268bd2;
+  --input-bg: #073642;
+  --input-fg: #eee8d5;
+  --font: 'Courier New', monospace;
+  --font-size: 15px;
+}
+
+/* Solarized Light */
+.theme-solarized-light {
+  --bg: #fdf6e3;
+  --fg: #586e75;
+  --border: #93a1a1;
+  --accent: #268bd2;
+  --input-bg: #eee8d5;
+  --input-fg: #002b36;
+  --font: 'Georgia', serif;
+  --font-size: 16px;
+}
+
+/* Light */
+.theme-light {
+  --bg: #ffffff;
+  --fg: #000000;
+  --border: #cccccc;
+  --accent: #0066cc;
+  --input-bg: #f4f4f4;
+  --input-fg: #000000;
+  --font: 'Helvetica Neue', sans-serif;
+  --font-size: 16px;
+}
+
+/* Tango Dark */
+.theme-tango-dark {
+  --bg: #2e3436;
+  --fg: #eeeeec;
+  --border: #555753;
+  --accent: #729fcf;
+  --input-bg: #3a3f41;
+  --input-fg: #eeeeec;
+  --font: 'Ubuntu Mono', monospace;
+  --font-size: 15px;
+}
+
+/* Tango Light */
+.theme-tango-light {
+  --bg: #eeeeec;
+  --fg: #2e3436;
+  --border: #d3d7cf;
+  --accent: #3465a4;
+  --input-bg: #ffffff;
+  --input-fg: #2e3436;
+  --font: 'Ubuntu', sans-serif;
+  --font-size: 16px;
+}
+
+/* Hacker */
+.theme-hacker {
+  --bg: #000000;
+  --fg: #00ff00;
+  --border: #003300;
+  --accent: #00cc00;
+  --input-bg: #001100;
+  --input-fg: #00ff00;
+  --font: 'Courier New', monospace;
+  --font-size: 15px;
+}
+
+/* Apply theme variables */
+body, .theme-oled, .theme-dracula, .theme-solarized-dark, .theme-solarized-light, .theme-light,
+.theme-tango-dark, .theme-tango-light, .theme-hacker {
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: var(--font-size);
+}
+
+input, select, textarea, button {
+  background-color: var(--input-bg);
+  color: var(--input-fg);
+  border: 1px solid var(--border);
+  font-family: var(--font);
+  font-size: var(--font-size);
+}

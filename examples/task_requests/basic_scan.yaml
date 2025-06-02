@@ -1,0 +1,4 @@
+task_name: "PortScanBasic"
+task_prompt: "Scan 192.168.1.1 for open ports"
+machines:
+  - "ubuntu-qemu"

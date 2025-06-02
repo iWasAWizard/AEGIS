@@ -1,0 +1,13 @@
+state_type: aegis.agents.task_state.TaskState
+safe_mode: true
+timeout: 30
+retries: 2
+entrypoint: "reflect"
+edges:
+  - ["reflect", "route"]
+  - ["route", "check_termination"]
+  - ["check_termination", "summarize"]
+condition_node: "check_termination"
+condition_map:
+  complete: "summarize"
+  incomplete: "reflect"
