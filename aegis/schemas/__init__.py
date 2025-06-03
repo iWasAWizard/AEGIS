@@ -1,4 +1,9 @@
-"""Re-exports schema components for convenience when importing from aegis.schemas."""
+"""
+Schema exports for API and agent interoperability.
+
+Provides re-exported Pydantic models used across AEGIS for tasks,
+configuration, tool metadata, and API IO schemas.
+"""
 
 from aegis.schemas.agent import TaskRequest, PresetEntry, AgentGraphConfig
 from aegis.schemas.config import ConfigProfile

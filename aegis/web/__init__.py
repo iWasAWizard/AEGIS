@@ -1,4 +1,8 @@
-"""Initializes the web API module and makes FastAPI route modules importable."""
+"""
+Web API initializer for AEGIS.
+
+Sets up FastAPI routers, WebSocket endpoints, and static UI mounting.
+"""
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +22,8 @@ from aegis.web.routes_tasks import router as tasks_router
 
 logger = setup_logger(__name__)
 router = APIRouter()
+
+# Register all route modules
 router.include_router(presets_router)
 router.include_router(compare_router)
 router.include_router(artifacts_router)
@@ -31,30 +37,28 @@ router.include_router(graphs_router)
 router.include_router(reports_router)
 
 
+# Serve frontend UI
 def mount_ui(app):
     """
-    mount_ui.
-    :param app: Description of app
-    :type app: Any
-    :return: Description of return value
-    :rtype: Any
+    Mounts the static UI frontend onto the FastAPI app.
+
+    :param app: FastAPI app instance
     """
     app.mount("/", StaticFiles(directory="aegis/web/ui", html=True), name="ui")
 
 
+# WebSocket for live log streaming
 connected_clients = []
 
 
 @router.websocket("/ws/logs")
 async def websocket_logs(websocket: WebSocket):
     """
-    websocket_logs.
-    :param websocket: Description of websocket
-    :type websocket: Any
-    :return: Description of return value
-    :rtype: Any
+    Accepts a WebSocket connection for real-time log streaming.
+
+    :param websocket: Incoming WebSocket connection
     """
-    logger.info("→ [__init__] Entering def()")
+    logger.info("→ [__init__] Entering websocket_logs()")
     await websocket.accept()
     connected_clients.append(websocket)
     try:
@@ -67,15 +71,13 @@ async def websocket_logs(websocket: WebSocket):
 
 async def broadcast_log(message: str):
     """
-    broadcast_log.
-    :param message: Description of message
-    :type message: Any
-    :return: Description of return value
-    :rtype: Any
+    Broadcasts a log message to all connected WebSocket clients.
+
+    :param message: Log message to send
     """
     for ws in connected_clients:
         try:
             await ws.send_text(message)
         except Exception as e:
             logger.exception(f"[__init__] Error: {e}")
-            logger.warning(f"[broadcast] Skipped a disconnected websocket: {e}")
+            logger.warning(f"[broadcast_log] Skipped a disconnected websocket: {e}")

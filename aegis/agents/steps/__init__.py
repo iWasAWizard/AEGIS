@@ -1,7 +1,7 @@
 """
-aegis.agents.steps
+Agent graph step functions.
 
-Includes all graph execution step functions used in agent workflows.
+Includes all execution step modules used in graph-based agent workflows.
 """
 
 from aegis.agents.steps.execute_tool import execute_tool

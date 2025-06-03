@@ -1,10 +1,13 @@
-"""Initialization for browser wrapper tools.
+"""
+Browser wrapper tools initializer.
 
-Ensures all browser-based agent tools are discoverable and imported."""
+Exposes all browser-based agent tools for centralized discovery and import.
+"""
 
-# tools/wrappers/browser/__init__.py
+from . import capture_web_state, web_interact, web_snapshot_compare
 
-# Expose all primitive tools for easy import/registration
-from .capture_web_state import *
-from .web_interact import *
-from .web_snapshot_compare import *
+__all__ = [
+    "capture_web_state",
+    "web_interact",
+    "web_snapshot_compare",
+]

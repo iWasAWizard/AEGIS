@@ -1,18 +1,29 @@
-"""Initialization for the wrapper tools package.
+"""
+Wrapper tools package initializer.
 
-Ensures all wrapper modules are available for centralized tool discovery."""
+Aggregates all wrapper modules for centralized discovery and import.
+"""
 
-# tools/wrappers/__init__.py
+from . import (
+    browser,
+    fuzz,
+    integration,
+    llm,
+    llm_query,
+    shell,
+    wrapper_filesystem,
+    wrapper_network,
+    wrapper_system,
+)
 
-# Expose browser tools
-from .browser import *
-from .fuzz import *
-from .integration import *
-from .llm import *
-from .llm_query import *
-from .shell import *
-from .wrapper_filesystem import *
-
-# Expose all wrapper tools for centralized discovery
-from .wrapper_network import *
-from .wrapper_system import *
+__all__ = [
+    "browser",
+    "fuzz",
+    "integration",
+    "llm",
+    "llm_query",
+    "shell",
+    "wrapper_filesystem",
+    "wrapper_network",
+    "wrapper_system",
+]

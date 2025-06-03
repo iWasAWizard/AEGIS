@@ -1,7 +1,8 @@
 """
 Aegis core package.
 
-This is the root package for the Aegis agent framework.
+This is the root package for the AEGIS agent framework.
+Provides unified access to all core subsystems.
 """
 
 __all__ = [

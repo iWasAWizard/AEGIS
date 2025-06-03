@@ -1,7 +1,7 @@
 """
-aegis.agents
+Agent framework core package.
 
-Contains agent execution logic, task state definitions, graph configuration,
+Contains execution logic, state tracking, graph configuration,
 and planning components used in orchestrating autonomous workflows.
 """
 

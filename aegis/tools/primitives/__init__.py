@@ -1,8 +1,15 @@
-"""Expose all primitives in the primitives tool package."""
+"""
+Primitive tools package initializer.
+
+Exposes all atomic tool modules used by agents.
+"""
 
 from . import dev, filesystem, network, randomize, shell
 
-__all__ = []
-
-for mod in [dev, filesystem, network, randomize, shell]:
-    __all__.extend(getattr(mod, "__all__", []))
+__all__ = [
+    *getattr(dev, "__all__", []),
+    *getattr(filesystem, "__all__", []),
+    *getattr(network, "__all__", []),
+    *getattr(randomize, "__all__", []),
+    *getattr(shell, "__all__", []),
+]
