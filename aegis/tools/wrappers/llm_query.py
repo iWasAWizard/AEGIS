@@ -73,9 +73,9 @@ class GenerateTestsInput(BaseModel):
     tags=["llm", "reasoning", "query"],
     description="Invoke the current Ollama LLM with a prompt using the correct chat template.",
     safe_mode=True,
-    category="LLM"
+    category="LLM",
 )
-def invoke_llm_query(input_data: LLMQueryInput) -> str:
+async def invoke_llm_query(input_data: LLMQueryInput) -> str:
     """
     invoke_llm_query.
     :param input_data: Description of input_data
@@ -86,7 +86,9 @@ def invoke_llm_query(input_data: LLMQueryInput) -> str:
     logger.info("Invoking LLM query with system prompt and user prompt")
     logger.debug(f"System Prompt: {input_data.system_prompt}")
     logger.debug(f"User Prompt: {input_data.user_prompt}")
-    result = await llm_query(system_prompt=input_data.system_prompt, user_prompt=input_data.user_prompt)
+    result = await llm_query(
+        system_prompt=input_data.system_prompt, user_prompt=input_data.user_prompt
+    )
     logger.debug(f"LLM Response: {result}")
     return result
 
@@ -97,7 +99,7 @@ def invoke_llm_query(input_data: LLMQueryInput) -> str:
     tags=["llm", "summarization", "compression"],
     description="Summarize a long body of text using the LLM.",
     safe_mode=True,
-    category="LLM"
+    category="LLM",
 )
 def summarize_text(input_data: SummarizeTextInput) -> str:
     """
@@ -119,7 +121,7 @@ def summarize_text(input_data: SummarizeTextInput) -> str:
     tags=["llm", "rewrite", "readability"],
     description="Rewrite content to make it more understandable.",
     safe_mode=True,
-    category="LLM"
+    category="LLM",
 )
 def rewrite_for_readability(input_data: RewriteTextInput) -> str:
     """
@@ -141,7 +143,7 @@ def rewrite_for_readability(input_data: RewriteTextInput) -> str:
     tags=["llm", "analysis", "extraction", "tasks"],
     description="Extract next steps or tasks from unstructured text.",
     safe_mode=True,
-    category="LLM"
+    category="LLM",
 )
 def extract_action_items(input_data: ExtractActionItemsInput) -> str:
     """
@@ -163,7 +165,7 @@ def extract_action_items(input_data: ExtractActionItemsInput) -> str:
     tags=["llm", "code", "explanation"],
     description="Provide a plain-English explanation of a code snippet.",
     safe_mode=True,
-    category="LLM"
+    category="LLM",
 )
 def explain_code(input_data: ExplainCodeInput) -> str:
     """
@@ -185,7 +187,7 @@ def explain_code(input_data: ExplainCodeInput) -> str:
     tags=["llm", "code", "testing", "generation"],
     description="Use LLM to generate pytest-style unit tests.",
     safe_mode=True,
-    category="LLM"
+    category="LLM",
 )
 def generate_tests_for_code(input_data: GenerateTestsInput) -> str:
     """
@@ -207,7 +209,7 @@ def generate_tests_for_code(input_data: GenerateTestsInput) -> str:
     tags=["llm", "analysis", "reasoning", "logic"],
     description="Critique an argument or opinion for logic, coherence, and clarity.",
     safe_mode=True,
-    category="LLM"
+    category="LLM",
 )
 def evaluate_argument(input_data: EvaluateArgumentInput) -> str:
     """

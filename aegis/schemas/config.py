@@ -5,7 +5,9 @@ Schemas for runtime configuration profiles and loading behavior.
 from typing import Any, List, Tuple, Dict
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from aegis.schemas.runtime_execution_config import RuntimeExecutionConfig
 
 
 class ConfigProfile(BaseModel):
@@ -25,9 +27,10 @@ class AgentConfig(BaseModel):
     Configuration model for building an agent task graph.
     """
 
-    state_type: Any
-    entrypoint: str
-    edges: List[Tuple[str, str]]
+    state_type: Optional[Any] = None
+    entrypoint: Optional[str] = None
+    edges: Optional[List[Tuple[str, str]]] = None
     condition_node: Optional[str] = None
     condition_map: Optional[Dict[str, str]] = None
     middleware: Optional[List[Any]] = None
+    runtime: RuntimeExecutionConfig = Field(default_factory=RuntimeExecutionConfig)

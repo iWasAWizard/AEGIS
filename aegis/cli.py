@@ -18,15 +18,15 @@ app = typer.Typer()
 
 @app.command()
 def run(
-        task_request_path: str = typer.Option(
-            None,
-            "--task-request-path",
-            help="Path to the YAML file with the TaskRequest",
-            prompt="Enter path to the TaskRequest YAML file",
-        ),
-        safe_mode: bool = typer.Option(
-            True, "--safe-mode/--no-safe-mode", help="Run tools in safe mode (recommended)"
-        ),
+    task_request_path: str = typer.Option(
+        None,
+        "--task-request-path",
+        help="Path to the YAML file with the TaskRequest",
+        prompt="Enter path to the TaskRequest YAML file",
+    ),
+    safe_mode: bool = typer.Option(
+        True, "--safe-mode/--no-safe-mode", help="Run tools in safe mode (recommended)"
+    ),
 ):
     """
     Load a task request from file and run the task using the agent execution engine.

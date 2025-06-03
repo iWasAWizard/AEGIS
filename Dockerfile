@@ -1,5 +1,5 @@
 # Stage 1: Build the React frontend
-FROM node:20-alpine AS ui-builder
+FROM node:23-alpine AS ui-builder
 
 WORKDIR /app
 COPY . /app
@@ -8,7 +8,7 @@ WORKDIR /app/aegis/web/react_ui
 RUN npm install && npm run build
 
 # Stage 2: Build the Python backend
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ ENV PYTHONPATH=/app
 COPY requirements.txt /app
 
 # Install OS dependencies + Python packages
-RUN apt-get update && apt-get install -y curl wget git firefox-esr nmap tcpdump && \
+RUN apt-get update && apt-get install -y curl wget git firefox-esr nmap tcpdump jq && \
     pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt || (echo '❌ pip install failed!' && exit 1)
 

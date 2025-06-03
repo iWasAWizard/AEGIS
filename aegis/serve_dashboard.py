@@ -8,6 +8,10 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
+import aegis.tools
+from aegis.registry import list_tools
+from aegis.utils.tool_loader import import_all_tools
+
 from aegis.utils.logger import setup_logger
 from aegis.web.routes.model_info import router as model_info_router
 from aegis.web.routes_artifacts import router as artifacts_router
@@ -32,6 +36,8 @@ app.include_router(debug_router)
 app.include_router(model_info_router)
 
 logger.info("All API routes registered successfully.")
+
+logger.info(f"🔍 Tool registry contents: {list_tools()}")
 
 if __name__ == "__main__":
     logger.info("Starting dashboard server")

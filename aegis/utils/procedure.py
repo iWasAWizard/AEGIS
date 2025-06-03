@@ -17,7 +17,7 @@ def save_procedure_csv(state, path):
     :return: Description of return value
     :rtype: Any
     """
-    steps = state.get("result", [])
+    steps = state.result
     with open(path, "w", newline="") as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(["Step", "Action Taken", "Expected Result", "Notes"])

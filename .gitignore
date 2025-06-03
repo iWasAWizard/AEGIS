@@ -21,10 +21,11 @@ virenv/
 logs/
 *.log
 reports/
+outputs/
 
 # Secrets and credentials
-.env
-.env.*
+.env*
+!.env.example
 secrets.yaml
 
 # Editor and OS files

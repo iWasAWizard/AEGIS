@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
-from schemas.emoji import EMOJI_SET
+from aegis.schemas.emoji import EMOJI_SET
 
 logger = setup_logger(__name__)
 

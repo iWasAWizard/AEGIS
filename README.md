@@ -33,6 +33,7 @@ docker compose up --build
 ```
 
 This will:
+
 - Start the Ollama daemon (ollama/ollama container)
 - Build and run the autonomous agent
 - Launch the web dashboard at http://localhost:8000
@@ -89,6 +90,7 @@ machines:
 ## 🧪 Reports
 
 Every run produces:
+
 - `report.md`: human-readable summary
 - `record.json`: full machine-readable trace
 - `procedure.csv`: structured test steps

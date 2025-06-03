@@ -4,7 +4,8 @@ Schema for launching a task with custom config and runtime options.
 
 from pydantic import BaseModel, Field
 from typing import Optional
-from aegis.schemas.agent import TaskRequest, AgentGraphConfig
+from aegis.schemas.agent import TaskRequest
+from aegis.schemas.runtime_execution_config import RuntimeExecutionConfig
 
 
 class LaunchRequest(BaseModel):
@@ -13,7 +14,10 @@ class LaunchRequest(BaseModel):
     """
 
     task: TaskRequest
-    config: Optional[AgentGraphConfig] = None
+    config: Optional[RuntimeExecutionConfig] = Field(
+        default_factory=RuntimeExecutionConfig,
+        description="Client-controlled runtime settings like model name and LLM URL",
+    )
     iterations: Optional[int] = Field(
         default=1, description="Number of planning/execution cycles"
     )

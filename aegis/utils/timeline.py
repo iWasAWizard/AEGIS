@@ -17,7 +17,7 @@ def save_timeline_plot(state, path):
     :return: Description of return value
     :rtype: Any
     """
-    steps = state.get("result", [])
+    steps = state.result
     labels = [f"Step {i + 1}" for i in range(len(steps))]
     durations = [s.get("duration", 1) for s in steps]
     plt.figure(figsize=(8, 4))

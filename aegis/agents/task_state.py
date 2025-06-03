@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Any, Callable, Awaitable
 from pydantic import BaseModel, Field, PrivateAttr
 
 from aegis.utils.logger import setup_logger
+from aegis.schemas.runtime_execution_config import RuntimeExecutionConfig
 
 logger = setup_logger(__name__)
 
@@ -26,9 +27,13 @@ class TaskState(BaseModel):
     tool_name: Optional[str] = Field(default=None)
     safe_mode: bool = Field(default=True)
     summary: Optional[str] = Field(None)
+    plan_step: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    next_step: Optional[str] = None
     tool_request: Optional[Any] = Field(default=None)
     shell_execute: Optional[Callable] = Field(None)
     sensor_outputs: Dict[str, List[Any]] = Field(default_factory=dict)
+    steps_output: Dict[str, Any] = Field(default_factory=dict)
+    runtime: RuntimeExecutionConfig
     _start_time: Optional[float] = PrivateAttr(default_factory=time)
     _profile_name: Optional[str] = PrivateAttr(default="default")
     _llm_query_fn: Optional[Callable[[str], str]] = PrivateAttr(default=None)

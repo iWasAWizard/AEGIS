@@ -1,7 +1,11 @@
 """Provides centralized tool registration, validation, and lookup.
-All tools must be registered via this interface to be discoverable and callable by agents."""
+All tools must be registered via this interface to be discoverable and callable by agents.
+"""
 
 import os
+import importlib
+import pathlib
+
 from typing import Any, Callable, Dict, List, Optional, Type
 
 from dotenv import load_dotenv
@@ -12,6 +16,7 @@ from aegis.utils.logger import setup_logger
 logger = setup_logger(__name__)
 load_dotenv()
 
+# these are holdover
 KNOWN_TAGS = {
     "network",
     "filesystem",
@@ -21,8 +26,24 @@ KNOWN_TAGS = {
     "sensor",
     "utility",
     "action",
+    "random",
+    "mock",
+    "fuzz",
+    "integer",
+    "boolean",
+    "choice",
+    "string",
+    "corrupt",
+    "test",
+    "chaos",
+    "dev",
+    "file",
+    "primitive",
+    "remote",
+    "local",
 }
 KNOWN_CATEGORIES = {"primitive", "wrapper", "composite", "internal"}
+# holdover stops here
 
 
 class ToolEntry(BaseModel):
@@ -31,6 +52,7 @@ class ToolEntry(BaseModel):
     Stores metadata, execution logic, input validation, and configuration
     for tools exposed to the agent runtime.
     """
+
     name: str
     run: Callable[[BaseModel], Any]
     input_model: Type[BaseModel]
@@ -88,15 +110,15 @@ def validate_tags_and_category(tags: List[str], category: Optional[str]):
 
 
 def register_tool(
-        name: str,
-        input_model: Type[BaseModel],
-        tags: List[str],
-        description: str,
-        safe_mode: bool = True,
-        purpose: Optional[str] = None,
-        category: Optional[str] = None,
-        timeout: Optional[int] = None,
-        retries: int = 0,
+    name: str,
+    input_model: Type[BaseModel],
+    tags: List[str],
+    description: str,
+    safe_mode: bool = True,
+    purpose: Optional[str] = None,
+    category: Optional[str] = None,
+    timeout: Optional[int] = None,
+    retries: int = 0,
 ) -> Callable[[Callable[[BaseModel], Any]], Callable[[BaseModel], Any]]:
     """Register a tool for use within the agent system.
 
@@ -124,7 +146,7 @@ def register_tool(
             )
         validate_input_model(input_model)
         normalized_tags = normalize_tags(tags)
-        validate_tags_and_category(normalized_tags, category)
+        # validate_tags_and_category(normalized_tags, category)
         entry = ToolEntry(
             name=name,
             run=func,

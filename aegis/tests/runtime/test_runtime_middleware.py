@@ -11,8 +11,8 @@ logger = setup_logger(__name__)
 
 
 def inject_visited_middleware(state: dict) -> dict:
-    visited = state.get("visited", [])
-    current = state.get("step_id", "unknown")
+    visited = state.visited
+    current = state.step_id
     visited.append(current)
     state["visited"] = visited
     logger.debug(f"[middleware] Step visited: {current}")
