@@ -5,6 +5,8 @@ Tests for the tool registration and lookup system.
 import pytest
 from pydantic import BaseModel
 
+from aegis.exceptions import ToolNotFoundError, ToolValidationError
+from aegis.registry import TOOL_REGISTRY
 from aegis.registry import (
     ToolEntry,
     get_tool,
@@ -22,22 +24,36 @@ class UnsafeToolInput(BaseModel):
     pass
 
 
-@register_tool(
-    name="test_safe_tool", input_model=SafeToolInput, tags=[], description=""
-)
-def safe_tool_func(_: SafeToolInput):
-    return "safe"
+# A global variable to hold the original tool so we can re-register it
+_original_safe_tool = None
 
 
-@register_tool(
-    name="test_unsafe_tool",
-    input_model=UnsafeToolInput,
-    tags=[],
-    description="",
-    safe_mode=False,
-)
-def unsafe_tool_func(_: UnsafeToolInput):
-    return "unsafe"
+@pytest.fixture(autouse=True)
+def clean_registry():
+    """Fixture to ensure the registry is clean before and after each test."""
+    global _original_safe_tool
+
+    if "test_safe_tool" in TOOL_REGISTRY:
+        _original_safe_tool = TOOL_REGISTRY["test_safe_tool"]
+
+    TOOL_REGISTRY.pop("test_safe_tool", None)
+    TOOL_REGISTRY.pop("test_unsafe_tool", None)
+
+    @register_tool(name="test_safe_tool", input_model=SafeToolInput, tags=[], description="")
+    def safe_tool_func(_: SafeToolInput):
+        return "safe"
+
+    @register_tool(name="test_unsafe_tool", input_model=UnsafeToolInput, tags=[], description="", safe_mode=False)
+    def unsafe_tool_func(_: UnsafeToolInput):
+        return "unsafe"
+
+    yield
+
+    TOOL_REGISTRY.pop("test_safe_tool", None)
+    TOOL_REGISTRY.pop("test_unsafe_tool", None)
+
+    if _original_safe_tool:
+        TOOL_REGISTRY["test_safe_tool"] = _original_safe_tool
 
 
 def test_get_tool_success():
@@ -49,15 +65,15 @@ def test_get_tool_success():
 
 
 def test_get_tool_not_found():
-    """Verify that get_tool returns None for a non-existent tool."""
-    tool = get_tool("non_existent_tool")
-    assert tool is None
+    """Verify that get_tool raises ToolNotFoundError for a non-existent tool."""
+    with pytest.raises(ToolNotFoundError, match="not found in registry"):
+        get_tool("non_existent_tool")
 
 
 def test_get_tool_safe_mode_blocking():
     """Verify that safe_mode=True blocks retrieval of unsafe tools."""
-    tool = get_tool("test_unsafe_tool")
-    assert tool is None, "Should not retrieve unsafe tool when safe_mode is on"
+    with pytest.raises(ToolNotFoundError, match="blocked by safe mode"):
+        get_tool("test_unsafe_tool")
 
 
 def test_get_tool_safe_mode_allowed():
@@ -84,10 +100,7 @@ def test_list_tools_unsafe_mode():
 def test_duplicate_registration_fails():
     """Verify that registering a tool with a duplicate name raises an error."""
     with pytest.raises(ValueError, match="is already registered"):
-
-        @register_tool(
-            name="test_safe_tool", input_model=SafeToolInput, tags=[], description=""
-        )
+        @register_tool(name="test_safe_tool", input_model=SafeToolInput, tags=[], description="")
         def duplicate_tool_func(_: SafeToolInput):
             pass
 
@@ -98,5 +111,5 @@ def test_registration_with_invalid_model_fails():
     class NotAPydanticModel:
         pass
 
-    with pytest.raises(TypeError, match="invalid or non-instantiable"):
+    with pytest.raises(ToolValidationError, match="Input model must be a subclass of pydantic.BaseModel"):
         validate_input_model(NotAPydanticModel)

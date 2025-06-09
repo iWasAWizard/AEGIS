@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Type
 from dotenv import load_dotenv
 from pydantic import BaseModel, create_model
 
+from aegis.exceptions import ToolNotFoundError, ToolValidationError
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -26,16 +27,27 @@ class ToolEntry(BaseModel):
     properties used for planning and filtering.
 
     :ivar name: The unique, callable name of the tool.
+    :vartype name: str
     :ivar run: The actual function to execute for this tool.
+    :vartype run: Callable[[Any], Any]
     :ivar input_model: The Pydantic model used to validate the tool's input.
+    :vartype input_model: Type[BaseModel]
     :ivar tags: A list of lowercase tags for categorization and filtering.
+    :vartype tags: List[str]
     :ivar description: A human-readable summary of what the tool does.
+    :vartype description: str
     :ivar safe_mode: A boolean indicating if the tool can perform dangerous actions.
+    :vartype safe_mode: bool
     :ivar purpose: An optional, concise verb describing the tool's main action.
+    :vartype purpose: Optional[str]
     :ivar category: An optional high-level category (e.g., 'primitive', 'wrapper').
+    :vartype category: Optional[str]
     :ivar timeout: An optional execution timeout in seconds for the tool.
+    :vartype timeout: Optional[int]
     :ivar retries: The number of times to retry the tool on failure.
+    :vartype retries: int
     """
+
     name: str
     run: Callable[[Any], Any]  # The input is a Pydantic model instance
     input_model: Type[BaseModel]
@@ -46,6 +58,10 @@ class ToolEntry(BaseModel):
     category: Optional[str] = None
     timeout: Optional[int] = None
     retries: int = 0
+
+    class Config:
+        """Pydantic configuration to allow arbitrary types like callables."""
+        arbitrary_types_allowed = True
 
 
 TOOL_REGISTRY: Dict[str, ToolEntry] = {}
@@ -65,17 +81,19 @@ def normalize_tags(tags: List[str]) -> List[str]:
 def validate_input_model(model: Type[BaseModel]) -> None:
     """Validate that a given Pydantic model can be used for tool input.
 
-    This check attempts to create a temporary dynamic model to ensure the
-    base model is well-formed and instantiable.
-
     :param model: The Pydantic model class to validate.
     :type model: Type[BaseModel]
-    :raises TypeError: If the model is invalid or cannot be instantiated.
+    :raises ToolValidationError: If the model is invalid or cannot be instantiated.
     """
     try:
+        # Check if it's a valid Pydantic model in the first place
+        if not issubclass(model, BaseModel):
+            raise TypeError("Input model must be a subclass of pydantic.BaseModel.")
         create_model("ValidationCheck", __base__=model)
     except Exception as e:
-        raise TypeError(f"Input model '{model.__name__}' is invalid or non-instantiable: {e}") from e
+        raise ToolValidationError(
+            f"Input model '{model.__name__}' is invalid or non-instantiable: {e}"
+        ) from e
 
 
 def register_tool(
@@ -91,8 +109,9 @@ def register_tool(
 ) -> Callable[[Callable[[Any], Any]], Callable[[Any], Any]]:
     """A decorator to register a function as a tool for the agent system.
 
-    This decorator wraps a function, validates its metadata, and adds it to the
-    global `TOOL_REGISTRY`.
+    This decorator is the primary mechanism for adding new capabilities to the agent.
+    It attaches essential metadata to a function and adds it to the global
+    `TOOL_REGISTRY`, making it discoverable and callable by the agent's planner.
 
     :param name: The unique, callable name for the tool.
     :type name: str
@@ -114,8 +133,6 @@ def register_tool(
     :type retries: int
     :return: A decorator that registers the function.
     :rtype: Callable
-    :raises TypeError: If the decorated object is not callable.
-    :raises ValueError: If the tool name is already registered.
     """
 
     def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
@@ -150,23 +167,26 @@ def register_tool(
     return decorator
 
 
-def get_tool(name: str, safe_mode: bool = True) -> Optional[ToolEntry]:
+def get_tool(name: str, safe_mode: bool = True) -> ToolEntry:
     """Retrieve a registered tool by name, optionally filtering by safe mode.
 
     :param name: The name of the tool to retrieve.
     :type name: str
     :param safe_mode: If True, only return the tool if it is marked as safe.
     :type safe_mode: bool
-    :return: A ToolEntry object if the tool is found and meets the safe_mode criteria, otherwise None.
-    :rtype: Optional[ToolEntry]
+    :return: A ToolEntry object if the tool is found and meets criteria.
+    :rtype: ToolEntry
+    :raises ToolNotFoundError: If the tool is not in the registry or is blocked by safe mode.
     """
     tool = TOOL_REGISTRY.get(name)
     if tool is None:
         logger.warning(f"Requested tool '{name}' not found in registry.")
-        return None
+        raise ToolNotFoundError(f"Tool '{name}' not found in registry.")
     if safe_mode and not tool.safe_mode:
-        logger.warning(f"Tool '{name}' is not available in safe_mode, but safe_mode is active.")
-        return None
+        logger.warning(
+            f"Tool '{name}' is not available in safe_mode, but safe_mode is active."
+        )
+        raise ToolNotFoundError(f"Tool '{name}' is blocked by safe mode.")
     return tool
 
 
@@ -184,10 +204,7 @@ def list_tools(safe_mode: bool = True) -> List[str]:
 
 
 def log_registry_contents() -> None:
-    """Outputs all currently registered tools and their metadata to the logger.
-
-    Useful for debugging and verifying the tool registry's state at runtime.
-    """
+    """Outputs all currently registered tools and their metadata to the logger."""
     logger.info("--- Tool Registry Contents ---")
     if not TOOL_REGISTRY:
         logger.info("Registry is empty.")

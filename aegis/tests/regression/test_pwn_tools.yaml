@@ -1,0 +1,12 @@
+# tests/regression/test_pwn_tools.yaml
+task:
+  prompt: >
+    Here is your task:
+    1. Use the 'pwn_cyclic_pattern' tool to find the offset of the value 'aaba'.
+    2. For verification, check that the output contains the string 'Offset for'.
+    3. If the verification is successful, use the 'finish' tool with a status of 'success'.
+
+config: "verified_flow"
+
+execution:
+  iterations: 5

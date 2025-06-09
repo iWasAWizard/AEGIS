@@ -1,34 +1,55 @@
+# aegis/schemas/machine.py
 """
 Schema defining the expected format for machine manifest entries.
 
-Each machine entry describes a physical or virtual system available for agent deployment.
-This module also includes a collection wrapper for batch loading multiple machines.
+Each machine entry describes a physical or virtual system available for agent
+deployment. This module also includes a collection wrapper for batch loading
+multiple machines.
 """
 
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MachineManifest(BaseModel):
     """
     Represents a single machine definition from the manifest.
 
-    :param name: Unique agent-facing nickname.
-    :param ip: IP address or hostname of the target system.
-    :param platform: Operating system (linux, windows, mac).
-    :param provider: Environment type (qemu, esxi, vmware, proxmox, physical).
-    :param type: Logical machine type (vm, physical, container).
-    :param shell: Shell interpreter used on the system (bash, sh, zsh, powershell).
-    :param username: Username for login.
-    :param password: Password for login (can be replaced with SSH key).
-    :param ssh_port: Optional SSH port if using remote shell access.
-    :param vmtools_path: Optional path to hypervisor guest agent tool.
-    :param esxi_host: Required if using ESXi provider — the vCenter/ESXi hostname.
-    :param esxi_user: Required if using ESXi provider — API username.
-    :param esxi_password: Required if using ESXi provider — API password.
-    :param tags: Optional list of labels or tags.
-    :param notes: Optional freeform notes or description.
+    This Pydantic model validates each entry in the `machines.yaml` file.
+    Secrets like passwords are now optional and can be resolved from environment
+    variables by the `machine_loader` utility.
+
+    :ivar name: Agent-facing nickname (must be unique).
+    :vartype name: str
+    :ivar ip: Resolvable IP address or hostname for the guest OS.
+    :vartype ip: str
+    :ivar platform: Operating system of the guest (`linux`, `windows`, `mac`).
+    :vartype platform: str
+    :ivar provider: Source environment (`qemu`, `esxi`, `physical`, etc.).
+    :vartype provider: str
+    :ivar type: Logical host type (`vm`, `physical`, or `container`).
+    :vartype type: str
+    :ivar shell: Shell interpreter to be used (`bash`, `sh`, `powershell`).
+    :vartype shell: str
+    :ivar username: Username for guest login.
+    :vartype username: str
+    :ivar password: Optional password for login. Can be an env var placeholder.
+    :vartype password: Optional[str]
+    :ivar esxi_password: Optional password for ESXi/vCenter API.
+    :vartype esxi_password: Optional[str]
+    :ivar ssh_port: SSH port number.
+    :vartype ssh_port: Optional[int]
+    :ivar vmtools_path: Path to guest agent (e.g., `vmtoolsd.exe`).
+    :vartype vmtools_path: Optional[str]
+    :ivar esxi_host: IP or hostname of the ESXi or vCenter host.
+    :vartype esxi_host: Optional[str]
+    :ivar esxi_user: Username for the ESXi/vCenter API.
+    :vartype esxi_user: Optional[str]
+    :ivar tags: List of labels for filtering or routing.
+    :vartype tags: List[str]
+    :ivar notes: Freeform human-readable comment.
+    :vartype notes: Optional[str]
     """
 
     name: str
@@ -38,24 +59,28 @@ class MachineManifest(BaseModel):
     type: str
     shell: str
     username: str
-    password: str
 
-    ssh_port: Optional[int] = None
+    password: Optional[str] = None
+    esxi_password: Optional[str] = None
+
+    ssh_port: Optional[int] = 22
     vmtools_path: Optional[str] = None
 
     esxi_host: Optional[str] = None
     esxi_user: Optional[str] = None
-    esxi_password: Optional[str] = None
 
-    tags: Optional[List[str]] = None
+    tags: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
 
 
 class MachineManifestCollection(BaseModel):
-    """
-    Wrapper for loading a list of machines from a YAML or JSON manifest.
+    """DEPRECATED - Wrapper for loading a list of machines from a manifest.
 
-    :param machines: List of machine entries parsed from the manifest.
+    This was intended for bulk loading but is no longer used, as machines are
+    loaded individually by name.
+
+    :ivar machines: A list of machine manifest objects.
+    :vartype machines: List[MachineManifest]
     """
 
     machines: List[MachineManifest]

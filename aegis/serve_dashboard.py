@@ -18,53 +18,49 @@ from aegis.registry import log_registry_contents
 from aegis.utils.logger import setup_logger
 from aegis.utils.tool_loader import import_all_tools
 from aegis.web import router as api_router
-from aegis.web.log_streamer import WebSocketLogHandler
+from aegis.web.routes_stream import WebSocketLogHandler
 
-# Load environment variables from a .env file if it exists.
 load_dotenv()
-
-# Setup the logger first. This configures console and file logging.
 logger = setup_logger(__name__)
 
-# Initialize the FastAPI application.
 app = FastAPI(
     title="AEGIS Agentic Framework",
     description="An autonomous agent framework for planning and executing complex tasks.",
     version="1.0.0",
 )
 
-# --- Tool and Route Registration ---
-
 
 @app.on_event("startup")
 def on_startup():
-    """Actions to perform on application startup."""
-    # 1. Log critical configuration details from the environment
-    logger.info("--- AEGIS Configuration ---")
-    logger.info(f"OLLAMA_MODEL: {os.getenv('OLLAMA_MODEL', 'Not Set')}")
-    logger.info(
-        f"OLLAMA_API_URL: {os.getenv('OLLAMA_API_URL', 'http://ollama:11434/api/generate')}"
-    )
-    logger.info("--------------------------")
+    """Performs application startup actions.
 
-    # 2. Import all tools to populate the TOOL_REGISTRY.
+    This function is executed by FastAPI when the server starts. It handles
+    logging critical configurations, dynamically importing all available tools
+    into the registry, and attaching the WebSocket handler to the root logger
+    to enable live log streaming to the UI.
+    """
+    logger.info("--- AEGIS Application Startup ---")
+    logger.info(f"OLLAMA_MODEL: {os.getenv('OLLAMA_MODEL', 'Not Set')}")
+    logger.info(f"OLLAMA_API_URL: {os.getenv('OLLAMA_API_URL', 'http://ollama:11434/api/generate')}")
+
     logger.info("Importing all available tools...")
     import_all_tools()
     log_registry_contents()
 
-    # 3. Add the WebSocket handler to the root logger.
-    # This connects our web UI to the centralized logging system.
+    # Attach the WebSocket handler to the root logger so it captures all logs
     root_logger = logging.getLogger()
-    root_logger.addHandler(WebSocketLogHandler())
-    logger.info("WebSocket log handler configured and attached to root logger.")
+    if not any(isinstance(h, WebSocketLogHandler) for h in root_logger.handlers):
+        root_logger.addHandler(WebSocketLogHandler())
+        logger.info("WebSocket log handler configured and attached to root logger.")
+    else:
+        logger.info("WebSocket log handler already attached.")
 
 
-# Include all API routes from the web module.
+# Include all API routes defined in the aegis.web package
 app.include_router(api_router, prefix="/api")
 logger.info("All API routes registered under the /api prefix.")
 
-# Mount the static React UI files.
-# This serves the built React application from the root URL.
+# Serve the static React UI files
 ui_path = "aegis/web/react_ui/dist"
 if os.path.exists(ui_path):
     app.mount("/", StaticFiles(directory=ui_path, html=True), name="ui")
@@ -72,26 +68,17 @@ if os.path.exists(ui_path):
 else:
     logger.warning(f"UI directory not found at '{ui_path}'. The UI will not be served.")
 
-# --- Main Server Execution ---
-
 if __name__ == "__main__":
+    """Main entry point for running the server directly."""
     logger.info("Preparing to launch AEGIS web server...")
 
-    # Load server configuration from environment variables with sensible defaults.
     host = os.getenv("AEGIS_HOST", "0.0.0.0")
     port = int(os.getenv("AEGIS_PORT", 8000))
     log_level = os.getenv("AEGIS_LOG_LEVEL", "info").lower()
     reload = os.getenv("AEGIS_RELOAD", "false").lower() == "true"
 
     logger.info(f"Server will run on http://{host}:{port}")
-    logger.info(f"Log level set to: {log_level}")
+    logger.info(f"Uvicorn log level set to: {log_level}")
     logger.info(f"Hot-reloading enabled: {reload}")
 
-    # Start the Uvicorn server.
-    uvicorn.run(
-        "aegis.serve_dashboard:app",
-        host=host,
-        port=port,
-        log_level=log_level,
-        reload=reload,
-    )
+    uvicorn.run("aegis.serve_dashboard:app", host=host, port=port, log_level=log_level, reload=reload)

@@ -1,4 +1,4 @@
-# aegis/tests/tools/wrappers/test_wrapper_filesystem.py
+# aegis/tests/tools/wrappers/test_filesystem_wrapper.py
 """
 Unit tests for the high-level filesystem wrapper tools.
 """

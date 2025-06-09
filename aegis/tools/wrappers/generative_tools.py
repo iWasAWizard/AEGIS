@@ -1,6 +1,7 @@
-# aegis/tools/wrappers/llm_tools.py
+# aegis/tools/wrappers/generative_tools.py
 """
-High-level tools for invoking the agent's primary LLM for specific, common tasks.
+High-level tools for invoking the agent's primary LLM to perform specific,
+common generative tasks.
 
 This module provides a suite of tools that wrap the core `llm_query` utility,
 presenting it to the agent for tasks like summarization, code explanation,

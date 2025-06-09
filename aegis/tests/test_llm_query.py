@@ -1,4 +1,4 @@
-# aegis/tests/test_llm_query.py
+# aegis/tests/test_llm_tools_wrapper.py
 """
 Tests for the llm_query utility, focusing on error handling and formatting.
 """

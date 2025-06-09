@@ -27,8 +27,7 @@ def check_termination(state: TaskState) -> str:
     logger.info("✅ Step: Check for Termination")
 
     # Condition 1: Check if the last planned tool was 'finish'.
-    # The plan is the first element of the last tuple in the history.
-    if state.history and state.history[-1][0].tool_name == "finish":
+    if state.history and state.history[-1].plan.tool_name == "finish":
         logger.info("Termination condition met: 'finish' tool was called.")
         return "end"
 

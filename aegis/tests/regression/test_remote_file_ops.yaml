@@ -1,0 +1,14 @@
+# tests/regression/test_remote_file_ops.yaml
+task:
+  prompt: >
+    Here is your multi-step task for the remote machine 'ubuntu-qemu':
+    1. Use the 'run_remote_command' tool to create a file named '/tmp/aegis_remote_test.txt'. The command should be 'touch /tmp/aegis_remote_test.txt'.
+    2. For verification, use the 'check_remote_file_exists' tool to confirm that '/tmp/aegis_remote_test.txt' now exists on 'ubuntu-qemu'.
+    3. The verification is successful if the tool output is 'Exists'.
+    4. After successful verification, use 'run_remote_command' again on 'ubuntu-qemu' to delete the file with the command 'rm /tmp/aegis_remote_test.txt'.
+    5. Finish the task with a status of 'success'.
+
+config: "verified_flow"
+
+execution:
+  iterations: 7

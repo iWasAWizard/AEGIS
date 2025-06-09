@@ -20,8 +20,6 @@ services:
     build: .
     ports:
       - "8000:8000"
-    volumes:
-      - ./:/app
     environment: 
       - OLLAMA_MODEL
       - OLLAMA_HOST

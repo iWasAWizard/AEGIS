@@ -1,4 +1,4 @@
-# aegis/tests/tools/wrappers/test_llm_query_wrapper.py
+# aegis/tests/tools/wrappers/test_llm_tools_wrapper.py
 """
 Unit tests for the high-level, LLM-based wrapper tools.
 """
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from aegis.tools.wrappers.llm_query import (
+from aegis.tools.wrappers.generative_tools import (
     invoke_llm_query, LLMQueryInput,
     summarize_text, TextContentInput,
     rewrite_for_readability,

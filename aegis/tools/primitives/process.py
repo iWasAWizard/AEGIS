@@ -3,12 +3,14 @@
 Primitive tools for interacting with local system processes and resources.
 
 This module provides tools for listing running processes and querying
-resource usage, such as disk space, on the local machine.
+resource usage, such as disk space, on the local machine. These rely on the
+`psutil` library for cross-platform compatibility.
 """
 
 import psutil
 from pydantic import BaseModel, Field
 
+from aegis.exceptions import ToolExecutionError
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 
@@ -25,12 +27,21 @@ class ListProcessesInput(BaseModel):
 
 
 class GetDiskUsageInput(BaseModel):
-    """Input model for getting disk usage of a specific path."""
+    """Input model for getting disk usage of a specific path.
+
+    :ivar path: The path of the mount point to check (e.g., '/', '/mnt/data').
+    :vartype path: str
+    """
 
     path: str = Field(
         "/",
         description="The path of the mount point to check (e.g., '/', '/mnt/data').",
     )
+
+
+def _format_bytes_to_gb(num_bytes: int) -> str:
+    """Helper function to format bytes into a human-readable GB string."""
+    return f"{num_bytes / (1024 ** 3):.2f} GB"
 
 
 # === Tools ===
@@ -52,18 +63,19 @@ def list_processes(_: ListProcessesInput) -> str:
     :type _: ListProcessesInput
     :return: A formatted string listing processes, or an error message.
     :rtype: str
+    :raises ToolExecutionError: If `psutil` fails to retrieve the process list.
     """
     logger.info("Listing all running processes using psutil.")
     try:
         procs = []
         for p in psutil.process_iter(["pid", "name", "username"]):
             procs.append(
-                f"PID: {p.info['pid']:<6} | User: {p.info['username']:<15} | Name: {p.info['name']}"
+                f"PID: {p.pid:<6} | User: {p.username():<15} | Name: {p.name()}"
             )
         return "\n".join(procs) if procs else "No processes found."
     except Exception as e:
         logger.exception("Failed to list processes using psutil.")
-        return f"[ERROR] Could not list processes: {e}"
+        raise ToolExecutionError(f"Could not list processes: {e}") from e
 
 
 @register_tool(
@@ -82,17 +94,17 @@ def get_disk_usage(input_data: GetDiskUsageInput) -> str:
     :type input_data: GetDiskUsageInput
     :return: A formatted string of disk usage statistics, or an error message.
     :rtype: str
+    :raises ToolExecutionError: If `psutil` fails for reasons other than a missing path.
     """
     path = input_data.path
     logger.info(f"Getting disk usage for path: {path}")
     try:
         usage = psutil.disk_usage(path)
-        to_gb = lambda x: f"{x / (1024 ** 3):.2f} GB"
         return (
             f"Disk Usage for '{path}':\n"
-            f"  - Total: {to_gb(usage.total)}\n"
-            f"  - Used:  {to_gb(usage.used)} ({usage.percent}%)\n"
-            f"  - Free:  {to_gb(usage.free)}"
+            f"  - Total: {_format_bytes_to_gb(usage.total)}\n"
+            f"  - Used:  {_format_bytes_to_gb(usage.used)} ({usage.percent}%)\n"
+            f"  - Free:  {_format_bytes_to_gb(usage.free)}"
         )
     except FileNotFoundError:
         error_msg = f"[ERROR] Path not found: {path}"
@@ -100,4 +112,4 @@ def get_disk_usage(input_data: GetDiskUsageInput) -> str:
         return error_msg
     except Exception as e:
         logger.exception(f"Failed to get disk usage for {path}.")
-        return f"[ERROR] Could not get disk usage for '{path}': {e}"
+        raise ToolExecutionError(f"Could not get disk usage for '{path}': {e}") from e

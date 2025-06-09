@@ -3,6 +3,7 @@
 A simple utility for loading and accessing the central YAML configuration.
 """
 from pathlib import Path
+
 import yaml
 
 _config = None
@@ -11,7 +12,14 @@ _config = None
 def get_config() -> dict:
     """Loads the config.yaml file and returns it as a dictionary.
 
-    Caches the config in memory after the first read.
+    This function provides a singleton-like pattern for accessing global
+    application settings defined in `config.yaml`. It reads the file from
+    the project root on the first call and caches the result in memory for
+    all subsequent calls to prevent redundant file I/O.
+
+    :return: A dictionary containing the parsed YAML configuration.
+    :rtype: dict
+    :raises FileNotFoundError: If `config.yaml` is not found in the project root.
     """
     global _config
     if _config is None:

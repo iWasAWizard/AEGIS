@@ -1,4 +1,4 @@
-# aegis/tests/tools/wrappers/test_wrapper_shell.py
+# aegis/tests/tools/wrappers/test_shell_wrapper.py
 """
 Unit tests for the high-level shell wrapper tools.
 """

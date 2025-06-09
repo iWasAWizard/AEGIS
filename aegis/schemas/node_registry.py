@@ -1,11 +1,12 @@
-# aegis/agents/node_registry.py
+# aegis/schemas/node_registry.py
 """
 Node function registry for mapping agent step names to their callables.
 
 This dictionary acts as a dispatcher, allowing graph configurations in YAML
 to refer to agent step functions by a simple name. It maps the string IDs
 used in the `nodes` list of a preset to the actual Python functions that
-implement the agent's logic.
+implement the agent's logic. This is the single source of truth for all
+functions that can act as nodes in an agent's execution graph.
 """
 
 from typing import Dict, Callable, Any

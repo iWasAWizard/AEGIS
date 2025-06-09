@@ -22,3 +22,12 @@ python-multipart
 pwntools
 ollama
 python-dotenv
+sentence-transformers
+faiss-cpu
+pydantic-settings
+numpy
+pyautogui
+opencv-python
+scapy
+pytesseract
+Pillow

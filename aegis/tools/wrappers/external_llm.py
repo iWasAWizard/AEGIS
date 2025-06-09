@@ -1,11 +1,12 @@
-# aegis/tools/wrappers/llm.py
+# aegis/tools/wrappers/external_llm.py
 """
-LLM wrapper tools for interacting with external, third-party language models.
+Wrapper tools for interacting with external, third-party language models.
 
-This module provides tools for connecting to commercial LLM APIs like OpenAI.
-It is distinct from the internal `llm_query` utility, which is designed for
-the primary, local Ollama-based agent planner. These tools allow the agent
-to leverage other models for specific tasks.
+This module provides tools for connecting to commercial LLM APIs like OpenAI, or
+for making direct, low-level calls to a local Ollama instance. It is distinct
+from the internal `llm_query` utility, which is designed for the primary,
+local agent planner. These tools allow the agent to leverage other models for
+specific tasks where a different capability is desired.
 """
 
 from typing import List, Optional, Literal
@@ -90,7 +91,7 @@ class OllamaGenerateInput(BaseModel):
 @register_tool(
     name="llm_chat_openai",
     input_model=LLMChatInput,
-    tags=["llm", "chat", "openai", "wrapper"],
+    tags=["llm", "chat", "openai", "wrapper", "external"],
     description="Conducts a multi-turn conversation with an OpenAI chat model.",
     safe_mode=True,
     purpose="Leverage an external OpenAI model for a specific conversational task.",
@@ -125,7 +126,7 @@ def llm_chat_openai(input_data: LLMChatInput) -> str:
 @register_tool(
     name="ollama_generate_direct",
     input_model=OllamaGenerateInput,
-    tags=["llm", "ollama", "wrapper"],
+    tags=["llm", "ollama", "wrapper", "external"],
     description="Sends a raw prompt to a local Ollama model for generation.",
     safe_mode=True,
     purpose="Run a simple, single-shot completion using a specific Ollama model.",

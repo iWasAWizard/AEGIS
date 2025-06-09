@@ -1,3 +1,0 @@
-command: "uptime"
-timeout: 5
-shell: false

@@ -19,9 +19,13 @@ class TaskRequest(BaseModel):
     typically created from a CLI command, an API call, or a UI form submission.
 
     :ivar prompt: The natural language instruction for the agent.
+    :vartype prompt: str
     :ivar task_id: An optional unique identifier for tracking the task.
+    :vartype task_id: Optional[str]
     :ivar model: An optional override for the LLM model to be used for this specific task.
+    :vartype model: Optional[str]
     """
+
     prompt: str = Field(..., description="Natural language input to the agent.")
     task_id: Optional[str] = Field(
         default=None,

@@ -1,4 +1,4 @@
-# aegis/tests/tools/test_primitive_chaostest_primitive_chaos.py
+# aegis/tests/tools/test_chaos_primitive.py
 """
 Property-based tests for the chaos tools using Hypothesis.
 """

@@ -1,4 +1,4 @@
-# aegis/tests/tools/primitives/test_primitive_system.py
+# aegis/tests/tools/primitives/test_system_primitive.py
 """
 Unit tests for the local system primitive tools.
 """

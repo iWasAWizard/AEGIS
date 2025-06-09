@@ -1,4 +1,4 @@
-# aegis/tests/tools/primitives/test_develop_primitives.py
+# aegis/tests/tools/primitives/test_develop_primitive.py
 """
 Unit tests for the development and testing primitive tools.
 """

@@ -4,7 +4,7 @@ A utility for automatically building and updating the agent's memory index.
 
 This module is called at the end of a task to process the latest logs and
 update the shared FAISS vector index, making the agent's new experiences
-immediately available for future tasks.
+immediately available for future tasks via Retrieval-Augmented Generation (RAG).
 """
 import json
 from pathlib import Path
@@ -12,6 +12,7 @@ from pathlib import Path
 from aegis.utils.logger import setup_logger
 
 # Attempt to import vector search libraries, but don't fail if they're not installed.
+# The tool that uses this index will handle the case where they are missing.
 try:
     import faiss
     import numpy as np
@@ -20,7 +21,6 @@ try:
     VECTOR_SEARCH_ENABLED = True
 except ImportError:
     VECTOR_SEARCH_ENABLED = False
-
 
 # --- Configuration ---
 LOGS_DIR = Path("logs")
@@ -35,11 +35,19 @@ logger = setup_logger(__name__)
 def update_memory_index():
     """
     Scans all logs, generates embeddings, and rebuilds the agent's memory index.
-    This function is designed to be called automatically after a task completes.
+
+    This function is designed to be called automatically after a task completes. It
+    performs the following steps:
+    1. Scans the `logs/` directory for all `.jsonl` files.
+    2. Parses each file, extracting structured log entries that have an `event_type`.
+    3. Formats these entries into text chunks.
+    4. Uses a SentenceTransformer model to convert these chunks into vector embeddings.
+    5. Builds a FAISS index from the embeddings for fast semantic search.
+    6. Saves the FAISS index and a mapping file (from index ID to original text chunk).
     """
     if not VECTOR_SEARCH_ENABLED:
         logger.warning(
-            "Vector search libraries not found. Skipping memory index update."
+            "Vector search libraries (faiss-cpu, sentence-transformers) not found. Skipping memory index update."
         )
         return
 
@@ -58,6 +66,7 @@ def update_memory_index():
             for line in f:
                 try:
                     entry = json.loads(line)
+                    # We only index structured events that provide meaningful context
                     if "event_type" in entry:
                         chunk_text = (
                             f"Task: {log_file.stem} | "
@@ -66,6 +75,7 @@ def update_memory_index():
                         )
                         chunks.append(chunk_text)
                 except (json.JSONDecodeError, KeyError):
+                    # Ignore malformed lines or logs without an event_type
                     continue
 
     if not chunks:
@@ -83,10 +93,10 @@ def update_memory_index():
 
         # 3. Build and save the FAISS index
         index = faiss.IndexFlatL2(embedding_dim)
-        index.add(np.array(embeddings).astype("float32"))
+        index.add(embeddings.astype(np.float32))
         faiss.write_index(index, str(INDEX_PATH))
 
-        # 4. Save the mapping file
+        # 4. Save the mapping file (from vector index to text chunk)
         with MAPPING_PATH.open("w", encoding="utf-8") as f:
             json.dump(chunks, f)
 

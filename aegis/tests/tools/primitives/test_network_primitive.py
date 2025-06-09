@@ -1,4 +1,4 @@
-# aegis/tests/tools/primitives/test_primitive_network.py
+# aegis/tests/tools/primitives/test_network_primitive.py
 """
 Unit tests for the network primitive tools.
 """

@@ -14,7 +14,7 @@ ollama serve &
 sleep 2
 
 # Load the specified model
-MODEL_NAME="${OLLAMA_MODEL:-hf.co/unsloth/granite-3.3-8b-instruct-GGUF:Q4_K_M}"
+MODEL_NAME="${OLLAMA_MODEL:-mistral:7b-instruct-v0.2-q4_K_M}"
 echo "[OLLAMA] Loading model: ${MODEL_NAME}"
 ollama run "${MODEL_NAME}"
 

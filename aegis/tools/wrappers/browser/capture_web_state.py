@@ -25,7 +25,13 @@ SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class CaptureWebStateInput(BaseModel):
-    """Input model for capturing the state of a webpage."""
+    """Input model for capturing the state of a webpage.
+
+    :ivar url: The full URL of the webpage to capture.
+    :vartype url: str
+    :ivar wait_seconds: Seconds to wait for the page to load before capturing.
+    :vartype wait_seconds: int
+    """
 
     url: str = Field(..., description="The full URL of the webpage to capture.")
     wait_seconds: int = Field(
@@ -45,6 +51,12 @@ class CaptureWebStateInput(BaseModel):
 def capture_web_state(input_data: CaptureWebStateInput) -> str:
     """Uses a headless Firefox browser to navigate to a URL and capture its state.
 
+    This tool initializes a Selenium WebDriver, navigates to the specified URL,
+    waits for the page to load, and then extracts the title, current URL, visible
+    text, and full HTML source. It also saves a PNG screenshot to a configured
+    directory, returning a summary of the captured data along with the path
+    to the screenshot.
+
     :param input_data: An object containing the URL and wait time.
     :type input_data: CaptureWebStateInput
     :return: A formatted string summarizing the captured state and screenshot path.
@@ -52,7 +64,7 @@ def capture_web_state(input_data: CaptureWebStateInput) -> str:
     """
     logger.info(f"Capturing web state from: {input_data.url}")
     options = Options()
-    options.headless = True
+    options.add_argument("--headless")
 
     try:
         with webdriver.Firefox(options=options) as driver:

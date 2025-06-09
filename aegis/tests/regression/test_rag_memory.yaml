@@ -1,0 +1,13 @@
+# tests/regression/test_rag_memory.yaml
+task:
+  prompt: >
+    Here is your task:
+    1. Search your long-term memory to answer the following question: "What tool is used to confirm if a file exists on a remote machine?"
+    2. Your answer must be based on the output from the 'query_knowledge_base' tool.
+    3. The verification is successful if your observation from the tool contains the string 'check_remote_file_exists'.
+    4. If successful, finish the task with a status of 'success'.
+
+config: "verified_flow"
+
+execution:
+  iterations: 5

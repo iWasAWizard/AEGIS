@@ -3,33 +3,44 @@
 The core tool execution step for the agent.
 
 This module contains the `execute_tool` function, which is responsible for
-looking up a tool in the registry, validating its arguments, and running it.
-It then appends the full record of this step to the agent's history.
+looking up a tool in the registry, validating its arguments, running it, and
+recording the results in a structured history entry.
 """
 
 import asyncio
-from typing import Dict, Any, Coroutine, List, Tuple
+import time
+from typing import Dict, Any, Callable, Literal
 
-from aegis.agents.plan_output import AgentScratchpad
-from aegis.agents.task_state import TaskState
+from pydantic import ValidationError
+
+from aegis.agents.task_state import HistoryEntry, TaskState
+from aegis.exceptions import ToolExecutionError, ToolNotFoundError
 from aegis.registry import get_tool
 from aegis.utils.logger import setup_logger
+from schemas.plan_output import AgentScratchpad
 
 logger = setup_logger(__name__)
 
 
-async def _run_tool(tool_func: Coroutine, input_data: Any) -> Any:
-    """Helper to run the tool's function, which might be a coroutine."""
+async def _run_tool(tool_func: Callable, input_data: Any) -> Any:
+    """Helper to run the tool's function, which might be a coroutine.
+
+    :param tool_func: The tool's function to be executed.
+    :type tool_func: Callable
+    :param input_data: The validated Pydantic model instance for the tool.
+    :type input_data: Any
+    :return: The output from the tool execution.
+    :rtype: Any
+    """
     if asyncio.iscoroutinefunction(tool_func):
         return await tool_func(input_data)
     else:
-        # For regular functions, run them in a default executor to avoid blocking the event loop.
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, tool_func, input_data)
 
 
 async def execute_tool(state: TaskState) -> Dict[str, Any]:
-    """Looks up and executes the tool from the latest plan, then updates history.
+    """Looks up and executes a tool, then records a structured HistoryEntry.
 
     :param state: The current state of the agent's task.
     :type state: TaskState
@@ -37,78 +48,77 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
     :rtype: Dict[str, Any]
     """
     logger.info("🛠️ Step: Execute Tool")
+    start_time = time.time()
     plan = state.latest_plan
 
+    # This should ideally not be hit if the graph is well-formed, but is a safeguard.
     if not plan:
         error_msg = "[ERROR] Execution failed: No plan found in state."
-        logger.error(
-            error_msg, extra={"event_type": "InternalError", "reason": "Missing plan"}
-        )
-        # Create a dummy plan to record the failure in history
+        logger.error(error_msg, extra={"event_type": "InternalError", "reason": "Missing plan"})
         plan = AgentScratchpad(
             thought="No plan was provided to the executor.",
             tool_name="finish",
             tool_args={"reason": "Internal error: missing plan.", "status": "failure"},
         )
-        return {"history": state.history + [(plan, error_msg)]}
+        entry = HistoryEntry(plan=plan, observation=error_msg, status="failure", start_time=start_time,
+                             end_time=time.time())
+        return {"history": state.history + [entry]}
 
     tool_name = plan.tool_name
     tool_args = plan.tool_args
     tool_output: Any
+    status: Literal["success", "failure"] = "success"
 
-    # Structured log event for starting a tool
     logger.info(
         f"Executing tool: `{tool_name}`",
-        extra={
-            "event_type": "ToolStart",
-            "tool_name": tool_name,
-            "tool_args": tool_args,
-        },
+        extra={"event_type": "ToolStart", "tool_name": tool_name, "tool_args": tool_args},
     )
 
     if tool_name == "finish":
         tool_output = f"Task finished by agent with reason: {tool_args.get('reason', 'No reason given.')}"
     else:
-        tool_entry = get_tool(tool_name, safe_mode=state.runtime.safe_mode)
-        if not tool_entry:
-            tool_output = (
-                f"[ERROR] Tool `{tool_name}` not found or not permitted in safe mode."
+        try:
+            tool_entry = get_tool(tool_name, safe_mode=state.runtime.safe_mode)
+            input_model = tool_entry.input_model(**tool_args)
+            tool_output = await asyncio.wait_for(
+                _run_tool(tool_entry.run, input_model),
+                timeout=state.runtime.timeout,
             )
-            logger.error(
-                tool_output, extra={"event_type": "ToolError", "tool_name": tool_name}
-            )
-        else:
-            try:
-                input_model = tool_entry.input_model(**tool_args)
-                tool_output = await asyncio.wait_for(
-                    _run_tool(tool_entry.run, input_model),
-                    timeout=state.runtime.timeout,
-                )
-                # Structured log event for tool success
-                logger.info(
-                    f"Tool `{tool_name}` executed successfully.",
-                    extra={
-                        "event_type": "ToolEnd",
-                        "tool_name": tool_name,
-                        "status": "success",
-                        "output_preview": str(tool_output)[:200],
-                    },
-                )
-            except Exception as e:
-                tool_output = f"[ERROR] Tool `{tool_name}` failed during execution: {e}"
-                # Structured log event for tool failure
-                logger.exception(
-                    tool_output,
-                    extra={
-                        "event_type": "ToolEnd",
-                        "tool_name": tool_name,
-                        "status": "failure",
-                        "error_message": str(e),
-                    },
-                )
+        except ToolNotFoundError as e:
+            tool_output = f"[ERROR] Tool lookup failed: {e}"
+        except ValidationError as e:
+            tool_output = f"[ERROR] Input validation failed for tool '{tool_name}': {e}"
+        except asyncio.TimeoutError:
+            tool_output = f"[ERROR] Tool '{tool_name}' timed out after {state.runtime.timeout} seconds."
+        except Exception as e:
+            wrapped_error = ToolExecutionError(f"Tool '{tool_name}' failed during execution: {e}")
+            tool_output = f"[ERROR] {wrapped_error}"
 
-    # Append the completed step (plan + result) to the history
-    new_history: List[Tuple[AgentScratchpad, Any]] = state.history + [
-        (plan, tool_output)
-    ]
+    # Determine status and log accordingly
+    if isinstance(tool_output, str) and tool_output.startswith("[ERROR]"):
+        status = "failure"
+        logger.error(
+            f"Tool `{tool_name}` failed.",
+            extra={"event_type": "ToolEnd", "tool_name": tool_name, "status": "failure", "error_message": tool_output},
+        )
+    else:
+        logger.info(
+            f"Tool `{tool_name}` executed successfully.",
+            extra={"event_type": "ToolEnd", "tool_name": tool_name, "status": "success",
+                   "output_preview": str(tool_output)[:200]},
+        )
+
+    end_time = time.time()
+
+    # Create the structured history entry
+    history_entry = HistoryEntry(
+        plan=plan,
+        observation=tool_output,
+        status=status,
+        start_time=start_time,
+        end_time=end_time,
+        duration_ms=(end_time - start_time) * 1000,
+    )
+
+    new_history = state.history + [history_entry]
     return {"history": new_history}

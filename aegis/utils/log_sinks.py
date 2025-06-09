@@ -25,7 +25,13 @@ class TaskIdFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        """Adds the task_id to the log record."""
+        """Adds the task_id to the log record if it exists in the context.
+
+        :param record: The log record being processed.
+        :type record: logging.LogRecord
+        :return: Always returns True to allow the record to be processed.
+        :rtype: bool
+        """
         record.task_id = task_id_context.get()
         return True
 
@@ -34,10 +40,18 @@ class JsonlFileHandler(logging.Handler):
     """
     A logging handler that writes structured log events to a task-specific
     JSONL file.
+
+    This handler checks for a `task_id` on each log record. If one is present,
+    it writes a JSON object representing the log event to `logs/{task_id}.jsonl`.
+    This creates a machine-readable audit trail for every task run.
     """
 
     def __init__(self, logs_dir: str = "logs"):
-        """Initializes the handler."""
+        """Initializes the handler, creating the logs directory if needed.
+
+        :param logs_dir: The base directory where task log files will be stored.
+        :type logs_dir: str
+        """
         super().__init__()
         self.logs_dir = Path(logs_dir)
         self.logs_dir.mkdir(exist_ok=True)
@@ -45,11 +59,21 @@ class JsonlFileHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         """
-        Writes the log record to the appropriate JSONL file if it is a
-        structured event.
+        Formats the log record as JSON and writes it to the appropriate file.
+
+        If the log record has no `task_id`, this method does nothing. Otherwise,
+        it constructs a JSON object containing standard log fields and any
+        structured `extra` data, then appends it as a new line to the
+        corresponding task's log file.
+
+        :param record: The log record to process.
+        :type record: logging.LogRecord
         """
+        # Safely get the task_id attribute, defaulting to None if it doesn't exist.
+        task_id = getattr(record, "task_id", None)
+
         # We only want to write to the file if a task is active.
-        if not hasattr(record, "task_id") or not record.task_id:
+        if not task_id:
             return
 
         # The 'extra_data' attribute is where our structured data lives.
@@ -62,10 +86,11 @@ class JsonlFileHandler(logging.Handler):
         }
 
         # If the log call included structured data in 'extra_data', merge it in.
+        # The StructuredLoggerAdapter wraps this in 'extra_data'.
         if hasattr(record, "extra_data") and isinstance(record.extra_data, dict):
             log_entry.update(record.extra_data)
 
-        log_path = self.logs_dir / f"{record.task_id}.jsonl"
+        log_path = self.logs_dir / f"{task_id}.jsonl"
 
         try:
             with log_path.open("a", encoding="utf-8") as f:

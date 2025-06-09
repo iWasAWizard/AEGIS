@@ -1,78 +1,78 @@
+# aegis/web/routes_graphs.py
 """Routes for visualizing or exporting execution graphs, timelines, or state transitions."""
 
-import json
 import os
 
+import yaml
 from fastapi import APIRouter, HTTPException, UploadFile, File
 
 from aegis.utils.logger import setup_logger
 
-GRAPH_DIR = "graphs"
+GRAPH_DIR = "presets"  # Changed to presets to align with config loading
 router = APIRouter(prefix="/graphs", tags=["graphs"])
 logger = setup_logger(__name__)
 
 
 @router.get("/", summary="List saved AgentGraphConfig files")
 def list_graphs():
-    """
-    Return a list of available graph configuration files.
+    """Return a list of available graph configuration files from the presets directory.
 
-    :return: List of graph filenames
+    :return: List of graph filenames.
     :rtype: list[str]
     """
-    logger.info("Listing graph configs")
+    logger.info("Listing available graph configuration files.")
     if not os.path.exists(GRAPH_DIR):
         return []
-    return sorted(f for f in os.listdir(GRAPH_DIR) if f.endswith(".json"))
+    return sorted(f for f in os.listdir(GRAPH_DIR) if f.endswith((".yaml", ".yml")))
 
 
-@router.post("/upload", summary="Upload an AgentGraphConfig JSON file")
+@router.post("/upload", summary="Upload an AgentGraphConfig YAML file")
 def upload_graph(file: UploadFile = File(...)):
-    """
-    Accept a JSON upload and save it to the graphs directory.
+    """Accept a YAML upload and save it to the presets directory.
 
-    :param file: File to upload
+    :param file: The file to upload.
     :type file: UploadFile
-    :return: Result status
+    :return: A dictionary with the result status and filename.
     :rtype: dict
-    :raises HTTPException: if the file is invalid
+    :raises HTTPException: If the file is invalid or cannot be saved.
     """
-    logger.info(f"Uploading graph: {file.filename}")
+    logger.info(f"Attempting to upload graph file: {file.filename}")
     if not os.path.exists(GRAPH_DIR):
         os.makedirs(GRAPH_DIR)
 
     file_path = os.path.join(GRAPH_DIR, file.filename)
     try:
         content = file.file.read()
-        json.loads(content)  # validate JSON
+        # Basic validation to ensure it's valid YAML
+        yaml.safe_load(content)
         with open(file_path, "wb") as f:
             f.write(content)
-        logger.info(f"Graph saved: {file_path}")
+        logger.info(f"Graph file saved successfully to: {file_path}")
     except Exception as e:
-        logger.exception(f"[routes_graphs] Error: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid file: {e}")
+        logger.exception(f"Error saving uploaded graph file '{file.filename}': {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid file or save error: {e}")
 
     return {"status": "ok", "filename": file.filename}
 
 
 @router.get("/view", summary="Retrieve contents of a saved AgentGraphConfig")
 def view_graph(name: str):
-    """
-    Load a saved graph file from disk and return its JSON content.
+    """Load a saved graph file from presets and return its JSON-compatible content.
 
-    :param name: Filename to retrieve
+    :param name: Filename of the graph to retrieve (e.g., 'default.yaml').
     :type name: str
-    :return: Parsed graph config
+    :return: The parsed dictionary content of the graph config.
     :rtype: dict
-    :raises HTTPException: if the file cannot be loaded
+    :raises HTTPException: If the file cannot be found or loaded.
     """
-    logger.info(f"Viewing graph: {name}")
+    logger.info(f"Request to view graph: {name}")
     path = os.path.join(GRAPH_DIR, name)
     if not os.path.exists(path):
+        logger.warning(f"Graph file not found at path: {path}")
         raise HTTPException(status_code=404, detail="Graph not found")
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            return yaml.safe_load(f)
     except Exception as e:
-        logger.exception(f"[ERROR] Failed to read graph: {name}")
-        raise HTTPException(status_code=500, detail=f"{e}")
+        logger.exception(f"Failed to read or parse graph file '{name}': {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading graph file: {e}")

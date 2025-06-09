@@ -1,239 +1,214 @@
-# 🧠 AEGIS: Autonomous LangGraph Task Agent + Modular Execution Framework
+# 🛡️ AEGIS: Autonomous Agentic Framework
 
-![Docker](https://img.shields.io/badge/containerized-Docker-blue)
-![Python](https://img.shields.io/badge/python-3.10+-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker](https://img.shields.io/badge/containerized-Docker-blue)](https://www.docker.com/)
+[![Built with LangGraph](https://img.shields.io/badge/built%20with-LangGraph-orange)](https://github.com/langchain-ai/langgraph)
 
+**AEGIS** is a modular, offline-capable, and "air-gapped friendly" autonomous agent framework built on Python and
+LangGraph. It leverages local LLMs via Ollama to plan and execute complex, multi-step tasks. Designed as a **Test
+Engineer's Swiss Army Knife**, AEGIS acts as a reliable proxy, translating high-level human intent into safe,
+repeatable, and auditable technical operations.
 
-AEGIS is a fully modular, airgap-safe, LangGraph-powered autonomous agent that uses a local LLM (via Ollama) to plan, execute, and evaluate complex tasks across multiple VMs. It combines graph-based agent execution with a robust modular tooling system, safe-mode enforcement, structured logging, and a fully containerized API.
+The core philosophy is to provide an **idiot-friendly surface** for simple tasks while exposing a **powerful,
+configurable engine** for experts.
 
 ---
 
-## 🚀 Features
+## ✨ Core Features
 
-- ✅ Autonomous multi-step task planning via LangGraph
-- 🧠 Local LLM backend via Ollama (GGUF or EXL2)
-- 🖥️ QEMU & VMware VM support (power, snapshot, guest execution)
-- 📄 Test procedure CSVs + Markdown reports + full JSON logs
-- 🔁 Execution timeline chart per run
-- 🧪 Test Coverage Mode: actual vs expected validation
-- 🌐 Web dashboard with task launcher, live logs, and queue support
-- 📂 Machine manifest (`machines.yaml`) defines all known virtual hosts
-- 🔧 Modular tool system with registry enforcement, Pydantic schemas, safety validation
-- 🧱 CLI and HTTP API interfaces
-- 🛡️ Safe mode, timeout, retry, category tagging, and structured runtime reports
+* **🧠 Autonomous Planning:** Uses a local LLM to reason about problems, form multi-step plans, and select the
+  appropriate tools for the job.
+* **🔧 Rich, Modular Toolset:** A comprehensive library of tools for system administration, network
+  diagnostics (`nmap`, `scapy`), security testing (`pwntools`), file operations, web automation (`selenium`), and even
+  fuzzing.
+* **🔒 Built for Safety & Auditing:**
+    * **Structured Provenance:** Every task generates a machine-readable `provenance.json` "flight recording" of every
+      thought, action, and observation for full traceability.
+    * **Safe Mode:** Restricts the agent to only use tools that cannot perform destructive or state-changing actions.
+    * **Centralized Executors:** Standardized and reliable execution logic for remote (SSH) and local commands.
+* **⚙️ Graph-Based Workflows:** Agent behaviors are defined as graphs using simple YAML presets. This allows for
+  creating complex, conditional logic (e.g., "try this, if it fails, do that") without changing Python code.
+* **📦 Air-Gapped & Self-Contained:** Designed to run entirely within a Docker environment with no external internet
+  dependencies post-setup. All models and dependencies are local.
+* **🔌 Dual Interfaces:** Interact via a clean **React-based web UI** or a powerful **Typer-based command-line
+  interface (CLI)**.
+
+---
+
+## 🌟 Advanced Capabilities
+
+Beyond basic tool execution, AEGIS incorporates several advanced systems for enhanced intelligence and usability:
+
+* **✍️ RAG-Powered Memory:** The agent automatically indexes the logs of every completed task. It can then query this
+  memory using the `query_knowledge_base` tool to learn from past successes and failures, improving its problem-solving
+  ability over time.
+* **✅ Execute-and-Verify Flow:** AEGIS supports advanced workflows (e.g., `verified_flow.yaml`) where the agent not only
+  *executes* an action but also runs a follow-up *verification* step. If verification fails, it enters a remediation
+  loop to correct the problem autonomously.
+* **🧩 Plugin SDK:** The framework features a complete SDK for creating and managing custom tools. A `plugins/` directory
+  allows for drop-in tool loading, and the CLI provides `new-tool` and `validate-tool` commands to streamline
+  development.
+* **🗺️ Graph Visualization:** The web UI includes a "Graph" tab that visually renders any agent preset, showing the
+  nodes, edges, and conditional logic. This makes complex agent behaviors transparent and easy to debug.
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-User/HTTP/CLI
-     ↓
-Preset YAML (Graph + Task Prompt)
-     ↓
-Agent Runner (LangGraph-based FSM)
-     ↓
- Tool Registry —> Validated Tool Call
-     ↓
- Tool (Primitive/Wrapper)
-     ↓
-System/VM/LLM/Shell/Filesystem/Browser
++---------------------------------+
+|          User Interface         |
+|      (FastAPI Web UI / CLI)     |
++---------------------------------+
+               |
+               v
++---------------------------------+
+|      AEGIS Launch Endpoint      |
+| (Parses Request & Loads Config) |
++---------------------------------+
+               |
+               v
++---------------------------------+      +--------------------------------+
+|       Agent Execution Graph     |----->|     Agent State (TaskState)    |
+| (LangGraph: Plan -> Execute ->) |      | (Prompt, Config, History, etc) |
++---------------------------------+      +--------------------------------+
+               |                                        ^
+               v                                        |
++---------------------------------+      +--------------------------------+
+|        Tool Execution Step      |----->|         Tool Registry          |
+|  (Resolves & Validates Tools)   |      |   (Provides Tool Functions)    |
++---------------------------------+      +--------------------------------+
+               |
+               v
++---------------------------------+
+|         Execution Layer         |
+| (SSH, Local Shell, Browser, etc)|
++---------------------------------+
 ```
+
+1. **User Interface:** The user submits a high-level task through the Web UI or the CLI.
+2. **Launch Endpoint:** The request is received, a configuration preset (e.g., `default.yaml`) is loaded, and the
+   initial `TaskState` is created.
+3. **Agent Execution Graph:** The state is passed to a `LangGraph` instance, which controls the agent's main loop (
+   e.g., `Plan -> Execute -> Verify -> Loop`).
+4. **Tool Execution:** When the agent decides to use a tool, it calls the `Tool Registry`, which provides the validated
+   tool function and its input schema.
+5. **Execution Layer:** The tool's logic is executed through a standardized primitive, such as the `SSHExecutor` or a
+   local `subprocess` call.
+6. **State Update:** The result of the tool's execution is recorded in the `TaskState` history, and the loop continues
+   until a termination condition is met.
 
 ---
 
-## 📦 Quick Start
+## 🚀 Quick Start with Docker (Recommended)
 
-### Option 1: Run Manually (Ollama must be running)
+This is the easiest and most reliable way to get AEGIS running with all its dependencies.
 
-```bash
-OLLAMA_HOST=http://localhost:11434 python aegis/run_agent_web.py --task "check disk usage"
-```
+### Prerequisites
 
-### Option 2: Use Docker Compose (Recommended)
+* Docker and Docker Compose installed.
+* An Ollama-compatible GGUF model pulled locally. Llama 3 8B Instruct is highly recommended.
+  ```bash
+  ollama pull llama3
+  ```
 
-```bash
-docker compose up --build
-```
+### Steps
 
-This will:
+1. **Clone the Repository:**
+   ```bash
+   git clone https://your-repo-url/aegis.git
+   cd aegis
+   ```
 
-- Start the Ollama daemon (ollama/ollama container)
-- Build and run the autonomous agent
-- Launch the web dashboard at http://localhost:8000
+2. **Configure Environment:**
+   Copy the example environment file. This file stores your model configuration and secrets.
+   ```bash
+   cp .env.example .env
+   ```
+   Open the newly created `.env` file and ensure `OLLAMA_MODEL` is set to the model you have downloaded (
+   e.g., `OLLAMA_MODEL=llama3`). You can also configure the passwords for the target machines defined
+   in `machines.yaml`.
+
+3. **Build and Run:**
+   From the project root, launch the Docker Compose stack.
+   ```bash
+   docker-compose up --build
+   ```
+   This command will:
+    * Build the AEGIS Docker image, installing all Python and system dependencies (`nmap`, `scrot`, etc.).
+    * Start the Ollama container and ensure your specified model is available.
+    * Start the AEGIS container, which runs the FastAPI server.
+
+4. **Access the UI:**
+   Open your web browser and navigate to **`http://localhost:8000`**. You should see the AEGIS web dashboard.
 
 ---
 
-## 🧳 Example Tasks
+## 💻 Command-Line Usage
 
-```bash
-python aegis/run_agent_web.py --task "check memory usage"
-```
+The CLI is perfect for scripted automation and quick, targeted tasks.
 
-Or define a queue:
+### 1. Run a Task from a YAML File
+
+This is the most powerful way to use the CLI. Create a task file, for example `my-task.yaml`:
 
 ```yaml
-# tasks.yaml
-- task: "check disk usage on all Linux VMs"
-  safe_mode: true
+# my-task.yaml
+task:
+  prompt: "Scan localhost for open ports 80, 443, and 8000. Use a TCP Connect scan. Verify the result by checking if the output contains '8000/tcp open', then finish with a status of success."
+# Use the advanced verification and remediation graph
+config: "verified_flow"
+execution:
+  iterations: 5 # Set a max of 5 steps for this task
 ```
 
-Then run:
+Then, run it with the `run-task` command:
 
 ```bash
-python aegis/run_agent_web.py --queue tasks.yaml
+python -m aegis.cli run-task my-task.yaml
 ```
 
----
+### 2. List Available Tools
 
-## 📁 Project Layout
-
-```
-aegis/
-├── agents/                  # Agent logic and LangGraph config
-├── tools/                   # Primitives, wrappers, integrations
-├── utils/                   # Helpers, timeline, reporting
-├── run_agent_web.py         # Agent runner entry point
-├── serve_dashboard.py       # FastAPI HTTP interface
-├── presets.yaml             # Default LangGraph workflows
-├── machines.yaml            # VM manifest file
-├── registry.py              # Tool validation & runtime enforcement
-docker-compose.yml           # Containerized entrypoint
-```
-
----
-
-## 🧰 Machine Manifest Format
-
-```yaml
-machines:
-  ubuntu-lab:
-    platform: qemu
-    shell: bash
-    vm_name: ubuntu-lab
-    control_tool: qemu_guest_exec
-    credentials:
-      guest_user: root
-      guest_password: hunter2
-
-  windows-sandbox:
-    platform: vmware
-    shell: powershell
-    vm_name: WIN10-SEC-LAB
-    control_tool: vmware_guest_exec
-    vcenter:
-      host: vcenter.local
-      user: agent
-      password: vmwareagent123
-    credentials:
-      guest_user: Administrator
-      guest_password: P@ssword!
-```
-
----
-
-## 🧠 Tool Model
-
-AEGIS supports both:
-- **Primitive tools**: atomic filesystem/network/shell/VM operations
-- **Wrapper tools**: composition, orchestration, or external integrations
-
-Each tool must be registered with:
-- `name`
-- `description`
-- `input_model` (Pydantic)
-- `tags`, `categories`
-- `safe_mode`, `retry`, `timeout`
-
-Tools are loaded automatically at runtime and validated via the `registry.py`.
-
----
-
-## 🧪 Reports
-
-Every run produces:
-
-- `report.md`: human-readable summary
-- `record.json`: full machine-readable trace
-- `procedure.csv`: structured test steps
-- `timeline.png`: execution bar chart
-
----
-
-## 🧩 API Endpoints
-
-- `POST /launch`: Launch a task with a preset and task prompt
-- `GET /health`: Confirm server readiness
-- `GET /status`: (coming soon) Query current task state
-
----
-
-## 🛡️ Safe Mode & Validation
-
-- All tools run in `safe_mode` unless explicitly marked otherwise
-- Tools with system/shell/LLM-level control are gated or sandboxed
-- Graphs are validated for integrity before runtime
-- Execution context is logged and checkpointed
-
----
-
-## 💡 Extend the System
-
-- Add tools under `tools/`
-- Define presets via `presets.yaml`
-- Extend machine definitions via `machines.yaml`
-- Add queue entries via `tasks.yaml`
-- Enable fuzzing, browser interaction, or VM coordination using wrappers
-
----
-
-## 📄 RVTM & Test Coverage
-
-This project includes a full Requirements Verification Traceability Matrix (RVTM) for auditing and test coverage purposes. See `/docs/` or `/rvtm/` for details.
-
----
-
-
----
-
-## 🧪 Development Commands
+To see all the tools the agent can use, run:
 
 ```bash
-# Run tests
-pytest
+python -m aegis.cli list-tools
+```
 
-# Lint with Ruff
-ruff check aegis/
+### 3. Create and Validate a New Tool
 
-# Format with Black
-black aegis/
+Use the built-in scaffolder and validator to extend the agent's capabilities:
+
+```bash
+# Interactively create a new tool boilerplate in the plugins/ directory
+python -m aegis.cli new-tool
+
+# Validate your new tool file for syntax and metadata errors
+python -m aegis.cli validate-tool plugins/my_new_tool.py
 ```
 
 ---
 
-## 🧰 Tool Template (Primitive)
+## 🔧 Extending AEGIS
 
-```python
-from pydantic import BaseModel
-from aegis.registry import register_tool
+AEGIS is built to be extended.
 
-class EchoInput(BaseModel):
-    message: str
+### Adding a New Tool
 
-@register_tool(name="echo_message", input_model=EchoInput, tags=["debug"], safe_mode=True)
-def run(input: EchoInput) -> str:
-    return input.message
-```
+1. Use the `new-tool` CLI command to generate a complete boilerplate file in the `plugins/` directory.
+   ```bash
+   python -m aegis.cli new-tool
+   ```
+2. Open the newly generated file (e.g., `plugins/my_new_tool.py`) and implement your logic in the function body. The
+   Pydantic input model and decorator are already set up for you.
+3. Restart the AEGIS application. The tool loader will automatically discover and register your new tool.
 
-Place this in `tools/primitives/echo.py` and it will be automatically registered.
+### Creating a New Agent Behavior (Graph)
 
----
-
-## 📋 Requirements Traceability
-
-A full RVTM (Requirements Verification Traceability Matrix) is available to verify system correctness and test coverage.
-
-📄 [View the RVTM →](docs/AEGIS_RVTM.md)
-
----
+1. Create a new YAML file in the `presets/` directory (e.g., `my-behavior.yaml`).
+2. Define the `state_type`, `entrypoint`, `nodes`, and `edges` for your new graph. You can use `default.yaml`
+   and `verified_flow.yaml` as templates.
+3. You can now launch tasks using this new behavior by specifying its name in an API call or task
+   file (`config: "my-behavior"`).

@@ -8,42 +8,33 @@ on the state of the remote system.
 """
 
 import shlex
-from typing import Tuple, Optional
 
 from pydantic import BaseModel, Field
 
 from aegis.executors.ssh import SSHExecutor
 from aegis.registry import register_tool
+from aegis.schemas.common_inputs import MachineTargetInput
 from aegis.tools.primitives.primitive_system import (
     run_local_command,
     RunLocalCommandInput,
 )
 from aegis.utils.logger import setup_logger
+from aegis.utils.machine_loader import get_machine
 
 logger = setup_logger(__name__)
 
 
-def _get_user_host(host_str: str) -> Tuple[str, str]:
-    """Helper to split 'user@host' strings.
+class RunScriptIfAbsentInput(MachineTargetInput):
+    """Input model for conditionally running a remote script.
 
-    :param host_str: The input string, e.g., "user@example.com".
-    :type host_str: str
-    :raises ValueError: If the string is not in the expected format.
-    :return: A tuple containing the user and host.
-    :rtype: Tuple[str, str]
+    :ivar check_path: Remote file to check existence for.
+    :vartype check_path: str
+    :ivar local_script_path: Path to the script to upload and execute.
+    :vartype local_script_path: str
+    :ivar remote_script_path: Path to place script on remote system.
+    :vartype remote_script_path: str
     """
-    if "@" not in host_str:
-        raise ValueError(
-            f"Host string '{host_str}' must be in 'user@host' format for this tool."
-        )
-    user, host = host_str.split("@", 1)
-    return user, host
 
-
-class RunScriptIfAbsentInput(BaseModel):
-    """Input model for conditionally running a remote script."""
-
-    host: str = Field(description="Remote host (e.g., 'user@host.com').")
     check_path: str = Field(description="Remote file to check existence for.")
     local_script_path: str = Field(
         description="Path to the script to upload and execute."
@@ -51,52 +42,57 @@ class RunScriptIfAbsentInput(BaseModel):
     remote_script_path: str = Field(
         description="Path to place script on remote system."
     )
-    ssh_key_path: str | None = Field(None, description="SSH key for authentication.")
 
 
 class SafeShellInput(BaseModel):
-    """Input model for the safe local shell execution tool."""
+    """Input model for the safe local shell execution tool.
+
+    :ivar command: Shell command to execute locally.
+    :vartype command: str
+    """
 
     command: str = Field(description="Shell command to execute locally.")
 
 
-class RunRemoteBackgroundCommandInput(BaseModel):
-    """Input model for running a command in the background on a remote host."""
+class RunRemoteBackgroundCommandInput(MachineTargetInput):
+    """Input model for running a command in the background on a remote host.
 
-    host: str = Field(description="Remote host to connect to (e.g., 'user@host.com').")
+    :ivar command: Shell command to run in the background.
+    :vartype command: str
+    """
+
     command: str = Field(description="Shell command to run in the background.")
-    ssh_key_path: str | None = Field(None, description="SSH private key.")
 
 
-class RunRemotePythonSnippetInput(BaseModel):
-    """Input model for running a Python snippet on a remote host."""
+class RunRemotePythonSnippetInput(MachineTargetInput):
+    """Input model for running a Python snippet on a remote host.
 
-    host: str = Field(description="Remote host to connect to (e.g., 'user@host.com').")
+    :ivar code: Python code to run remotely using 'python3 -c'.
+    :vartype code: str
+    """
+
     code: str = Field(description="Python code to run remotely using 'python3 -c'.")
-    ssh_key_path: str | None = Field(
-        None, description="Optional path to SSH private key."
-    )
 
 
 @register_tool(
     name="run_remote_background_command",
     input_model=RunRemoteBackgroundCommandInput,
-    tags=["system", "remote", "ssh", "background"],
+    tags=["system", "remote", "ssh", "background", "wrapper"],
     description="Run a background command remotely using nohup.",
-    safe_mode=True,
+    safe_mode=True,  # The command is contained on the remote host
     purpose="Launch persistent background processes on remote machines.",
     category="system",
 )
 def run_remote_background_command(input_data: RunRemoteBackgroundCommandInput) -> str:
     """Runs a command in the background on a remote host using nohup.
 
-    :param input_data: An object containing the host and command to run.
+    :param input_data: An object containing machine name and the command.
     :type input_data: RunRemoteBackgroundCommandInput
-    :return: The output from launching the background process.
+    :return: The output from the SSH command.
     :rtype: str
     """
-    user, host = _get_user_host(input_data.host)
-    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
     # The `&` ensures it runs in the background. nohup prevents it from being killed on session exit.
     wrapped_command = f"nohup {input_data.command} > /dev/null 2>&1 &"
     return executor.run(wrapped_command)
@@ -105,22 +101,22 @@ def run_remote_background_command(input_data: RunRemoteBackgroundCommandInput) -
 @register_tool(
     name="run_remote_python_snippet",
     input_model=RunRemotePythonSnippetInput,
-    tags=["system", "remote", "ssh", "python"],
+    tags=["system", "remote", "ssh", "python", "wrapper"],
     description="Run a short Python snippet remotely using 'python3 -c'.",
-    safe_mode=False,
+    safe_mode=False,  # Allows arbitrary code execution on a remote machine
     purpose="Quick remote introspection or scripting using Python.",
     category="system",
 )
 def run_remote_python_snippet(input_data: RunRemotePythonSnippetInput) -> str:
     """Executes a Python code snippet on a remote host.
 
-    :param input_data: An object containing the host and Python code.
+    :param input_data: An object containing the machine name and Python code.
     :type input_data: RunRemotePythonSnippetInput
-    :return: The output of the executed Python snippet.
+    :return: The output from the remote Python execution.
     :rtype: str
     """
-    user, host = _get_user_host(input_data.host)
-    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
     remote_command = f"python3 -c {shlex.quote(input_data.code)}"
     return executor.run(remote_command)
 
@@ -128,7 +124,7 @@ def run_remote_python_snippet(input_data: RunRemotePythonSnippetInput) -> str:
 @register_tool(
     name="run_script_if_absent",
     input_model=RunScriptIfAbsentInput,
-    tags=["ssh", "conditional", "script", "midlevel"],
+    tags=["ssh", "conditional", "script", "wrapper"],
     description="Upload and run a script only if a given file is absent.",
     safe_mode=True,
     purpose="Conditionally execute a script if a given file is missing",
@@ -137,13 +133,16 @@ def run_remote_python_snippet(input_data: RunRemotePythonSnippetInput) -> str:
 def run_script_if_absent(input_data: RunScriptIfAbsentInput) -> str:
     """Checks for a file's existence and runs a script if it's missing.
 
-    :param input_data: An object containing paths and host info.
+    This tool is useful for idempotent setup operations, ensuring that an
+    installation or configuration script is only run once.
+
+    :param input_data: An object containing paths for checking, uploading, and execution.
     :type input_data: RunScriptIfAbsentInput
-    :return: A status message or the output of the script.
+    :return: An informational message or the output of the script execution.
     :rtype: str
     """
-    user, host = _get_user_host(input_data.host)
-    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
 
     if executor.check_file_exists(input_data.check_path):
         return f"[INFO] File {input_data.check_path} already exists. Skipping script."
@@ -162,21 +161,26 @@ def run_script_if_absent(input_data: RunScriptIfAbsentInput) -> str:
     input_model=SafeShellInput,
     tags=["shell", "wrapper", "local", "safe"],
     description="Run a local shell command after validating it for safety.",
-    safe_mode=True,
+    safe_mode=True,  # The safety check makes this tool safe by default.
     purpose="Safely run local shell commands with basic validation.",
     category="system",
 )
 def safe_shell_execute(input_data: SafeShellInput) -> str:
     """A wrapper to run local commands with a basic safety check.
 
-    :param input_data: An object containing the command to run.
+    This tool maintains a blocklist of dangerous commands (`rm -rf`, `shutdown`, etc.)
+    and will refuse to execute them, providing a guardrail against accidental or
+    malicious plans from the LLM.
+
+    :param input_data: An object containing the command to execute.
     :type input_data: SafeShellInput
-    :return: The output of the command or a blocking message.
+    :return: The result of the command or a '[BLOCKED]' message.
     :rtype: str
     """
     dangerous = ["rm -rf", "shutdown", "halt", "reboot", ":(){", "mkfs", "dd "]
     lowered = input_data.command.lower()
     if any(term in lowered for term in dangerous):
+        logger.warning(f"Blocking potentially dangerous command: '{input_data.command}'")
         return "[BLOCKED] Command contains potentially dangerous operations."
     logger.info(f"Executing safe local shell command: {input_data.command}")
     return run_local_command(

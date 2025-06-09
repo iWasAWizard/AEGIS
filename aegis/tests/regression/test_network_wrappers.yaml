@@ -1,0 +1,12 @@
+# tests/regression/test_network_wrappers.yaml
+task:
+  prompt: >
+    Here is your task:
+    1. Use the 'nmap_port_scan' tool to scan 'localhost' for open TCP ports. The specific port to scan is 8000. Use the '-sT' scan flag.
+    2. For verification, check that the output string from the nmap scan contains '8000/tcp open'.
+    3. If the verification is successful, use the 'finish' tool with a status of 'success'.
+
+config: "verified_flow"
+
+execution:
+  iterations: 5

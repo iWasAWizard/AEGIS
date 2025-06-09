@@ -1,2 +1,0 @@
-- name: "Fetch System Info"
-  prompt: "Get OS version and hostname from the target"

@@ -8,38 +8,3 @@ paths:
   screenshots: "reports/screenshots"
   artifacts: "artifacts"
   logs: "logs"
-
-# A list of allowed tags for tool categorization.
-# If `enforce_known_tags` is true in the registry, only these tags will be allowed.
-known_tags:
-  - system
-  - process
-  - memory
-  - disk
-  - monitoring
-  - network
-  - http
-  - api
-  - ssh
-  - scp
-  - wol
-  - nmap
-  - file_ops
-  - primitive
-  - wrapper
-  - llm
-  - openai
-  - ollama
-  - browser
-  - selenium
-  - diff
-  - snapshot
-  - automation
-  - fuzz
-  - random
-  - chaos
-  - test
-  - dev
-  - auth
-  - integration
-  - diagnostic

@@ -1,7 +1,4 @@
 state_type: aegis.agents.task_state.TaskState
-safe_mode: false
-timeout: 5
-retries: 0
 entrypoint: "reflect"
 edges:
   - ["reflect", "route"]

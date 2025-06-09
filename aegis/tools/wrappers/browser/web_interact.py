@@ -24,12 +24,35 @@ logger = setup_logger(__name__)
 
 
 class WebInteractionInput(BaseModel):
-    """Input model for interacting with a webpage."""
-    action: Literal["navigate", "click", "type", "select", "wait"] = Field(..., description="The action to perform.")
-    url: Optional[str] = Field(None, description="URL to navigate to (required for 'navigate' action).")
-    selector: Optional[str] = Field(None, description="CSS selector for the target element.")
-    value: Optional[str] = Field(None, description="Text to type or the value of the option to select.")
-    wait_timeout: int = Field(10, description="Time in seconds to wait for elements to appear.")
+    """Input model for interacting with a webpage.
+
+    :ivar action: The action to perform: "navigate", "click", "type", "select", or "wait".
+    :vartype action: Literal["navigate", "click", "type", "select", "wait"]
+    :ivar url: URL to navigate to (required for 'navigate' action).
+    :vartype url: Optional[str]
+    :ivar selector: CSS selector for the target element.
+    :vartype selector: Optional[str]
+    :ivar value: Text to type or the value of the option to select.
+    :vartype value: Optional[str]
+    :ivar wait_timeout: Time in seconds to wait for elements to appear.
+    :vartype wait_timeout: int
+    """
+
+    action: Literal["navigate", "click", "type", "select", "wait"] = Field(
+        ..., description="The action to perform."
+    )
+    url: Optional[str] = Field(
+        None, description="URL to navigate to (required for 'navigate' action)."
+    )
+    selector: Optional[str] = Field(
+        None, description="CSS selector for the target element."
+    )
+    value: Optional[str] = Field(
+        None, description="Text to type or the value of the option to select."
+    )
+    wait_timeout: int = Field(
+        10, description="Time in seconds to wait for elements to appear."
+    )
 
 
 @register_tool(
@@ -43,60 +66,75 @@ class WebInteractionInput(BaseModel):
 def web_interact(input_data: WebInteractionInput) -> str:
     """Performs a single interaction on a webpage using a headless Firefox browser.
 
+    This tool acts as a versatile interface for web automation. It can perform
+    one of several actions in a single call, such as navigating to a page,
+    clicking a button, or typing into a form field. It uses explicit waits
+    to ensure elements are present before interacting with them, making it more
+    resilient to variations in page load times.
+
     :param input_data: An object containing the action and its parameters.
     :type input_data: WebInteractionInput
     :return: A string indicating the outcome of the action.
     :rtype: str
     """
-    logger.info(f"Performing web action: {input_data.action} on selector: {input_data.selector or input_data.url}")
+    logger.info(
+        f"Performing web action: '{input_data.action}' on selector: '{input_data.selector or input_data.url}'"
+    )
     options = Options()
-    options.headless = True
+    options.add_argument("--headless")
 
+    driver = None
     try:
-        with webdriver.Firefox(options=options) as driver:
-            driver.set_page_load_timeout(input_data.wait_timeout)
+        driver = webdriver.Firefox(options=options)
+        driver.set_page_load_timeout(input_data.wait_timeout)
 
-            if input_data.action == "navigate":
-                if not input_data.url:
-                    return "[ERROR] URL must be provided for 'navigate' action."
-                driver.get(input_data.url)
-                return f"Successfully navigated to {input_data.url}"
+        if input_data.action == "navigate":
+            if not input_data.url:
+                return "[ERROR] URL must be provided for 'navigate' action."
+            driver.get(input_data.url)
+            return f"Successfully navigated to {input_data.url}"
 
-            # All other actions require a selector
-            if not input_data.selector:
-                return f"[ERROR] CSS selector must be provided for '{input_data.action}' action."
+        # All other actions require a selector
+        if not input_data.selector:
+            return f"[ERROR] CSS selector must be provided for '{input_data.action}' action."
 
-            # Explicitly wait for the element to be present before interacting.
-            wait = WebDriverWait(driver, input_data.wait_timeout)
-            element = wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, input_data.selector)))
+        # Explicitly wait for the element to be present before interacting.
+        wait = WebDriverWait(driver, input_data.wait_timeout)
+        element = wait.until(
+            ec.presence_of_element_located((By.CSS_SELECTOR, input_data.selector))
+        )
 
-            if input_data.action == "click":
-                element.click()
-                return f"Clicked element with selector: '{input_data.selector}'"
-            elif input_data.action == "type":
-                if input_data.value is None:
-                    return "[ERROR] A 'value' must be provided for 'type' action."
-                element.clear()
-                element.send_keys(input_data.value)
-                return f"Typed '{input_data.value}' into element: '{input_data.selector}'"
-            elif input_data.action == "select":
-                if input_data.value is None:
-                    return "[ERROR] A 'value' must be provided for 'select' action."
-                select_element = Select(element)
-                select_element.select_by_value(input_data.value)
-                return f"Selected option with value '{input_data.value}' from dropdown: '{input_data.selector}'"
-            elif input_data.action == "wait":
-                return f"Element '{input_data.selector}' was successfully found and waited for."
+        if input_data.action == "click":
+            element.click()
+            return f"Clicked element with selector: '{input_data.selector}'"
+        elif input_data.action == "type":
+            if input_data.value is None:
+                return "[ERROR] A 'value' must be provided for 'type' action."
+            element.clear()
+            element.send_keys(input_data.value)
+            return f"Typed '{input_data.value}' into element: '{input_data.selector}'"
+        elif input_data.action == "select":
+            if input_data.value is None:
+                return "[ERROR] A 'value' must be provided for 'select' action."
+            select_element = Select(element)
+            select_element.select_by_value(input_data.value)
+            return f"Selected option with value '{input_data.value}' from dropdown: '{input_data.selector}'"
+        elif input_data.action == "wait":
+            return f"Element '{input_data.selector}' was successfully found and waited for."
 
     except TimeoutException:
-        error_msg = f"Timeout waiting for element '{input_data.selector}' on URL '{driver.current_url}'."
+        current_url = driver.current_url if driver else "N/A"
+        error_msg = f"Timeout waiting for element '{input_data.selector}' on URL '{current_url}'."
         logger.warning(error_msg)
         return f"[ERROR] {error_msg}"
     except WebDriverException as e:
         logger.error(f"WebDriver action '{input_data.action}' failed: {e.msg}")
         return f"[ERROR] Selenium WebDriver error: {e.msg}"
     except Exception as e:
-        logger.exception(f"An unexpected error occurred during web interaction.")
+        logger.exception("An unexpected error occurred during web interaction.")
         return f"[ERROR] An unhandled exception occurred: {e}"
+    finally:
+        if driver:
+            driver.quit()
 
-    return "[ERROR] Unknown action specified."
+    return "[ERROR] Unknown action specified or action failed to return a result."

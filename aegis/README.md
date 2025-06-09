@@ -1,4 +1,3 @@
-```markdown
 # 🛡️ AEGIS: Autonomous Agentic Framework
 
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
@@ -31,42 +30,60 @@ configurable engine** for experts.
   dependencies post-setup.
 * **🔌 Dual Interfaces:** Interact via a clean **FastAPI web UI** or a powerful **command-line interface (CLI)**.
 
+---
+
+## 🌟 Advanced Capabilities
+
+Beyond basic tool execution, AEGIS incorporates several advanced systems for enhanced intelligence and usability:
+
+* **✍️ RAG-Powered Memory:** The agent automatically indexes the logs of every completed task. It can then query this
+  memory using the `query_knowledge_base` tool to learn from past successes and failures, improving its problem-solving
+  ability over time.
+* **✅ Execute-and-Verify Flow:** AEGIS supports advanced workflows (like `verified_flow.yaml`) where the agent not only
+  executes an action but also runs a follow-up verification step. If verification fails, it enters a remediation loop to
+  correct the problem autonomously.
+* **🧩 Plugin SDK:** The framework features a complete SDK for creating and managing custom tools. A `plugins/` directory
+  allows for drop-in tool loading, and the CLI provides `new-tool` and `validate-tool` commands to streamline
+  development.
+* **🕵️ Audit & Provenance Layer:** Every task generates a `provenance.json` report, creating a machine-readable "flight
+  recording" of the agent's run. This includes detailed event timelines, action statuses, and environment snapshots for
+  full accountability.
+* **🗺️ Graph Visualization:** The web UI includes a "Graph" tab that visually renders any agent preset, showing the
+  nodes, edges, and conditional logic. This makes complex agent behaviors transparent and easy to debug.
+
+---
+
 ## 🏗️ Architecture
 
-The AEGIS architecture is designed for clarity and modularity. It creates a safe abstraction layer between user intent
-and system execution.
-
 ```
-
 +---------------------------------+
-| User Interface |
+|          User Interface         |
 |      (FastAPI Web UI / CLI)     |
 +---------------------------------+
-|
-v
+               |
+               v
 +---------------------------------+
-| AEGIS Launch Endpoint |
+|      AEGIS Launch Endpoint      |
 | (Parses Request & Loads Config) |
 +---------------------------------+
-|
-v
-+---------------------------------+ +--------------------------------+
-| Agent Execution Graph |----->| Agent State (TaskState)    |
-| (LangGraph: Plan -> Execute ->) | | (Prompt, Config, History, etc) |
-+---------------------------------+ +--------------------------------+
-|
-v
-+---------------------------------+ +--------------------------------+
-| AEGIS Tool Executor |----->| Tool Registry |
-|  (Executes planned tool calls)  | |  (Validates & provides tools)  |
-+---------------------------------+ +--------------------------------+
-|
-v
+               |
+               v
++---------------------------------+      +--------------------------------+
+|       Agent Execution Graph     |----->|     Agent State (TaskState)    |
+| (LangGraph: Plan -> Execute ->) |      | (Prompt, Config, History, etc) |
++---------------------------------+      +--------------------------------+
+               |
+               v
++---------------------------------+      +--------------------------------+
+|       AEGIS Tool Executor       |----->|         Tool Registry          |
+|  (Executes planned tool calls)  |      |  (Validates & provides tools)  |
++---------------------------------+      +--------------------------------+
+               |
+               v
 +---------------------------------+
-| Execution Layer |
+|         Execution Layer         |
 | (SSH, Local Shell, Browser, etc)|
 +---------------------------------+
-
 ```
 
 ---
@@ -76,30 +93,31 @@ v
 This is the easiest and most reliable way to get AEGIS running.
 
 **Prerequisites:**
-*   Docker and Docker Compose installed.
-*   An Ollama-compatible LLM pulled locally (e.g., `ollama pull llama3`).
+
+* Docker and Docker Compose installed.
+* An Ollama-compatible LLM pulled locally (e.g., `ollama pull llama3`).
 
 **Steps:**
 
-1.  **Configure Environment:**
-    Copy the example environment file:
-    ```bash
-    cp .env.example .env
-    ```
-    Open the `.env` file and set `OLLAMA_MODEL` to the model you have downloaded (e.g., `OLLAMA_MODEL=llama3`).
+1. **Configure Environment:**
+   Copy the example environment file:
+   ```bash
+   cp .env.example .env
+   ```
+   Open the `.env` file and set `OLLAMA_MODEL` to the model you have downloaded (e.g., `OLLAMA_MODEL=llama3`).
 
-2.  **Build and Run:**
-    From the project root, run Docker Compose:
-    ```bash
-    docker-compose up --build
-    ```
-    This command will:
-    *   Build the AEGIS Docker image, installing all dependencies.
-    *   Start the Ollama container.
-    *   Start the AEGIS container, which runs the FastAPI server.
+2. **Build and Run:**
+   From the project root, run Docker Compose:
+   ```bash
+   docker-compose up --build
+   ```
+   This command will:
+    * Build the AEGIS Docker image, installing all dependencies.
+    * Start the Ollama container.
+    * Start the AEGIS container, which runs the FastAPI server.
 
-3.  **Access the UI:**
-    Open your web browser and navigate to `http://localhost:8000`. You should see the AEGIS web dashboard.
+3. **Access the UI:**
+   Open your web browser and navigate to `http://localhost:8000`. You should see the AEGIS web dashboard.
 
 ---
 
@@ -110,6 +128,7 @@ The CLI is perfect for scripted automation and quick tasks.
 ### 1. Run a Task from YAML
 
 Create a task file, for example `my-task.yaml`:
+
 ```yaml
 # my-task.yaml
 task:
@@ -141,35 +160,16 @@ AEGIS is built to be extended.
 
 ### Adding a New Tool
 
-1. Create a new Python file in `aegis/tools/primitives/` or `aegis/tools/wrappers/`.
-2. Define a Pydantic model for your tool's input.
-3. Write your tool function.
-4. Decorate it with `@register_tool` from `aegis.registry`, providing all required metadata.
-
-**Example Template:**
-
-```python
-# In aegis/tools/primitives/my_new_tool.py
-from pydantic import BaseModel, Field
-from aegis.registry import register_tool
-
-
-class MyToolInput(BaseModel):
-    target_host: str = Field(..., description="The host to target.")
-
-
-@register_tool(
-    name="my_new_tool",
-    input_model=MyToolInput,
-    description="A brief description of what this tool does.",
-    category="network",
-    tags=["custom", "example"],
-    safe_mode=True
-)
-def my_tool_function(input_data: MyToolInput) -> str:
-    # Your tool logic here...
-    return f"Tool executed against {input_data.target_host}"
-```
+1. Use the CLI scaffolder to create a new tool boilerplate in the `plugins/` directory:
+   ```bash
+   python -m aegis.cli new-tool
+   ```
+2. Follow the prompts to define your tool's name, description, and category.
+3. Open the newly generated file (e.g., `plugins/my_new_tool.py`) and implement your logic.
+4. Validate your new tool before running the agent:
+   ```bash
+   python -m aegis.cli validate-tool plugins/my_new_tool.py
+   ```
 
 AEGIS will automatically discover and register your new tool the next time it starts.
 
@@ -179,5 +179,3 @@ AEGIS will automatically discover and register your new tool the next time it st
 2. Define the `state_type`, `entrypoint`, `nodes`, and `edges` for your new graph.
 3. You can now launch tasks using this new behavior by specifying its name in an API call or task
    file (`config: "my-behavior"`).
-
----

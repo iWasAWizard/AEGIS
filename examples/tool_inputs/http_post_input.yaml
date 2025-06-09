@@ -1,6 +1,0 @@
-url: "https://api.example.com/ingest"
-payload:
-  event: "system_report"
-  status: "ok"
-headers:
-  Authorization: "Bearer FAKE_TOKEN"

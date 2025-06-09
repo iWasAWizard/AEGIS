@@ -1,46 +1,76 @@
+# aegis/utils/tool_loader.py
 """
 Tool Loader Utilities.
 
-Provides dynamic discovery and import of tool modules under aegis/tools.
-Call `import_all_tools()` once at runtime to ensure all tools decorated
-with @register_tool are registered in TOOL_REGISTRY.
+Provides dynamic discovery and import of tool modules from the core `aegis/tools`
+directory and a user-extensible top-level `plugins` directory. Calling
+`import_all_tools()` once at runtime ensures all tools decorated with
+`@register_tool` are available in the central `TOOL_REGISTRY`.
 """
 
 import importlib
 import pathlib
+import sys
 
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
-def import_all_tools():
+def _import_from_directory(base_dir: pathlib.Path, base_package_name: str):
     """
-    Recursively imports all Python modules under aegis.tools.
+    Helper function to recursively import Python modules from a given directory.
 
-    This is required to ensure that any tools decorated with
-    @register_tool are actually executed and registered.
+    This function scans a directory for `.py` files, converts their file paths
+    into Python module paths, and then imports them. This process triggers the
+    `@register_tool` decorator within each file, populating the global registry.
 
-    Should be called exactly once at startup, before using list_tools(), get_tool(), etc.
+    :param base_dir: The absolute path to the directory to scan.
+    :type base_dir: pathlib.Path
+    :param base_package_name: The corresponding Python package name for the directory.
+    :type base_package_name: str
     """
-    base_package = "aegis.tools"
-    base_dir = pathlib.Path(__file__).parent.parent / "tools"
-
-    if not base_dir.exists():
-        logger.warning("Tool directory %s does not exist.", base_dir)
+    if not base_dir.is_dir():
+        logger.warning(f"Tool directory '{base_dir}' does not exist. Skipping.")
         return
 
-    for path in base_dir.rglob("*.py"):
-        if "__" in path.name:
-            continue  # Skip __init__.py and __pycache__
+    logger.info(f"Scanning for tools in directory: {base_dir}")
+    # Add the parent of the package to the system path to allow direct import
+    if str(base_dir.parent) not in sys.path:
+        sys.path.insert(0, str(base_dir.parent))
 
-        rel_path = path.relative_to(base_dir).with_suffix("")
-        sanitized_path = str(rel_path).replace('/', '.').replace('\\', '.')
-        module_path = f"{base_package}.{sanitized_path}"
+    for path in base_dir.rglob("*.py"):
+        if "__init__" in path.name:
+            continue
+
+        # Convert filesystem path to a Python module path
+        # e.g., /path/to/project/aegis/tools/primitives/chaos.py -> "aegis.tools.primitives.chaos"
+        rel_path = path.relative_to(base_dir.parent)
+        module_path = str(rel_path.with_suffix("")).replace(pathlib.os.sep, ".")
 
         try:
             importlib.import_module(module_path)
-            logger.debug("Imported tool module: %s", module_path)
-        except (ImportError, SyntaxError, AttributeError) as e:
-            logger.warning(f"Failed to import tool module {module_path}")
-            logger.debug(f"Traceback for {module_path}:\n{e}")
+            logger.debug(f"Successfully imported tool module: {module_path}")
+        except Exception as e:
+            logger.error(f"Failed to import tool module {module_path}. Error: {e}")
+
+
+def import_all_tools():
+    """Recursively imports all Python modules from the core tools directory
+    and the user-defined plugins directory to register them.
+
+    This function must be called once at application startup to ensure all
+    agent capabilities are available.
+    """
+    logger.info("--- Starting Dynamic Tool Import ---")
+
+    # 1. Import core tools from `aegis/tools`
+    core_tools_dir = pathlib.Path(__file__).parent.parent / "tools"
+    _import_from_directory(core_tools_dir, "aegis.tools")
+
+    # 2. Import user-defined plugin tools from `plugins/` at the project root
+    project_root = pathlib.Path(__file__).parent.parent.parent
+    plugins_dir = project_root / "plugins"
+    _import_from_directory(plugins_dir, "plugins")
+
+    logger.info("--- Dynamic Tool Import Complete ---")

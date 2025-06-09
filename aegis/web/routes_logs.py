@@ -1,3 +1,4 @@
+# aegis/web/routes_logs.py
 """Debug routes for internal agent inspection, configuration review, or runtime introspection."""
 
 import datetime
@@ -18,12 +19,13 @@ os.getenv("LOG_LEVEL", "debug")
 
 @router.post("/echo", summary="Echo back posted data")
 def echo_post(payload: Dict[str, Any]):
-    """
-    Return the payload that was submitted to this route.
+    """A simple debug endpoint that returns the exact payload it was sent.
 
-    :param payload: Arbitrary dictionary data
+    Useful for testing client requests and connectivity.
+
+    :param payload: Arbitrary dictionary data.
     :type payload: dict
-    :return: Dictionary containing the echoed payload
+    :return: Dictionary containing the echoed payload.
     :rtype: dict
     """
     logger.debug(f"Echo POST payload: {payload}")
@@ -32,10 +34,12 @@ def echo_post(payload: Dict[str, Any]):
 
 @router.get("/status", summary="Basic runtime system status")
 def system_status():
-    """
-    Provide current system diagnostics and environment status.
+    """Provides current system diagnostics and environment status.
 
-    :return: Dictionary containing system status information
+    This endpoint returns basic information about the running server process,
+    including server time, platform details, and key environment variables.
+
+    :return: Dictionary containing system status information.
     :rtype: dict
     """
     logger.info("System status requested")

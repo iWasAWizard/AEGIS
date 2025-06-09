@@ -1,4 +1,4 @@
-# aegis/agents/plan_output.py
+# aegis/schemas/plan_output.py
 """
 Pydantic schema for the agent's structured "scratchpad" for a single step.
 
@@ -20,11 +20,16 @@ class AgentScratchpad(BaseModel):
 
     :ivar thought: A detailed, multi-sentence explanation from the LLM about its reasoning.
                    This includes analyzing the current state and justifying the chosen tool.
+    :vartype thought: str
     :ivar tool_name: The name of the tool selected for execution in this step.
+    :vartype tool_name: str
     :ivar tool_args: A dictionary of arguments to be passed to the selected tool. This
                      must conform to the tool's Pydantic input model.
+    :vartype tool_args: Dict[str, Any]
     :ivar verification_tool_name: An optional tool to run to verify the main action's success.
+    :vartype verification_tool_name: Optional[str]
     :ivar verification_tool_args: Arguments for the verification tool.
+    :vartype verification_tool_args: Optional[Dict[str, Any]]
     """
 
     thought: str = Field(

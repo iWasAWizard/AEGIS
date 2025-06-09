@@ -23,8 +23,16 @@ logger = setup_logger(__name__)
 
 # === Input Models ===
 
+
 class RandomStringInput(BaseModel):
-    """Input for generating a random string."""
+    """Input for generating a random string.
+
+    :ivar length: The desired length of the string.
+    :vartype length: int
+    :ivar charset: The character set to use: 'ascii', 'hex', 'digits', 'alphanum', or 'emoji'.
+    :vartype charset: str
+    """
+
     length: int = Field(..., gt=0, description="The desired length of the string.")
     charset: str = Field(
         "alphanum",
@@ -33,34 +41,76 @@ class RandomStringInput(BaseModel):
 
 
 class RandomNumberInput(BaseModel):
-    """Input for generating a random number within a specified range."""
+    """Input for generating a random number within a specified range.
+
+    :ivar min_value: The minimum possible value (inclusive).
+    :vartype min_value: float
+    :ivar max_value: The maximum possible value (inclusive).
+    :vartype max_value: float
+    :ivar as_int: If True, the result will be cast to an integer.
+    :vartype as_int: bool
+    """
+
     min_value: float = Field(..., description="The minimum possible value (inclusive).")
     max_value: float = Field(..., description="The maximum possible value (inclusive).")
-    as_int: bool = Field(False, description="If True, the result will be cast to an integer.")
+    as_int: bool = Field(
+        False, description="If True, the result will be cast to an integer."
+    )
 
 
 class RandomBoolInput(BaseModel):
-    """Input for generating a random boolean value."""
-    p_true: float = Field(0.5, ge=0.0, le=1.0, description="The probability of returning True.")
+    """Input for generating a random boolean value.
+
+    :ivar p_true: The probability of returning True.
+    :vartype p_true: float
+    """
+
+    p_true: float = Field(
+        0.5, ge=0.0, le=1.0, description="The probability of returning True."
+    )
 
 
 class UUIDInput(BaseModel):
-    """Input for generating a Universally Unique Identifier (UUID)."""
-    namespace: Optional[str] = Field(None, description="An optional namespace for generating a deterministic UUIDv5.")
+    """Input for generating a Universally Unique Identifier (UUID).
+
+    :ivar namespace: An optional namespace for generating a deterministic UUIDv5.
+    :vartype namespace: Optional[str]
+    """
+
+    namespace: Optional[str] = Field(
+        None, description="An optional namespace for generating a deterministic UUIDv5."
+    )
 
 
 class RandomChoiceInput(BaseModel):
-    """Input for selecting a random item from a list."""
-    choices: List[str] = Field(..., min_length=1, description="A list of strings to choose from.")
+    """Input for selecting a random item from a list.
+
+    :ivar choices: A list of strings to choose from.
+    :vartype choices: List[str]
+    """
+
+    choices: List[str] = Field(
+        ..., min_length=1, description="A list of strings to choose from."
+    )
 
 
 class CorruptJSONInput(BaseModel):
-    """Input for intentionally corrupting a JSON string."""
+    """Input for intentionally corrupting a JSON string.
+
+    :ivar json_string: A valid JSON string to be corrupted.
+    :vartype json_string: str
+    :ivar severity: The level of corruption: 'low', 'medium', or 'high'.
+    :vartype severity: str
+    """
+
     json_string: str = Field(..., description="A valid JSON string to be corrupted.")
-    severity: str = Field("medium", description="The level of corruption: 'low', 'medium', or 'high'.")
+    severity: str = Field(
+        "medium", description="The level of corruption: 'low', 'medium', or 'high'."
+    )
 
 
 # === Tools ===
+
 
 @register_tool(
     name="random_string",
@@ -163,6 +213,9 @@ def random_choice(input_data: RandomChoiceInput) -> str:
 def generate_uuid(input_data: UUIDInput) -> str:
     """Generates a UUID.
 
+    If a namespace is provided, a deterministic UUIDv5 is generated. Otherwise,
+    a random UUIDv4 is generated.
+
     :param input_data: An object that can optionally contain a namespace.
     :type input_data: UUIDInput
     :return: The generated UUID as a string.
@@ -186,20 +239,41 @@ def generate_uuid(input_data: UUIDInput) -> str:
     safe_mode=True,
 )
 def corrupt_json(input_data: CorruptJSONInput) -> str:
-    """Intentionally breaks a valid JSON string.
+    """Intentionally breaks a valid JSON string based on a specified severity.
 
     :param input_data: An object containing the JSON string and corruption severity.
     :type input_data: CorruptJSONInput
     :return: A corrupted, likely invalid, JSON string.
     :rtype: str
     """
-    logger.debug(f"Corrupting JSON (severity={input_data.severity})")
-    corrupted = input_data.json_string
-    if input_data.severity in ["medium", "high"]:
-        # Introduce common syntax errors
-        corrupted = corrupted.replace(":", " = ", 1)  # Invalid assignment
-        corrupted = corrupted.replace('"', "", 1)  # Unmatched quote
-    if input_data.severity == "high":
-        # Add junk characters at the end
-        corrupted += random.choice(["}", ",", " [", "NULL", " 💩"])
-    return corrupted
+    logger.debug(f"Corrupting JSON with severity: '{input_data.severity}'")
+    corrupted = list(input_data.json_string)
+    length = len(corrupted)
+
+    if length == 0:
+        return ""
+
+    if input_data.severity == 'low':
+        # Flip a single random bit in a random character
+        idx = random.randint(0, length - 1)
+        corrupted[idx] = chr(ord(corrupted[idx]) ^ (1 << random.randint(0, 6)))
+
+    elif input_data.severity == 'medium':
+        # Replace a structural character
+        replacements = {'{': '[', '}': ']', '"': "'", ':': '=', ',': ';'}
+        char_to_replace = random.choice(list(replacements.keys()))
+        if char_to_replace in corrupted:
+            idx = corrupted.index(char_to_replace)
+            corrupted[idx] = replacements[char_to_replace]
+        else:
+            # Fallback: insert a junk character
+            idx = random.randint(0, length - 1)
+            corrupted.insert(idx, random.choice(['#', '@', '!']))
+
+    elif input_data.severity == 'high':
+        # Truncate the string and add junk
+        trunc_point = random.randint(0, length // 2)
+        corrupted = corrupted[:trunc_point]
+        corrupted.extend(list("!@#$%^&*()"))
+
+    return "".join(corrupted)

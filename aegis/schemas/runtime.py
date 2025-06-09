@@ -16,16 +16,22 @@ class RuntimeExecutionConfig(BaseModel):
 
     This model includes parameters for the LLM backend, timeout/retry behavior,
     iteration limits, and safety constraints. It can be defined in a preset
-
     or overridden at launch time.
 
     :ivar model: The name of the LLM to use for task execution.
+    :vartype model: str
     :ivar ollama_url: The URL of the Ollama-compatible inference endpoint.
+    :vartype ollama_url: str
     :ivar safe_mode: If True, restricts execution to tools marked as safe.
+    :vartype safe_mode: bool
     :ivar timeout: The default timeout in seconds for tool execution.
+    :vartype timeout: int | None
     :ivar retries: The default number of times to retry a failed tool.
+    :vartype retries: int | None
     :ivar iterations: The maximum number of planning/execution steps before forced termination.
+    :vartype iterations: int | None
     """
+
     model: str = Field(
         default="llama3",
         description="Name of the LLM to use for task execution.",
@@ -58,10 +64,10 @@ class RuntimeExecutionConfig(BaseModel):
 
     class Config:
         """Pydantic model configuration."""
+
         extra = "forbid"
 
     @field_validator("timeout", mode="before")
-    @classmethod
     def check_positive_timeout(cls, v: int | None) -> int | None:
         """Ensures the timeout, if provided, is a positive integer."""
         if v is not None and v <= 0:
@@ -69,7 +75,6 @@ class RuntimeExecutionConfig(BaseModel):
         return v
 
     @field_validator("retries", mode="before")
-    @classmethod
     def check_nonnegative_retries(cls, v: int | None) -> int | None:
         """Ensures the retry count, if provided, is not negative."""
         if v is not None and v < 0:
@@ -77,7 +82,6 @@ class RuntimeExecutionConfig(BaseModel):
         return v
 
     @field_validator("iterations", mode="before")
-    @classmethod
     def check_positive_iterations(cls, v: int | None) -> int | None:
         """Ensures the iteration limit, if provided, is a positive integer."""
         if v is not None and v <= 0:

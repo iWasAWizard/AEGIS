@@ -1,3 +1,4 @@
+# aegis/schemas/emoji.py
 """Defines a comprehensive emoji set used for randomized string generation and playful outputs."""
 
 EMOJI_SET = [

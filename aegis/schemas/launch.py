@@ -25,11 +25,16 @@ class LaunchRequest(BaseModel):
     is designed to be the payload for the main `/launch` API endpoint.
 
     :ivar task: The core task definition, including the user's prompt.
+    :vartype task: TaskRequest
     :ivar config: The agent graph configuration. Can be a profile name (str),
-                  a raw dictionary, or an `AgentConfig` object.
+                  a raw dictionary, or an `AgentConfig` object. Defaults to 'default'.
+    :vartype config: Union[str, Dict[str, Any], AgentConfig]
     :ivar execution: Optional runtime overrides for this specific launch.
+    :vartype execution: Optional[RuntimeExecutionConfig]
     :ivar iterations: A specific override for the maximum number of agent steps.
+    :vartype iterations: Optional[int]
     """
+
     task: TaskRequest = Field(..., description="The task prompt and metadata.")
     config: Union[str, Dict[str, Any], AgentConfig] = Field(
         default="default",

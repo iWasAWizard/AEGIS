@@ -3,30 +3,41 @@
 Pydantic models for common tool inputs used across the framework.
 
 Defining these base models here allows for consistent input structures
-and reduces code duplication in the tool definition files.
+and reduces code duplication in the tool definition files. Tools that operate
+on machines or remote files should inherit from these models.
 """
-from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class RemoteTargetInput(BaseModel):
-    """A base model for any tool that targets a remote host via SSH."""
+class MachineTargetInput(BaseModel):
+    """A base model for any tool that targets a machine from machines.yaml.
 
-    host: str = Field(..., description="Remote host in 'user@host.com' format.")
-    ssh_key_path: Optional[str] = Field(
-        None, description="Optional path to the SSH private key."
+    :ivar machine_name: The name of the target machine as defined in machines.yaml.
+    :vartype machine_name: str
+    """
+
+    machine_name: str = Field(
+        ..., description="The name of the target machine as defined in machines.yaml."
     )
 
 
-class RemoteFileInput(RemoteTargetInput):
-    """Input model for tools that operate on a specific file on a remote host."""
+class MachineFileInput(MachineTargetInput):
+    """Input model for tools that operate on a specific file on a target machine.
+
+    :ivar file_path: The absolute path to the file on the remote system.
+    :vartype file_path: str
+    """
 
     file_path: str = Field(
         ..., description="The absolute path to the file on the remote system."
     )
 
 
-class RemoteUserInput(RemoteTargetInput):
-    """Input model for tools that manage a specific user on a remote host."""
+class MachineUserInput(MachineTargetInput):
+    """Input model for tools that manage a specific user on a target machine.
+
+    :ivar username: The target username on the remote system.
+    :vartype username: str
+    """
 
     username: str = Field(..., description="The target username on the remote system.")

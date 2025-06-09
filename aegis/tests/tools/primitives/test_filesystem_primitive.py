@@ -1,4 +1,4 @@
-# aegis/tests/tools/primitives/test_primitive_filesystem.py
+# aegis/tests/tools/primitives/test_filesystem_primitive.py
 """
 Unit tests for the filesystem primitive tools.
 """

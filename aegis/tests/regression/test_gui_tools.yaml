@@ -1,0 +1,14 @@
+# tests/regression/test_gui_tools.yaml
+task:
+  prompt: >
+    Here is your task:
+    1. Use the 'gui_action' tool with the 'screenshot' action to save a screenshot to 'test_screenshot.png'.
+    2. For verification, use the 'run_local_command' tool with the command 'ls test_screenshot.png' to confirm the file was created.
+    3. The verification is successful if the command output contains 'test_screenshot.png'.
+    4. After successful verification, clean up by using 'run_local_command' to delete the file with 'rm test_screenshot.png'.
+    5. Finally, use the 'finish' tool with a status of 'success'.
+
+config: "verified_flow"
+
+execution:
+  iterations: 7 # More steps needed for action, verify, cleanup, finish

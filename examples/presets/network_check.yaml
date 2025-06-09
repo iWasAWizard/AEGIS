@@ -1,2 +1,0 @@
-- name: "Network Check"
-  prompt: "Ping 8.8.8.8 and check DNS resolution"

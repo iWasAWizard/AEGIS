@@ -10,15 +10,14 @@ existence before attempting to read it.
 import difflib
 import shlex
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from aegis.executors.ssh import SSHExecutor
 from aegis.registry import register_tool
-from aegis.schemas.common_inputs import RemoteFileInput
-from aegis.utils.host_utils import get_user_host_from_string
+from aegis.schemas.common_inputs import MachineFileInput
 from aegis.utils.logger import setup_logger
+from aegis.utils.machine_loader import get_machine
 
 logger = setup_logger(__name__)
 
@@ -26,28 +25,42 @@ logger = setup_logger(__name__)
 # === Input Models ===
 
 
-class RetrieveRemoteLogFileInput(RemoteFileInput):
-    """Input for retrieving a remote log file to a local destination."""
+class RetrieveRemoteLogFileInput(MachineFileInput):
+    """Input for retrieving a remote log file to a local destination.
+
+    :ivar local_destination: The local path to save the downloaded file.
+    :vartype local_destination: str
+    """
 
     local_destination: str = Field(
         ..., description="The local path to save the downloaded file."
     )
 
 
-class BackupRemoteFileInput(RemoteFileInput):
+class BackupRemoteFileInput(MachineFileInput):
     """Input for creating a .bak backup of a file on a remote host."""
 
     pass
 
 
-class InjectLineIntoConfigInput(RemoteFileInput):
-    """Input for appending a single line of text to a remote file."""
+class InjectLineIntoConfigInput(MachineFileInput):
+    """Input for appending a single line of text to a remote file.
+
+    :ivar line: The line of text to inject into the file.
+    :vartype line: str
+    """
 
     line: str = Field(..., description="The line of text to inject into the file.")
 
 
 class DiffLocalFileAfterEditInput(BaseModel):
-    """Input for diffing a local file before and after an in-place edit."""
+    """Input for diffing a local file before and after an in-place edit.
+
+    :ivar file_path: The path to the local file to edit and diff.
+    :vartype file_path: str
+    :ivar replacement_text: The new text to completely overwrite the file with.
+    :vartype replacement_text: str
+    """
 
     file_path: str = Field(
         ..., description="The path to the local file to edit and diff."
@@ -57,8 +70,12 @@ class DiffLocalFileAfterEditInput(BaseModel):
     )
 
 
-class DiffRemoteFileAfterEditInput(RemoteFileInput):
-    """Input for diffing a remote file before and after an in-place edit."""
+class DiffRemoteFileAfterEditInput(MachineFileInput):
+    """Input for diffing a remote file before and after an in-place edit.
+
+    :ivar new_contents: The new text to completely overwrite the remote file with.
+    :vartype new_contents: str
+    """
 
     new_contents: str = Field(
         ..., description="The new text to completely overwrite the remote file with."
@@ -80,13 +97,13 @@ class DiffRemoteFileAfterEditInput(RemoteFileInput):
 def retrieve_remote_log_file(input_data: RetrieveRemoteLogFileInput) -> str:
     """A specific wrapper to download a file, intended for log retrieval.
 
-    :param input_data: An object containing remote host, remote path, and local destination.
+    :param input_data: An object containing the machine name, remote path, and local destination.
     :type input_data: RetrieveRemoteLogFileInput
-    :return: A status message indicating the result of the download.
+    :return: The result of the download operation.
     :rtype: str
     """
-    user, host = get_user_host_from_string(input_data.host)
-    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
     return executor.download(
         remote_path=input_data.file_path, local_path=input_data.local_destination
     )
@@ -94,23 +111,23 @@ def retrieve_remote_log_file(input_data: RetrieveRemoteLogFileInput) -> str:
 
 @register_tool(
     name="check_and_read_config_file",
-    input_model=RemoteFileInput,
+    input_model=MachineFileInput,
     tags=["ssh", "file", "config", "wrapper"],
     description="Reads a remote configuration file, but only if it exists.",
     safe_mode=True,
     purpose="Safely read a remote config file without causing an error if it's missing.",
     category="file_ops",
 )
-def check_and_read_config_file(input_data: RemoteFileInput) -> str:
+def check_and_read_config_file(input_data: MachineFileInput) -> str:
     """Checks for a remote file's existence and, if present, returns its contents.
 
-    :param input_data: An object containing the host and file path to check and read.
-    :type input_data: RemoteFileInput
-    :return: The file's contents, or an informational message if it's missing.
+    :param input_data: An object containing the machine name and remote file path.
+    :type input_data: MachineFileInput
+    :return: The file contents or an informational message if the file is missing.
     :rtype: str
     """
-    user, host = get_user_host_from_string(input_data.host)
-    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
     if executor.check_file_exists(input_data.file_path):
         return executor.run(f"cat {shlex.quote(input_data.file_path)}")
     else:
@@ -129,13 +146,13 @@ def check_and_read_config_file(input_data: RemoteFileInput) -> str:
 def backup_remote_file(input_data: BackupRemoteFileInput) -> str:
     """Creates a `.bak` copy of a specified file on a remote system if it exists.
 
-    :param input_data: An object containing the host and file path to back up.
+    :param input_data: An object containing the machine name and remote file path.
     :type input_data: BackupRemoteFileInput
-    :return: The result of the 'cp' command or an informational message.
+    :return: The result of the copy command or an informational message.
     :rtype: str
     """
-    user, host = get_user_host_from_string(input_data.host)
-    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
     if not executor.check_file_exists(input_data.file_path):
         return f"[INFO] File '{input_data.file_path}' does not exist. Skipping backup."
 
@@ -155,13 +172,13 @@ def backup_remote_file(input_data: BackupRemoteFileInput) -> str:
 def inject_line_into_config(input_data: InjectLineIntoConfigInput) -> str:
     """Appends a line to a remote file, often used for configuration changes.
 
-    :param input_data: An object with host, file path, and the line of content to add.
+    :param input_data: An object containing the machine name, file path, and line to inject.
     :type input_data: InjectLineIntoConfigInput
-    :return: The output of the remote command.
+    :return: The output of the `tee` command.
     :rtype: str
     """
-    user, host = get_user_host_from_string(input_data.host)
-    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
     append_cmd = f"echo {shlex.quote(input_data.line)} | sudo tee -a {shlex.quote(input_data.file_path)}"
     return executor.run(append_cmd)
 
@@ -178,9 +195,9 @@ def inject_line_into_config(input_data: InjectLineIntoConfigInput) -> str:
 def diff_local_file_after_edit(input_data: DiffLocalFileAfterEditInput) -> str:
     """Performs an in-place edit of a local file and returns a diff of the changes.
 
-    :param input_data: An object with the local file path and the new text.
+    :param input_data: An object containing the local file path and new content.
     :type input_data: DiffLocalFileAfterEditInput
-    :return: A unified diff string of the changes made.
+    :return: A unified diff of the changes or an error message.
     :rtype: str
     """
     try:
@@ -216,13 +233,16 @@ def diff_local_file_after_edit(input_data: DiffLocalFileAfterEditInput) -> str:
 def diff_remote_file_after_edit(input_data: DiffRemoteFileAfterEditInput) -> str:
     """Performs an in-place edit of a remote file and returns a diff of the changes.
 
-    :param input_data: An object with host, file path, and the new file contents.
+    This tool reads the original content, overwrites the remote file with new
+    content, and then generates a diff of the changes locally.
+
+    :param input_data: An object containing machine name, remote path, and new content.
     :type input_data: DiffRemoteFileAfterEditInput
-    :return: A unified diff string of the changes made to the remote file.
+    :return: A unified diff of the changes or an error message.
     :rtype: str
     """
-    user, host = get_user_host_from_string(input_data.host)
-    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
 
     # 1. Read the original contents.
     original_contents = executor.run(f"cat {shlex.quote(input_data.file_path)}")

@@ -3,16 +3,18 @@
 Primitive tools for basic network interactions and diagnostics.
 
 This module contains low-level tools for performing fundamental network
-operations, such as sending Wake-on-LAN packets and making flexible HTTP
-requests.
+operations, such as sending Wake-on-LAN packets, making flexible HTTP
+requests, and checking TCP port status.
 """
 
+import socket
 import subprocess
 from typing import Optional, Dict, Any
 
 import requests
 from pydantic import BaseModel, Field
 
+from aegis.exceptions import ToolExecutionError
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 
@@ -21,13 +23,30 @@ logger = setup_logger(__name__)
 
 # === Input Models ===
 
+
 class WakeOnLANInput(BaseModel):
-    """Input for sending a Wake-on-LAN (WoL) magic packet."""
+    """Input for sending a Wake-on-LAN (WoL) magic packet.
+
+    :ivar mac_address: The MAC address of the target device to wake.
+    :vartype mac_address: str
+    """
     mac_address: str = Field(..., description="The MAC address of the target device to wake.")
 
 
 class HttpRequestInput(BaseModel):
-    """Input for making a generic HTTP request."""
+    """Input for making a generic HTTP request.
+
+    :ivar method: HTTP method (e.g., 'GET', 'POST', 'PUT', 'DELETE').
+    :vartype method: str
+    :ivar url: The full target URL for the request.
+    :vartype url: str
+    :ivar headers: Optional HTTP headers.
+    :vartype headers: Optional[Dict[str, str]]
+    :ivar params: URL query string parameters.
+    :vartype params: Optional[Dict[str, Any]]
+    :ivar body: The raw request body as a string (for POST/PUT).
+    :vartype body: Optional[str]
+    """
     method: str = Field(..., description="HTTP method (e.g., 'GET', 'POST', 'PUT', 'DELETE').")
     url: str = Field(..., description="The full target URL for the request.")
     headers: Optional[Dict[str, str]] = Field(default_factory=dict, description="Optional HTTP headers.")
@@ -35,7 +54,23 @@ class HttpRequestInput(BaseModel):
     body: Optional[str] = Field(None, description="The raw request body as a string (for POST/PUT).")
 
 
+class CheckPortStatusInput(BaseModel):
+    """Input for checking if a specific TCP port is open on a host.
+
+    :ivar host: The hostname or IP address to check.
+    :vartype host: str
+    :ivar port: The port number to check.
+    :vartype port: int
+    :ivar timeout: Connection timeout in seconds.
+    :vartype timeout: float
+    """
+    host: str = Field("127.0.0.1", description="The hostname or IP address to check.")
+    port: int = Field(..., gt=0, lt=65536, description="The port number to check.")
+    timeout: float = Field(2.0, description="Connection timeout in seconds.")
+
+
 # === Tools ===
+
 
 @register_tool(
     name="send_wake_on_lan",
@@ -53,17 +88,12 @@ def send_wake_on_lan(input_data: WakeOnLANInput) -> str:
     :type input_data: WakeOnLANInput
     :return: A string indicating the result of the command.
     :rtype: str
+    :raises ToolExecutionError: If the subprocess call fails unexpectedly.
     """
     logger.info(f"Sending Wake-on-LAN packet to MAC: {input_data.mac_address}")
     try:
-        # The 'wakeonlan' utility must be installed on the host system.
-        result = subprocess.run(
-            ["wakeonlan", input_data.mac_address],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False
-        )
+        result = subprocess.run(["wakeonlan", input_data.mac_address], capture_output=True, text=True, timeout=10,
+                                check=False)
         output = result.stdout.strip()
         if result.stderr:
             output += f"\n[STDERR]\n{result.stderr.strip()}"
@@ -74,7 +104,7 @@ def send_wake_on_lan(input_data: WakeOnLANInput) -> str:
         return error_msg
     except Exception as e:
         logger.exception(f"Failed to send Wake-on-LAN packet to {input_data.mac_address}")
-        return f"[ERROR] Failed to send Wake-on-LAN packet: {e}"
+        raise ToolExecutionError(f"Failed to send Wake-on-LAN packet: {e}") from e
 
 
 @register_tool(
@@ -82,7 +112,7 @@ def send_wake_on_lan(input_data: WakeOnLANInput) -> str:
     input_model=HttpRequestInput,
     tags=["http", "network", "api", "primitive"],
     description="Sends a flexible HTTP request with full control over method, headers, body, and params.",
-    safe_mode=True,  # Considered safe as it only interacts with network resources, not the local filesystem.
+    safe_mode=True,
     purpose="Interact with web servers or REST APIs.",
     category="network",
 )
@@ -93,6 +123,7 @@ def http_request(input_data: HttpRequestInput) -> str:
     :type input_data: HttpRequestInput
     :return: A string containing the HTTP status code and response body.
     :rtype: str
+    :raises ToolExecutionError: If the HTTP request fails due to network or server issues.
     """
     method = input_data.method.upper()
     logger.info(f"Sending {method} request to {input_data.url}")
@@ -102,15 +133,49 @@ def http_request(input_data: HttpRequestInput) -> str:
             url=input_data.url,
             headers=input_data.headers,
             params=input_data.params,
-            data=input_data.body.encode('utf-8') if input_data.body else None,  # requests prefers bytes for data
-            timeout=30  # A reasonable default timeout
+            data=(input_data.body.encode("utf-8") if input_data.body else None),
+            timeout=30,
         )
-        # Raise an exception for bad status codes (4xx or 5xx)
         response.raise_for_status()
         return f"Status: {response.status_code}\nBody:\n{response.text}"
     except requests.exceptions.RequestException as e:
         logger.error(f"HTTP request to {input_data.url} failed: {e}")
-        return f"[ERROR] HTTP request failed: {e}"
-    except Exception as e:
-        logger.exception(f"An unexpected error occurred during HTTP request to {input_data.url}")
-        return f"[ERROR] An unexpected error occurred: {e}"
+        raise ToolExecutionError(f"HTTP request failed: {e}") from e
+
+
+@register_tool(
+    name="check_port_status",
+    input_model=CheckPortStatusInput,
+    tags=["network", "port", "check", "primitive"],
+    description="Checks if a specific TCP port is open on a given host.",
+    safe_mode=True,
+    purpose="Determine if a TCP port is open or closed on a host.",
+    category="network",
+)
+def check_port_status(input_data: CheckPortStatusInput) -> str:
+    """Attempts to establish a socket connection to a host and port to determine if it's open.
+
+    :param input_data: An object containing the host, port, and timeout.
+    :type input_data: CheckPortStatusInput
+    :return: A string indicating whether the port is "Open", "Closed", or an error occurred.
+    :rtype: str
+    """
+    host, port, timeout = input_data.host, input_data.port, input_data.timeout
+    logger.info(f"Checking port status for {host}:{port} with a {timeout}s timeout.")
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            if s.connect_ex((host, port)) == 0:
+                logger.info(f"Connection to {host}:{port} successful. Port is open.")
+                return f"Port {port} on {host} is Open."
+            else:
+                logger.info(f"Connection to {host}:{port} failed or timed out. Port is closed.")
+                return f"Port {port} on {host} is Closed."
+    except socket.gaierror:
+        error_msg = f"[ERROR] Hostname '{host}' could not be resolved."
+        logger.error(error_msg)
+        return error_msg
+    except socket.error as e:
+        error_msg = f"[ERROR] A socket error occurred while checking {host}:{port}: {e}"
+        logger.error(error_msg)
+        return error_msg

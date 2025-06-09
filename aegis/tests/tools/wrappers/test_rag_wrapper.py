@@ -1,4 +1,4 @@
-# aegis/tests/tools/test_rag_tools.py
+# aegis/tests/tools/test_rag_wrapper.py
 """
 Tests for the RAG (Retrieval-Augmented Generation) tool.
 """

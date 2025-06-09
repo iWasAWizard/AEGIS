@@ -1,0 +1,14 @@
+# tests/regression/test_basic_file_ops.yaml
+task:
+  prompt: >
+    Here is your task:
+    1. Create a local file named 'test_file.tmp' in the current directory.
+    2. Write the exact string 'hello world' into this file.
+    3. For verification, read the content of the file and confirm it is 'hello world'.
+    4. If the content is correct, use the 'finish' tool with a status of 'success'. Otherwise, finish with a status of 'failure'.
+    5. Clean up by deleting the 'test_file.tmp' file before finishing.
+
+config: "verified_flow" # This is the config we are picking from the options in presets/. Shouldn't change.
+
+execution:
+  iterations: 8 # Allow enough steps for create, write, read, delete, finish.
