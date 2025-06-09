@@ -1,94 +1,114 @@
+# aegis/agents/steps/execute_tool.py
 """
-Executes a registered tool using input parameters and enforces timeout, retries, and logging.
+The core tool execution step for the agent.
+
+This module contains the `execute_tool` function, which is responsible for
+looking up a tool in the registry, validating its arguments, and running it.
+It then appends the full record of this step to the agent's history.
 """
 
 import asyncio
-import time
-from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Any, Coroutine, List, Tuple
 
-from aegis.registry import get_tool, ToolEntry
-from aegis.utils.logger import setup_logger
+from aegis.agents.plan_output import AgentScratchpad
 from aegis.agents.task_state import TaskState
+from aegis.registry import get_tool
+from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
-async def execute_tool(state: TaskState) -> TaskState:
-    """
-    Retrieves the tool and executes it with the planned arguments.
+async def _run_tool(tool_func: Coroutine, input_data: Any) -> Any:
+    """Helper to run the tool's function, which might be a coroutine."""
+    if asyncio.iscoroutinefunction(tool_func):
+        return await tool_func(input_data)
+    else:
+        # For regular functions, run them in a default executor to avoid blocking the event loop.
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, tool_func, input_data)
 
-    :param state: Task execution state
+
+async def execute_tool(state: TaskState) -> Dict[str, Any]:
+    """Looks up and executes the tool from the latest plan, then updates history.
+
+    :param state: The current state of the agent's task.
     :type state: TaskState
-    :return: Updated task state with execution result
-    :rtype: TaskState
+    :return: A dictionary with the updated history.
+    :rtype: Dict[str, Any]
     """
-    if not state.tool_name:
-        raise ValueError("Tool name missing from state. Plan step may have failed.")
+    logger.info("🛠️ Step: Execute Tool")
+    plan = state.latest_plan
 
-    tool = get_tool(state.tool_name)
-    if not tool:
-        raise ValueError(
-            f"Tool '{state.tool_name}' not found or not allowed in safe_mode."
+    if not plan:
+        error_msg = "[ERROR] Execution failed: No plan found in state."
+        logger.error(
+            error_msg, extra={"event_type": "InternalError", "reason": "Missing plan"}
         )
+        # Create a dummy plan to record the failure in history
+        plan = AgentScratchpad(
+            thought="No plan was provided to the executor.",
+            tool_name="finish",
+            tool_args={"reason": "Internal error: missing plan.", "status": "failure"},
+        )
+        return {"history": state.history + [(plan, error_msg)]}
 
-    logger.info(f"[execute_tool] Running tool: {tool.name}")
-    input_data = tool.input_model(**state.steps_output["plan"]["tool_args"])
-    result = await execute_tool_with_timing(tool, input_data)
-    state.steps_output["tool_result"] = result
-    return state
+    tool_name = plan.tool_name
+    tool_args = plan.tool_args
+    tool_output: Any
 
+    # Structured log event for starting a tool
+    logger.info(
+        f"Executing tool: `{tool_name}`",
+        extra={
+            "event_type": "ToolStart",
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+        },
+    )
 
-async def execute_tool_with_timing(tool: ToolEntry, input_data) -> any:
-    """
-    Handles execution timing, retries, and concurrency.
-
-    :param tool: Tool entry with metadata and run method
-    :type tool: ToolEntry
-    :param input_data: Parsed tool arguments as a pydantic model
-    :type input_data: BaseModel
-    :return: Tool output result
-    :rtype: Any
-    """
-    retries = tool.retries
-    timeout = tool.timeout
-    attempt = 0
-
-    while attempt <= retries:
-        attempt += 1
-        try:
-            logger.info(
-                f"[tool] Executing '{tool.name}' (attempt {attempt}/{retries + 1})"
+    if tool_name == "finish":
+        tool_output = f"Task finished by agent with reason: {tool_args.get('reason', 'No reason given.')}"
+    else:
+        tool_entry = get_tool(tool_name, safe_mode=state.runtime.safe_mode)
+        if not tool_entry:
+            tool_output = (
+                f"[ERROR] Tool `{tool_name}` not found or not permitted in safe mode."
             )
-            logger.debug(f"[tool] Input data: {input_data.model_dump_json(indent=2)}")
-            start = time.perf_counter()
-
-            if asyncio.iscoroutinefunction(tool.run):
-                result = (
-                    await asyncio.wait_for(tool.run(input_data), timeout=timeout)
-                    if timeout
-                    else await tool.run(input_data)
+            logger.error(
+                tool_output, extra={"event_type": "ToolError", "tool_name": tool_name}
+            )
+        else:
+            try:
+                input_model = tool_entry.input_model(**tool_args)
+                tool_output = await asyncio.wait_for(
+                    _run_tool(tool_entry.run, input_model),
+                    timeout=state.runtime.timeout,
                 )
-            else:
-                loop = asyncio.get_running_loop()
-                with ThreadPoolExecutor() as pool:
-                    result = (
-                        await asyncio.wait_for(
-                            loop.run_in_executor(pool, tool.run, input_data),
-                            timeout=timeout,
-                        )
-                        if timeout
-                        else await loop.run_in_executor(pool, tool.run, input_data)
-                    )
-
-            elapsed = time.perf_counter() - start
-            logger.info(f"[tool] '{tool.name}' completed in {elapsed:.2f}s")
-            logger.debug(f"[tool] Result preview: {str(result)[:400]}")
-            return result
-
-        except Exception as e:
-            logger.exception(f"[tool] Execution error on attempt {attempt}: {e}")
-            if attempt > retries:
-                logger.error(
-                    f"[tool] '{tool.name}' failed after {retries + 1} attempts."
+                # Structured log event for tool success
+                logger.info(
+                    f"Tool `{tool_name}` executed successfully.",
+                    extra={
+                        "event_type": "ToolEnd",
+                        "tool_name": tool_name,
+                        "status": "success",
+                        "output_preview": str(tool_output)[:200],
+                    },
                 )
-                raise
+            except Exception as e:
+                tool_output = f"[ERROR] Tool `{tool_name}` failed during execution: {e}"
+                # Structured log event for tool failure
+                logger.exception(
+                    tool_output,
+                    extra={
+                        "event_type": "ToolEnd",
+                        "tool_name": tool_name,
+                        "status": "failure",
+                        "error_message": str(e),
+                    },
+                )
+
+    # Append the completed step (plan + result) to the history
+    new_history: List[Tuple[AgentScratchpad, Any]] = state.history + [
+        (plan, tool_output)
+    ]
+    return {"history": new_history}

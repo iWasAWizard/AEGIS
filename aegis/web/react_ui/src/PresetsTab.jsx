@@ -1,3 +1,4 @@
+// aegis/web/react_ui/src/PresetsTab.jsx
 import React, { useEffect, useState } from 'react';
 
 export default function PresetsTab() {
@@ -5,10 +6,14 @@ export default function PresetsTab() {
   const [current, setCurrent] = useState(null);
   const [form, setForm] = useState({ name: '', description: '', config: '{}' });
 
-  useEffect(() => {
-    fetch('/presets')
+  const fetchPresets = () => {
+    fetch('/api/presets')
       .then(res => res.json())
       .then(setPresets);
+  };
+
+  useEffect(() => {
+    fetchPresets();
   }, []);
 
   const loadPreset = (p) => {
@@ -32,14 +37,14 @@ export default function PresetsTab() {
       config: JSON.parse(form.config || '{}')
     };
 
-    await fetch('/presets', {
+    await fetch('/api/presets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
 
     alert("Preset saved.");
-    window.location.reload();
+    fetchPresets(); // Refresh the list
   };
 
   return (

@@ -1,97 +1,97 @@
+# aegis/agents/agent_graph.py
+"""
+Constructs and compiles a LangGraph StateGraph from an AgentGraphConfig.
+
+This class takes a declarative configuration and translates it into an
+executable LangGraph object, wiring up the nodes, edges, and conditional
+logic required for the agent to run.
+"""
+from functools import partial
+
 from langgraph.graph import StateGraph
 
 from aegis.agents.node_registry import AGENT_NODE_REGISTRY
+from aegis.schemas.agent import AgentConfig, AgentGraphConfig
+from aegis.utils.llm_query import llm_query
 from aegis.utils.logger import setup_logger
-from aegis.agents.task_state import TaskState
 
 logger = setup_logger(__name__)
 
 
 class AgentGraph:
-    """
-    Represents the AgentGraph class.
+    """A factory for creating a compiled LangGraph StateGraph from a configuration."""
 
-    Use this class to define and manage the execution graph for agent workflows.
-    """
+    def __init__(self, config: AgentGraphConfig):
+        """Initializes the AgentGraph builder with a given configuration.
 
-    def __init__(self, config):
+        :param config: The configuration object defining the graph structure.
+        :type config: AgentGraphConfig
+        :raises TypeError: If the provided config is not an AgentGraphConfig instance.
         """
-        Initializes the AgentGraph with a given configuration.
-
-        :param config: Configuration object containing entrypoint, nodes, edges, and routing logic.
-        :type config: Any
-        """
+        if not isinstance(config, AgentGraphConfig):
+            raise TypeError("AgentGraph expects a processed AgentGraphConfig object.")
         self.config = config
 
-    def build_graph(self):
+    def build_graph(self) -> StateGraph:
+        """Builds and compiles the StateGraph based on the provided configuration.
+
+        :return: A compiled, executable LangGraph StateGraph.
+        :rtype: StateGraph
         """
-        Builds and compiles the StateGraph based on the provided configuration.
+        state_schema = self.config.state_type
+        if not hasattr(state_schema, "model_validate"):
+            raise TypeError(
+                f"The state_type '{state_schema.__name__}' must be a Pydantic model."
+            )
 
-        :return: Compiled StateGraph
-        :rtype: Any
-        """
-        logger.debug(
-            f"Initializing StateGraph with state_type: {self.config.state_type}"
-        )
-        builder = StateGraph(self.config.state_type)
+        logger.info(f"Building agent graph with state: {state_schema.__name__}")
+        builder = StateGraph(state_schema)
 
-        all_nodes = (
-            {self.config.entrypoint}
-            | {src for src, _ in self.config.edges}
-            | {dst for _, dst in self.config.edges}
-            | set(self.config.condition_map.values())
-        )
-        for name in all_nodes:
-            builder.add_node(name, AGENT_NODE_REGISTRY[name])
+        # Add all defined nodes to the graph builder
+        for node_config in self.config.nodes:
+            if node_config.tool not in AGENT_NODE_REGISTRY:
+                raise ValueError(
+                    f"Node function '{node_config.tool}' not found in AGENT_NODE_REGISTRY."
+                )
 
-        logger.debug(f"Setting entry point to: {self.config.entrypoint}")
+            node_func = AGENT_NODE_REGISTRY[node_config.tool]
+            node_to_add = node_func
+
+            # --- DEPENDENCY INJECTION ---
+            # If a node needs a dependency (like the LLM), bind it here.
+            if node_config.tool == "reflect_and_plan":
+                node_to_add = partial(node_func, llm_query_func=llm_query)
+
+            builder.add_node(node_config.id, node_to_add)
+            logger.debug(
+                f"Added node '{node_config.id}' with function '{node_config.tool}'"
+            )
+
+        # Set the entry point
         builder.set_entry_point(self.config.entrypoint)
+        logger.debug(f"Set entry point to '{self.config.entrypoint}'")
 
-        for edge in self.config.edges:
-            logger.debug(f"Adding edge: {edge[0]} -> {edge[1]}")
-            builder.add_edge(edge[0], edge[1])
+        # Add all unconditional edges
+        for src, dst in self.config.edges:
+            builder.add_edge(src, dst)
+            logger.debug(f"Added edge: {src} -> {dst}")
 
+        # Add conditional routing logic if it's defined
         if self.config.condition_node and self.config.condition_map:
-            logger.debug(f"Resolving condition_map: {self.config.condition_map}")
+            if self.config.condition_node not in [n.id for n in self.config.nodes]:
+                raise ValueError(
+                    f"Conditional node '{self.config.condition_node}' is not defined in the nodes list."
+                )
 
-            def resolved_map(state: TaskState) -> str:
-                logger.debug(f"Resolving next step from state: {state}")
-                key = getattr(state, "next_step", None)
-                if not key:
-                    raise ValueError(
-                        "Missing 'next_step' in TaskState for conditional routing."
-                    )
-                if key not in self.config.condition_map:
-                    raise ValueError(f"Unknown routing key: {key}")
-                resolved = self.config.condition_map[key]
-                logger.debug(f"Resolved conditional step '{key}' → '{resolved}'")
-                return resolved
+            # The condition_node's function must be passed directly to be called by the graph.
+            builder.add_conditional_edges(
+                self.config.condition_node,
+                AGENT_NODE_REGISTRY[self.config.condition_node],
+                self.config.condition_map,
+            )
+            logger.debug(
+                f"Added conditional edge from '{self.config.condition_node}' with map: {self.config.condition_map}"
+            )
 
-            builder.add_conditional_edges(self.config.condition_node, resolved_map)
-
-        logger.debug("Setting finish point to summarize")
-        builder.set_finish_point("summarize")
-        compiled = builder.compile()
-        logger.debug("Graph compilation complete")
-        return compiled
-
-    async def run(self, input_data):
-        """
-        Executes the graph using the provided input data.
-
-        :param input_data: Dictionary or TaskState instance
-        :type input_data: Any
-        :return: Final TaskState after graph execution
-        :rtype: TaskState
-        """
-        logger.debug(f"Running graph with input data: {input_data}")
-        graph = self.build_graph()
-
-        if not isinstance(input_data, TaskState):
-            state = TaskState(**input_data)
-        else:
-            state = input_data
-
-        result = await graph.ainvoke(state)
-        logger.debug(f"Graph execution complete, result: {result}")
-        return result
+        logger.info("Graph construction complete. Compiling...")
+        return builder.compile()

@@ -1,36 +1,49 @@
+# aegis/tools/wrappers/shell.py
 """
-Shell wrapper tools for executing and capturing command-line operations.
+Shell wrapper tools for executing local and remote commands.
 
-Enables dynamic interaction with shell environments, script execution, and sanitized I/O capture.
+This module provides tools for more complex shell interactions, such as
+running commands in the background or conditionally executing scripts based
+on the state of the remote system.
 """
 
-import subprocess
-from typing import Optional
+import shlex
+from typing import Tuple, Optional
 
 from pydantic import BaseModel, Field
 
+from aegis.executors.ssh import SSHExecutor
 from aegis.registry import register_tool
-from aegis.tools.primitives import (
+from aegis.tools.primitives.primitive_system import (
     run_local_command,
     RunLocalCommandInput,
-    check_remote_file_exists,
-    CheckRemoteFileExistsInput,
-    run_remote_script,
-    RunRemoteScriptInput,
 )
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
+def _get_user_host(host_str: str) -> Tuple[str, str]:
+    """Helper to split 'user@host' strings.
+
+    :param host_str: The input string, e.g., "user@example.com".
+    :type host_str: str
+    :raises ValueError: If the string is not in the expected format.
+    :return: A tuple containing the user and host.
+    :rtype: Tuple[str, str]
+    """
+    if "@" not in host_str:
+        raise ValueError(
+            f"Host string '{host_str}' must be in 'user@host' format for this tool."
+        )
+    user, host = host_str.split("@", 1)
+    return user, host
+
+
 class RunScriptIfAbsentInput(BaseModel):
-    """
-    Represents the RunScriptIfAbsentInput class.
+    """Input model for conditionally running a remote script."""
 
-    Describes the input required to run a script on a remote machine only if it doesn't already exist.
-    """
-
-    host: str = Field(description="Remote host (user@host).")
+    host: str = Field(description="Remote host (e.g., 'user@host.com').")
     check_path: str = Field(description="Remote file to check existence for.")
     local_script_path: str = Field(
         description="Path to the script to upload and execute."
@@ -38,111 +51,31 @@ class RunScriptIfAbsentInput(BaseModel):
     remote_script_path: str = Field(
         description="Path to place script on remote system."
     )
-    ssh_key_path: str = Field(description="SSH key for authentication.")
+    ssh_key_path: str | None = Field(None, description="SSH key for authentication.")
 
 
 class SafeShellInput(BaseModel):
-    """
-    Represents the SafeShellInput class.
-
-    Wraps shell command input for tools that perform safety checks or sanitization.
-    """
+    """Input model for the safe local shell execution tool."""
 
     command: str = Field(description="Shell command to execute locally.")
 
 
-class RunRemoteCommandInput(BaseModel):
-    """
-    Represents the RunRemoteCommandInput class.
-
-    Contains parameters for executing a single command on a remote system via SSH.
-    """
-
-    host: str = Field(description="Remote host (user@host).")
-    command: str = Field(description="The command to run.")
-    extra_args: str = Field(
-        default="", description="Optional arguments to pass to the command."
-    )
-    ssh_key_path: str = Field(description="Path to SSH private key.")
-
-
-class SimpleShellCommandInput(BaseModel):
-    """
-    Represents the SimpleShellCommandInput class.
-
-    Defines a basic shell command with optional environment and working directory overrides.
-    """
-
-    command: str = Field(description="Name of the command to run.")
-    extra_args: Optional[str] = Field(
-        default="", description="Extra arguments to pass to the command."
-    )
-
-
 class RunRemoteBackgroundCommandInput(BaseModel):
-    """
-    Represents the RunRemoteBackgroundCommandInput class.
+    """Input model for running a command in the background on a remote host."""
 
-    Describes a remote command to be launched in the background using nohup or similar tools.
-    """
-
-    host: str = Field(description="Remote host to connect to")
-    user: str = Field(description="SSH username")
-    command: str = Field(description="Shell command to run in the background")
-    ssh_key_path: str = Field(description="SSH private key")
-
-
-class RunRemoteInteractiveCommandInput(BaseModel):
-    """
-    RunRemoteInteractiveCommandInput class.
-    """
-
-    host: str = Field(description="Remote host to connect to")
-    user: str = Field(description="SSH username")
-    command: str = Field(description="Interactive shell command to run")
+    host: str = Field(description="Remote host to connect to (e.g., 'user@host.com').")
+    command: str = Field(description="Shell command to run in the background.")
+    ssh_key_path: str | None = Field(None, description="SSH private key.")
 
 
 class RunRemotePythonSnippetInput(BaseModel):
-    """
-    RunRemotePythonSnippetInput class.
-    """
+    """Input model for running a Python snippet on a remote host."""
 
-    host: str = Field(description="Remote host to connect to")
-    user: str = Field(description="SSH username")
-    code: str = Field(description="Python code to run remotely using 'python3 -c'")
-
-
-@register_tool(
-    name="run_remote_command",
-    input_model=RunRemoteCommandInput,
-    tags=["system", "remote", "ssh"],
-    description="Execute a shell command on a remote host via SSH and return output.",
-    safe_mode=True,
-    purpose="Allow remote shell execution using SSH.",
-    category="system",
-)
-def run_remote_command(input_data: RunRemoteCommandInput) -> str:
-    """
-    run_remote_command.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    ssh_target = f"{input_data.host}"
-    try:
-        result = subprocess.run(
-            ["ssh", ssh_target, input_data.command],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return result.stdout.strip() + (
-            "\n" + result.stderr.strip() if result.stderr else ""
-        )
-    except Exception as e:
-        logger.exception(f"[shell tool] [ERROR] Failed to run remote command: {str(e)}")
-        return f"[ERROR] Failed to run remote command: {str(e)}"
+    host: str = Field(description="Remote host to connect to (e.g., 'user@host.com').")
+    code: str = Field(description="Python code to run remotely using 'python3 -c'.")
+    ssh_key_path: str | None = Field(
+        None, description="Optional path to SSH private key."
+    )
 
 
 @register_tool(
@@ -155,61 +88,18 @@ def run_remote_command(input_data: RunRemoteCommandInput) -> str:
     category="system",
 )
 def run_remote_background_command(input_data: RunRemoteBackgroundCommandInput) -> str:
+    """Runs a command in the background on a remote host using nohup.
+
+    :param input_data: An object containing the host and command to run.
+    :type input_data: RunRemoteBackgroundCommandInput
+    :return: The output from launching the background process.
+    :rtype: str
     """
-    run_remote_background_command.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    ssh_target = f"{input_data.user}@{input_data.host}"
+    user, host = _get_user_host(input_data.host)
+    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    # The `&` ensures it runs in the background. nohup prevents it from being killed on session exit.
     wrapped_command = f"nohup {input_data.command} > /dev/null 2>&1 &"
-    try:
-        result = subprocess.run(
-            ["ssh", ssh_target, wrapped_command],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        return result.stdout.strip() + (
-            "\n" + result.stderr.strip() if result.stderr else ""
-        )
-    except Exception as e:
-        logger.exception(f"[shell tool] [ERROR] Failed to run remote background command: {str(e)}")
-        return f"[ERROR] Failed to run remote background command: {str(e)}"
-
-
-@register_tool(
-    name="run_remote_interactive_command",
-    input_model=RunRemoteInteractiveCommandInput,
-    tags=["system", "remote", "ssh", "interactive"],
-    description="Execute an interactive command on a remote host (e.g. tools requiring stdin).",
-    safe_mode=False,
-    purpose="Support remote tools that require user interaction or complex input/output streams.",
-    category="system",
-)
-def run_remote_interactive_command(input_data: RunRemoteInteractiveCommandInput) -> str:
-    """
-    run_remote_interactive_command.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    ssh_target = f"{input_data.user}@{input_data.host}"
-    try:
-        result = subprocess.run(
-            ["ssh", "-tt", ssh_target, input_data.command],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        return result.stdout.strip() + (
-            "\n" + result.stderr.strip() if result.stderr else ""
-        )
-    except Exception as e:
-        logger.exception(f"[shell tool] [ERROR] Failed to run remote interactive command: {str(e)}")
-        return f"[ERROR] Failed to run remote interactive command: {str(e)}"
+    return executor.run(wrapped_command)
 
 
 @register_tool(
@@ -222,29 +112,17 @@ def run_remote_interactive_command(input_data: RunRemoteInteractiveCommandInput)
     category="system",
 )
 def run_remote_python_snippet(input_data: RunRemotePythonSnippetInput) -> str:
+    """Executes a Python code snippet on a remote host.
+
+    :param input_data: An object containing the host and Python code.
+    :type input_data: RunRemotePythonSnippetInput
+    :return: The output of the executed Python snippet.
+    :rtype: str
     """
-    run_remote_python_snippet.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    ssh_target = f"{input_data.user}@{input_data.host}"
-    escaped_code = input_data.code.replace('"', '\\"')
-    remote_command = f'python3 -c "{escaped_code}"'
-    try:
-        result = subprocess.run(
-            ["ssh", ssh_target, remote_command],
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-        return result.stdout.strip() + (
-            "\n" + result.stderr.strip() if result.stderr else ""
-        )
-    except Exception as e:
-        logger.exception(f"[shell tool] [ERROR] Failed to run remote Python snippet: {str(e)}")
-        return f"[ERROR] Failed to run remote Python snippet: {str(e)}"
+    user, host = _get_user_host(input_data.host)
+    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    remote_command = f"python3 -c {shlex.quote(input_data.code)}"
+    return executor.run(remote_command)
 
 
 @register_tool(
@@ -257,31 +135,26 @@ def run_remote_python_snippet(input_data: RunRemotePythonSnippetInput) -> str:
     category="system",
 )
 def run_script_if_absent(input_data: RunScriptIfAbsentInput) -> str:
+    """Checks for a file's existence and runs a script if it's missing.
+
+    :param input_data: An object containing paths and host info.
+    :type input_data: RunScriptIfAbsentInput
+    :return: A status message or the output of the script.
+    :rtype: str
     """
-    run_script_if_absent.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info("Conditionally running remote script")
-    exists = check_remote_file_exists(
-        CheckRemoteFileExistsInput(
-            file_path=input_data.check_path,
-            host=input_data.host,
-            ssh_key_path=input_data.ssh_key_path,
-        )
-    )
-    if "Exists" in exists:
+    user, host = _get_user_host(input_data.host)
+    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+
+    if executor.check_file_exists(input_data.check_path):
         return f"[INFO] File {input_data.check_path} already exists. Skipping script."
-    return run_remote_script(
-        RunRemoteScriptInput(
-            script_path=input_data.local_script_path,
-            remote_path=input_data.remote_script_path,
-            host=input_data.host,
-            ssh_key_path=input_data.ssh_key_path,
-        )
+
+    upload_result = executor.upload(
+        input_data.local_script_path, input_data.remote_script_path
     )
+    if "[ERROR]" in upload_result:
+        return f"[ERROR] Script upload failed: {upload_result}"
+
+    return executor.run(f"bash {shlex.quote(input_data.remote_script_path)}")
 
 
 @register_tool(
@@ -294,16 +167,18 @@ def run_script_if_absent(input_data: RunScriptIfAbsentInput) -> str:
     category="system",
 )
 def safe_shell_execute(input_data: SafeShellInput) -> str:
+    """A wrapper to run local commands with a basic safety check.
+
+    :param input_data: An object containing the command to run.
+    :type input_data: SafeShellInput
+    :return: The output of the command or a blocking message.
+    :rtype: str
     """
-    safe_shell_execute.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    dangerous = ["rm ", "shutdown", "halt", "reboot", ":(){", "mkfs", "dd ", ">:"]
+    dangerous = ["rm -rf", "shutdown", "halt", "reboot", ":(){", "mkfs", "dd "]
     lowered = input_data.command.lower()
-    if any((term in lowered for term in dangerous)):
-        return "[BLOCKED] Command contains dangerous operations."
+    if any(term in lowered for term in dangerous):
+        return "[BLOCKED] Command contains potentially dangerous operations."
     logger.info(f"Executing safe local shell command: {input_data.command}")
-    return run_local_command(RunLocalCommandInput(command=input_data.command))
+    return run_local_command(
+        RunLocalCommandInput(command=input_data.command, shell=True)
+    )

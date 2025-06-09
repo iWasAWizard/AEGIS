@@ -1,142 +1,159 @@
-"""Reflects on the prompt and available tools, and plans an appropriate action."""
+# aegis/agents/steps/reflect_and_plan.py
+"""
+The core planning step for the agent.
+
+This module contains the `reflect_and_plan` function, which is responsible
+for a single "thought" cycle of the agent. It analyzes the task, reviews the
+history, and uses the LLM to decide on the next action to take.
+"""
 
 import json
-from typing import Optional
+from typing import Dict, Any, List, Callable, Awaitable
+
 from pydantic import ValidationError
 
-from aegis.utils.logger import setup_logger
+from aegis.agents.plan_output import AgentScratchpad
 from aegis.agents.task_state import TaskState
-from aegis.agents.plan_output import PlanOutput
-from aegis.utils.llm_query import llm_query
-from aegis.registry import list_tools
+from aegis.registry import TOOL_REGISTRY
+from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
-async def reflect_and_plan(state: TaskState) -> Optional[TaskState]:
+def get_tool_schemas() -> str:
     """
-    Reflects on the task prompt and tool metadata to determine the next step in the plan.
-
-    :param state: Task state including prompt, tool registry, and any prior context.
-    :type state: TaskState
-    :return: Modified TaskState with planned step embedded, or None if planning fails.
-    :rtype: Optional[TaskState]
+    Generates a compact, human-readable list of tool signatures instead of
+    a verbose JSON schema. This significantly reduces the prompt token count.
     """
-    logger.info("🔍 Running reflect_and_plan step")
+    tool_signatures: List[str] = []
+    excluded_tags = {"internal"}
 
-    if state.sensor_outputs:
-        logger.debug(
-            "Sensor data provided",
-            extra={
-                "event_type": "sensor_debug",
-                "data": {"sensor_keys": list(state.sensor_results.keys())},
-            },
+    for tool_name, tool_entry in sorted(TOOL_REGISTRY.items()):
+        if (
+            any(tag in tool_entry.tags for tag in excluded_tags)
+            and tool_name != "query_knowledge_base"
+        ):
+            continue
+
+        try:
+            schema = tool_entry.input_model.model_json_schema()
+            properties = schema.get("properties", {})
+            required_args = set(schema.get("required", []))
+
+            arg_parts = []
+            for name, details in properties.items():
+                arg_type = details.get("type", "any")
+                part = f"{name}: {arg_type}"
+                if name not in required_args:
+                    part += " (optional)"
+                arg_parts.append(part)
+
+            args_signature = ", ".join(arg_parts)
+            full_signature = (
+                f"- {tool_name}({args_signature}): {tool_entry.description}"
+            )
+            tool_signatures.append(full_signature)
+
+        except Exception as e:
+            logger.warning(f"Could not generate signature for tool '{tool_name}': {e}")
+
+    # Manually add the special 'finish' tool
+    tool_signatures.append(
+        "- finish(reason: string, status: string): Call this tool to signal that the task is complete. Provide a summary of the outcome."
+    )
+
+    return "\n".join(tool_signatures)
+
+
+def construct_planning_prompt(state: TaskState) -> tuple[str, str]:
+    """Constructs the full system and user prompts for the LLM planner."""
+    history_str = ""
+    if not state.history:
+        history_str = (
+            "This is the first step. Begin by thinking about the user's request."
         )
     else:
-        logger.info("No sensor data provided")
+        for i, (scratchpad, result) in enumerate(state.history):
+            history_str += (
+                f"### Step {i + 1}:\n"
+                f"**Thought:** {scratchpad.thought}\n"
+                f"**Action:** Called tool `{scratchpad.tool_name}` "
+                f"with args `{json.dumps(scratchpad.tool_args)}`.\n"
+                f"**Observation:** `{str(result)}`\n\n"
+            )
 
-    if not state.task_prompt:
-        logger.error("[reflect_and_plan] Missing task prompt")
-        raise ValueError("Missing task prompt.")
+    system_prompt = f"""You are AEGIS, an autonomous agent. Your goal is to complete the user's task by thinking step-by-step and using the available tools.
 
-    available_tools = list_tools()
-    if not available_tools:
-        logger.warning("[reflect_and_plan] No tools available to planner")
-        raise ValueError("No tools available for planning.")
+## Instructions
+1.  **Analyze the Goal:** Review the user's main goal.
+2.  **Review History:** Look at the 'Previous Steps' to understand what you have already done.
+3.  **Consult Memory (Optional but Recommended):** If you are unsure how to proceed, have encountered an error, or want to see a past example, use the `query_knowledge_base` tool. This tool helps you learn from past experiences. Ask it a question like "how to check disk space" or "what causes a permission denied error".
+4.  **Think:** In the `thought` field, reason about the current situation. Decide if the task is complete, or what the best next step is. If you've learned something from your memory, mention it. If the task is complete, you MUST use the `finish` tool.
+5.  **Choose ONE Tool:** Select a single tool from the 'Available Tools' list.
+6.  **Provide Arguments:** Fill in the `tool_args` with the correct arguments for the chosen tool.
+7.  **Respond ONLY with a valid JSON object** matching the required format. Do not add any text, comments, or explanations before or after the JSON.
 
-    system_prompt = (
-        "You are an AI planner responsible for selecting the next tool to use in a task automation system. "
-        "You will be given a high-level task description and a list of available tools. "
-        "Your job is to pick one tool and provide its name along with a JSON object of its parameters.\n\n"
-        "Respond only with valid JSON in the following format:\n"
-        '{\n  "tool_name": "example_tool",\n  "tool_args": { "arg1": "value1", "arg2": 2 }\n}\n\n'
-        "Do not include explanations or any output outside this JSON structure."
-    )
+## Available Tools
+The tools are provided in a compact function-signature format: `tool_name(argument: type, ...): description`
+{get_tool_schemas()}
 
-    user_prompt = (
-        f"Task: {state.task_prompt}\n\n"
-        f"Available tools: {', '.join(available_tools)}\n\n"
-    )
+## Response Format
+You must respond with a single JSON object with the following keys: "thought", "tool_name", "tool_args".
+{{
+    "thought": "Your reasoning about the current step and why you chose this tool.",
+    "tool_name": "The name of the tool you are calling.",
+    "tool_args": {{ "arg1": "value1", "arg2": "value2" }}
+}}
+"""
+
+    user_prompt = f"""## Main Goal
+`{state.task_prompt}`
+
+## Previous Steps
+{history_str}
+
+## Your JSON Response:
+"""
+    return system_prompt, user_prompt
+
+
+async def reflect_and_plan(
+    state: TaskState, llm_query_func: Callable[[str, str], Awaitable[str]]
+) -> Dict[str, Any]:
+    """Uses an LLM to reflect on the current state and plan the next action.
+
+    :param state: The current state of the agent's task.
+    :type state: TaskState
+    :param llm_query_func: The async function to call for LLM queries.
+    :type llm_query_func: Callable
+    :return: A dictionary containing the newly created `AgentScratchpad` under the key 'latest_plan'.
+    :rtype: Dict[str, Any]
+    """
+    logger.info("🤔 Step: Reflect and Plan")
+    system_prompt, user_prompt = construct_planning_prompt(state)
 
     logger.debug(
-        "[reflect_and_plan] Sending prompt to LLM",
-        extra={
-            "event_type": "planner_prompt",
-            "data": {
-                "system_prompt": system_prompt,
-                "user_prompt": user_prompt,
-                "model": state.runtime.model,
-                "ollama_url": state.runtime.ollama_url,
-            },
-        },
+        f"LLM planning prompt:\n---SYSTEM---\n{system_prompt}\n---USER---\n{user_prompt}"
     )
 
-    llm_output = await llm_query(system_prompt=system_prompt, user_prompt=user_prompt)
+    llm_response_str = await llm_query_func(system_prompt, user_prompt)
 
     try:
-        parsed_json = json.loads(llm_output)
-        logger.info(
-            "📦 Raw LLM response (parsed):\n" + json.dumps(parsed_json, indent=2)
-        )
-    except json.JSONDecodeError:
-        logger.warning("❗ Failed to decode LLM output as JSON")
-        logger.info(f"📦 Raw LLM response (unparsed): {llm_output}")
-
-    # logger.info(
-    #     "[reflect_and_plan] LLM raw output",
-    #     extra={"event_type": "llm_output", "data": {"output": llm_output}},
-    # )
-
-    # try:
-    #     plan_raw = json.loads(llm_output)
-    #     plan = PlanOutput.model_validate(plan_raw)
-    #     state.steps_output["plan"] = plan.model_dump()
-    # except (json.JSONDecodeError, TypeError, ValueError, ValidationError) as e:
-    #     logger.error(
-    #         "[reflect_and_plan] Failed to parse or validate plan output",
-    #         extra={
-    #             "event_type": "plan_output_error",
-    #             "data": {"raw_output": llm_output, "error": str(e)},
-    #         },
-    #     )
-    #     raise ValueError("Failed to extract valid plan output.") from e
-    try:
-        plan_raw = json.loads(llm_output)
-        print(f"✅ Raw decoded plan: {plan_raw}")
-        logger.debug(
-            "[reflect_and_plan] Decoded JSON plan",
-            extra={"event_type": "plan_json", "data": {"decoded": plan_raw}},
-        )
-    except (json.JSONDecodeError, TypeError, ValueError, ValidationError) as e:
-        import traceback
-
-        logger.error(
-            "[reflect_and_plan] Failed to parse or validate plan output",
-            extra={
-                "event_type": "plan_output_error",
-                "data": {
-                    "raw_output": llm_output,
-                    "error": str(e),
-                    "traceback": traceback.format_exc(),
-                },
+        # The LLM output format remains the same, so no changes needed here.
+        parsed_json = json.loads(llm_response_str)
+        scratchpad = AgentScratchpad.model_validate(parsed_json)
+        logger.info(f"✅ Plan generated: Calling tool `{scratchpad.tool_name}`")
+        logger.debug(f"🤔 Thought: {scratchpad.thought}")
+    except (json.JSONDecodeError, ValidationError) as e:
+        logger.error(f"Failed to parse or validate LLM plan output. Error: {e}")
+        logger.debug(f"LLM raw output was:\n{llm_response_str}")
+        scratchpad = AgentScratchpad(
+            thought=f"The last attempt to generate a plan failed. The LLM returned invalid output that could not be parsed. Error: {e}. I will now terminate the task to avoid a loop.",
+            tool_name="finish",
+            tool_args={
+                "reason": "Planning phase failed due to malformed LLM response.",
+                "status": "failure",
             },
         )
-        print(
-            f"❌ Failed to parse or validate output: {llm_output}\n{traceback.format_exc()}"
-        )
-        raise ValueError("Failed to extract valid plan output.") from e
 
-    plan = PlanOutput.model_validate(plan_raw)
-    state.steps_output["plan"] = plan.model_dump()
-
-    logger.info(
-        "✅ Plan accepted",
-        extra={
-            "event_type": "plan_decision",
-            "data": {"tool": plan.tool_name, "arguments": plan.tool_args},
-        },
-    )
-
-    state.tool_name = plan.tool_name
-    state.next_step = "execute_tool"
-    return state
+    return {"latest_plan": scratchpad}

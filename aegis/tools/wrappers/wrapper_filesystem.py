@@ -1,398 +1,246 @@
+# aegis/tools/wrappers/wrapper_filesystem.py
 """
-Filesystem wrapper tools for higher-level file operations.
+Filesystem wrapper tools for higher-level, multi-step file operations.
 
-Extends primitives to support workflows like file search, batch reads, uploads, and more.
-May include integrations with remote storage or validation logic.
+This module provides tools that compose multiple actions to achieve a specific
+goal, such as backing up a file before modifying it, or checking for a file's
+existence before attempting to read it.
 """
 
+import difflib
+import shlex
+from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from aegis.executors.ssh import SSHExecutor
 from aegis.registry import register_tool
-from aegis.tools.primitives import (
-    fetch_file_from_remote,
-    check_remote_file_exists,
-    read_remote_file,
-    ReadRemoteFileInput,
-    append_to_remote_file,
-    AppendToRemoteFileInput,
-    get_remote_directory_listing,
-    GetRemoteDirectoryListingInput,
-    diff_text_blocks,
-    DiffTextBlocksInput,
-    FetchFileFromRemoteInput,
-    CheckRemoteFileExistsInput,
-)
-from aegis.tools.wrappers.shell import run_remote_command, RunRemoteCommandInput
+from aegis.schemas.common_inputs import RemoteFileInput
+from aegis.utils.host_utils import get_user_host_from_string
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
-class RetrieveRemoteLogFileInput(BaseModel):
-    """
-    RetrieveRemoteLogFileInput class.
-    """
-
-    host: str
-    remote_log_path: str
-    local_destination: str
-    ssh_key_path: str
+# === Input Models ===
 
 
-class CheckAndReadConfigFileInput(BaseModel):
-    """
-    CheckAndReadConfigFileInput class.
-    """
+class RetrieveRemoteLogFileInput(RemoteFileInput):
+    """Input for retrieving a remote log file to a local destination."""
 
-    host: str
-    config_path: str
-    ssh_key_path: str
+    local_destination: str = Field(
+        ..., description="The local path to save the downloaded file."
+    )
 
 
-class BackupRemoteFileInput(BaseModel):
-    """
-    BackupRemoteFileInput class.
-    """
+class BackupRemoteFileInput(RemoteFileInput):
+    """Input for creating a .bak backup of a file on a remote host."""
 
-    host: str
-    file_path: str
-    ssh_key_path: str
+    pass
 
 
-class InjectLineIntoConfigInput(BaseModel):
-    """
-    InjectLineIntoConfigInput class.
-    """
+class InjectLineIntoConfigInput(RemoteFileInput):
+    """Input for appending a single line of text to a remote file."""
 
-    host: str
-    file_path: str
-    line: str
-    ssh_key_path: str
-
-
-class ListRemoteLogDirectoryInput(BaseModel):
-    """
-    ListRemoteLogDirectoryInput class.
-    """
-
-    host: str
-    ssh_key_path: str
-
-
-class ClearRemoteTempInput(BaseModel):
-    """
-    ClearRemoteTempInput class.
-    """
-
-    host: str
-    ssh_key_path: str
+    line: str = Field(..., description="The line of text to inject into the file.")
 
 
 class DiffLocalFileAfterEditInput(BaseModel):
-    """
-    DiffLocalFileAfterEditInput class.
-    """
+    """Input for diffing a local file before and after an in-place edit."""
 
-    file_path: str
-    replacement_text: str
+    file_path: str = Field(
+        ..., description="The path to the local file to edit and diff."
+    )
+    replacement_text: str = Field(
+        ..., description="The new text to completely overwrite the file with."
+    )
 
 
-class DiffRemoteFileAfterEditInput(BaseModel):
-    """
-    DiffRemoteFileAfterEditInput class.
-    """
+class DiffRemoteFileAfterEditInput(RemoteFileInput):
+    """Input for diffing a remote file before and after an in-place edit."""
 
-    host: str
-    file_path: str
-    new_contents: str
-    ssh_key_path: Optional[str]
+    new_contents: str = Field(
+        ..., description="The new text to completely overwrite the remote file with."
+    )
+
+
+# === Tools ===
 
 
 @register_tool(
     name="retrieve_remote_log_file",
     input_model=RetrieveRemoteLogFileInput,
-    tags=["ssh", "scp", "log", "midlevel"],
-    description="Download a log file from a remote system.",
+    tags=["ssh", "scp", "log", "wrapper"],
+    description="Downloads a specific log file from a remote system to a local path.",
     safe_mode=True,
-    purpose="Download a log file from a remote machine",
+    purpose="Download a log file from a remote machine.",
     category="file_ops",
 )
 def retrieve_remote_log_file(input_data: RetrieveRemoteLogFileInput) -> str:
+    """A specific wrapper to download a file, intended for log retrieval.
+
+    :param input_data: An object containing remote host, remote path, and local destination.
+    :type input_data: RetrieveRemoteLogFileInput
+    :return: A status message indicating the result of the download.
+    :rtype: str
     """
-    retrieve_remote_log_file.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(
-        "Retrieving remote log file",
-        event_type="retrieve_remote_log_file",
-        data=input_data.dict(),
-    )
-    return fetch_file_from_remote(
-        FetchFileFromRemoteInput(
-            remote_path=input_data.remote_log_path,
-            local_path=input_data.local_destination,
-            host=input_data.host,
-            ssh_key_path=input_data.ssh_key_path,
-        )
+    user, host = get_user_host_from_string(input_data.host)
+    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    return executor.download(
+        remote_path=input_data.file_path, local_path=input_data.local_destination
     )
 
 
 @register_tool(
     name="check_and_read_config_file",
-    input_model=CheckAndReadConfigFileInput,
-    tags=["ssh", "file", "config", "midlevel"],
-    description="Read a remote config file only if it exists.",
+    input_model=RemoteFileInput,
+    tags=["ssh", "file", "config", "wrapper"],
+    description="Reads a remote configuration file, but only if it exists.",
     safe_mode=True,
-    purpose="Check if a remote config file exists and print its contents",
+    purpose="Safely read a remote config file without causing an error if it's missing.",
     category="file_ops",
 )
-def check_and_read_config_file(input_data: CheckAndReadConfigFileInput) -> str:
+def check_and_read_config_file(input_data: RemoteFileInput) -> str:
+    """Checks for a remote file's existence and, if present, returns its contents.
+
+    :param input_data: An object containing the host and file path to check and read.
+    :type input_data: RemoteFileInput
+    :return: The file's contents, or an informational message if it's missing.
+    :rtype: str
     """
-    check_and_read_config_file.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(
-        "Verifying configuration file",
-        event_type="check_and_read_config_file",
-        data=input_data.dict(),
-    )
-    exists = check_remote_file_exists(
-        CheckRemoteFileExistsInput(
-            host=input_data.host,
-            file_path=input_data.config_path,
-            ssh_key_path=input_data.ssh_key_path,
-        )
-    )
-    if "Exists" in exists:
-        return read_remote_file(
-            ReadRemoteFileInput(
-                host=input_data.host,
-                file_path=input_data.config_path,
-                ssh_key_path=input_data.ssh_key_path,
-            )
-        )
+    user, host = get_user_host_from_string(input_data.host)
+    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    if executor.check_file_exists(input_data.file_path):
+        return executor.run(f"cat {shlex.quote(input_data.file_path)}")
     else:
-        return f"[INFO] Config file does not exist: {input_data.config_path}"
+        return f"[INFO] File does not exist at '{input_data.file_path}', so it cannot be read."
 
 
 @register_tool(
     name="backup_remote_file",
-    tags=["scp"],
     input_model=BackupRemoteFileInput,
-    description="Copy a file to a .bak version if it exists.",
+    tags=["ssh", "backup", "file", "wrapper"],
+    description="Creates a backup of a remote file by copying it to a `.bak` version.",
     safe_mode=True,
-    purpose="Create a .bak backup of a remote file if it exists",
+    purpose="Create a .bak backup of a remote file before modification.",
     category="file_ops",
 )
 def backup_remote_file(input_data: BackupRemoteFileInput) -> str:
+    """Creates a `.bak` copy of a specified file on a remote system if it exists.
+
+    :param input_data: An object containing the host and file path to back up.
+    :type input_data: BackupRemoteFileInput
+    :return: The result of the 'cp' command or an informational message.
+    :rtype: str
     """
-    backup_remote_file.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(
-        "Backing up remote file",
-        event_type="backup_remote_file",
-        data=input_data.dict(),
-    )
-    exists = check_remote_file_exists(
-        CheckRemoteFileExistsInput(
-            host=input_data.host,
-            file_path=input_data.file_path,
-            ssh_key_path=input_data.ssh_key_path,
-        )
-    )
-    if "Exists" not in exists:
-        return f"[INFO] File {input_data.file_path} does not exist. Skipping backup."
-    cmd = f"cp {input_data.file_path} {input_data.file_path}.bak"
-    return run_remote_command(
-        RunRemoteCommandInput(
-            host=input_data.host,
-            command=f"sudo {cmd}",
-            ssh_key_path=input_data.ssh_key_path,
-        )
-    )
+    user, host = get_user_host_from_string(input_data.host)
+    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    if not executor.check_file_exists(input_data.file_path):
+        return f"[INFO] File '{input_data.file_path}' does not exist. Skipping backup."
+
+    backup_cmd = f"cp {shlex.quote(input_data.file_path)} {shlex.quote(input_data.file_path + '.bak')}"
+    return executor.run(f"sudo {backup_cmd}")
 
 
 @register_tool(
     name="inject_line_into_config",
     input_model=InjectLineIntoConfigInput,
-    tags=["ssh", "config", "append", "midlevel"],
-    description="Appends a line to a remote config file.",
+    tags=["ssh", "config", "append", "wrapper"],
+    description="Appends a single line of text to a remote configuration file.",
     safe_mode=True,
-    purpose="Append a line of configuration to a remote file",
+    purpose="Append a line of configuration to a remote file.",
     category="file_ops",
 )
 def inject_line_into_config(input_data: InjectLineIntoConfigInput) -> str:
-    """
-    inject_line_into_config.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(
-        "Injecting line into remote config",
-        event_type="inject_line_into_config",
-        data=input_data.dict(),
-    )
-    return append_to_remote_file(
-        AppendToRemoteFileInput(
-            host=input_data.host,
-            file_path=input_data.file_path,
-            content=input_data.line,
-            ssh_key_path=input_data.ssh_key_path,
-        )
-    )
+    """Appends a line to a remote file, often used for configuration changes.
 
-
-@register_tool(
-    name="list_remote_log_directory",
-    input_model=ListRemoteLogDirectoryInput,
-    tags=["ssh", "remote", "logs", "midlevel"],
-    description="List contents of /var/log/ on the remote host.",
-    safe_mode=True,
-    purpose="List all files inside /var/log on a remote system",
-    category="file_ops",
-)
-def list_remote_log_directory(input_data: ListRemoteLogDirectoryInput) -> str:
+    :param input_data: An object with host, file path, and the line of content to add.
+    :type input_data: InjectLineIntoConfigInput
+    :return: The output of the remote command.
+    :rtype: str
     """
-    list_remote_log_directory.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(
-        "Listing remote log directory",
-        event_type="list_remote_log_directory",
-        data=input_data.dict(),
-    )
-    return get_remote_directory_listing(
-        GetRemoteDirectoryListingInput(
-            host=input_data.host,
-            directory_path="/var/log",
-            ssh_key_path=input_data.ssh_key_path,
-        )
-    )
-
-
-@register_tool(
-    name="clear_remote_temp",
-    input_model=ClearRemoteTempInput,
-    tags=["ssh", "remote", "cleanup", "midlevel"],
-    description="Clear /tmp and /var/tmp on a remote system.",
-    safe_mode=True,
-    purpose="Delete all temporary files from /tmp and /var/tmp remotely",
-    category="system",
-)
-def clear_remote_temp(input_data: ClearRemoteTempInput) -> str:
-    """
-    clear_remote_temp.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(
-        "Clearing remote temp directories",
-        event_type="clear_remote_temp",
-        data=input_data.dict(),
-    )
-    return run_remote_command(
-        RunRemoteCommandInput(
-            host=input_data.host,
-            command="sudo rm -rf /tmp/* /var/tmp/*",
-            ssh_key_path=input_data.ssh_key_path,
-        )
-    )
+    user, host = get_user_host_from_string(input_data.host)
+    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+    append_cmd = f"echo {shlex.quote(input_data.line)} | sudo tee -a {shlex.quote(input_data.file_path)}"
+    return executor.run(append_cmd)
 
 
 @register_tool(
     name="diff_local_file_after_edit",
     input_model=DiffLocalFileAfterEditInput,
-    tags=["local", "file", "edit", "diff", "midlevel"],
-    description="Capture original contents of a local file, modify it, and return a diff.",
-    safe_mode=True,
-    purpose="Compare local file contents before and after a replacement",
+    tags=["local", "file", "edit", "diff", "wrapper"],
+    description="Reads a local file, overwrites it with new text, and returns a diff of the changes.",
+    safe_mode=False,  # Modifies a local file.
+    purpose="Compare local file contents before and after an in-place replacement.",
     category="file_ops",
 )
 def diff_local_file_after_edit(input_data: DiffLocalFileAfterEditInput) -> str:
+    """Performs an in-place edit of a local file and returns a diff of the changes.
+
+    :param input_data: An object with the local file path and the new text.
+    :type input_data: DiffLocalFileAfterEditInput
+    :return: A unified diff string of the changes made.
+    :rtype: str
     """
-    diff_local_file_after_edit.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(
-        "Diffing local file after edit",
-        event_type="diff_local_file_after_edit",
-        data=input_data.dict(),
-    )
     try:
-        with open(input_data.file_path, "r") as f:
-            old = f.read()
-        with open(input_data.file_path, "w") as f:
-            f.write(input_data.replacement_text)
-        return diff_text_blocks(
-            DiffTextBlocksInput(old=old, new=input_data.replacement_text)
+        file_path = Path(input_data.file_path)
+        if not file_path.is_file():
+            return f"[ERROR] Local file not found: {file_path}"
+
+        original_content = file_path.read_text(encoding="utf-8")
+        file_path.write_text(input_data.replacement_text, encoding="utf-8")
+
+        diff = difflib.unified_diff(
+            original_content.splitlines(),
+            input_data.replacement_text.splitlines(),
+            fromfile=f"{file_path.name} (before)",
+            tofile=f"{file_path.name} (after)",
+            lineterm="",
         )
+        return "\n".join(diff) or "File content was identical; no changes made."
     except Exception as e:
-        return f"[ERROR] Failed to edit and diff local file: {str(e)}"
+        logger.exception(f"Failed to edit and diff local file: {input_data.file_path}")
+        return f"[ERROR] Failed to edit and diff local file: {e}"
 
 
 @register_tool(
     name="diff_remote_file_after_edit",
     input_model=DiffRemoteFileAfterEditInput,
-    tags=["remote", "file", "edit", "diff", "midlevel"],
-    description="Read and diff a remote file before and after replacing its contents.",
-    safe_mode=True,
-    purpose="Compare remote file contents before and after a replacement",
+    tags=["remote", "file", "edit", "diff", "wrapper"],
+    description="Reads a remote file, overwrites it with new text, and returns a diff.",
+    safe_mode=True,  # Remote changes are contained.
+    purpose="Compare remote file contents before and after an in-place replacement.",
     category="file_ops",
 )
 def diff_remote_file_after_edit(input_data: DiffRemoteFileAfterEditInput) -> str:
+    """Performs an in-place edit of a remote file and returns a diff of the changes.
+
+    :param input_data: An object with host, file path, and the new file contents.
+    :type input_data: DiffRemoteFileAfterEditInput
+    :return: A unified diff string of the changes made to the remote file.
+    :rtype: str
     """
-    diff_remote_file_after_edit.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(
-        "Diffing remote file after edit",
-        event_type="diff_remote_file_after_edit",
-        data=input_data.dict(),
+    user, host = get_user_host_from_string(input_data.host)
+    executor = SSHExecutor(host=host, user=user, ssh_key_path=input_data.ssh_key_path)
+
+    # 1. Read the original contents.
+    original_contents = executor.run(f"cat {shlex.quote(input_data.file_path)}")
+    if "[ERROR]" in original_contents or "[STDERR]" in original_contents:
+        return f"[ERROR] Could not read original remote file to create diff: {original_contents}"
+
+    # 2. Write the new contents.
+    echo_cmd = f"echo {shlex.quote(input_data.new_contents)} | sudo tee {shlex.quote(input_data.file_path)}"
+    write_result = executor.run(echo_cmd)
+    if "[ERROR]" in write_result or "[STDERR]" in write_result:
+        return f"[ERROR] Could not write new content to remote file: {write_result}"
+
+    # 3. Generate the diff locally.
+    diff = difflib.unified_diff(
+        original_contents.splitlines(),
+        input_data.new_contents.splitlines(),
+        fromfile=f"{input_data.file_path} (before)",
+        tofile=f"{input_data.file_path} (after)",
+        lineterm="",
     )
-    try:
-        old_contents = read_remote_file(
-            ReadRemoteFileInput(
-                host=input_data.host,
-                file_path=input_data.file_path,
-                ssh_key_path=input_data.ssh_key_path,
-            )
-        )
-        safe_text = input_data.new_contents.replace('"', '\\"').replace("`", "\\`")
-        echo_cmd = f'echo "{safe_text}" | sudo tee {input_data.file_path}'
-        run_remote_command(
-            RunRemoteCommandInput(
-                host=input_data.host,
-                command=echo_cmd,
-                ssh_key_path=input_data.ssh_key_path,
-            )
-        )
-        return diff_text_blocks(
-            DiffTextBlocksInput(old=old_contents, new=input_data.new_contents)
-        )
-    except Exception as e:
-        return f"[ERROR] Failed to edit and diff remote file: {str(e)}"
+    return "\n".join(diff) or "Remote file content was identical; no changes made."

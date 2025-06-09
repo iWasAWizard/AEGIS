@@ -1,7 +1,10 @@
+# aegis/tools/primitives/primitive_network.py
 """
 Primitive tools for basic network interactions and diagnostics.
 
-Includes functions like ICMP ping, TCP port checks, and hostname resolution.
+This module contains low-level tools for performing fundamental network
+operations, such as sending Wake-on-LAN packets and making flexible HTTP
+requests.
 """
 
 import subprocess
@@ -16,98 +19,98 @@ from aegis.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 
-class WakeOnLANInput(BaseModel):
-    """
-    WakeOnLANInput class.
-    """
+# === Input Models ===
 
-    mac_address: str = Field(description="MAC address to wake via WoL.")
+class WakeOnLANInput(BaseModel):
+    """Input for sending a Wake-on-LAN (WoL) magic packet."""
+    mac_address: str = Field(..., description="The MAC address of the target device to wake.")
 
 
 class HttpRequestInput(BaseModel):
-    """
-    HttpRequestInput class.
-    """
+    """Input for making a generic HTTP request."""
+    method: str = Field(..., description="HTTP method (e.g., 'GET', 'POST', 'PUT', 'DELETE').")
+    url: str = Field(..., description="The full target URL for the request.")
+    headers: Optional[Dict[str, str]] = Field(default_factory=dict, description="Optional HTTP headers.")
+    params: Optional[Dict[str, Any]] = Field(default_factory=dict, description="URL query string parameters.")
+    body: Optional[str] = Field(None, description="The raw request body as a string (for POST/PUT).")
 
-    method: str = Field(
-        description="HTTP method (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS)."
-    )
-    url: str = Field(description="The full target URL.")
-    headers: Optional[Dict[str, str]] = Field(
-        default_factory=dict, description="HTTP headers to send."
-    )
-    params: Optional[Dict[str, str]] = Field(
-        default_factory=dict, description="Query string parameters."
-    )
-    body: Optional[str] = Field(
-        default=None, description="Raw string body to send (not JSON-encoded)."
-    )
-    data: Optional[Any] = Field(
-        default=None,
-        description="WebRequest content destined for the target HTTP server.",
-    )
 
+# === Tools ===
 
 @register_tool(
     name="send_wake_on_lan",
     input_model=WakeOnLANInput,
     tags=["network", "wol", "primitive"],
-    description="Send a Wake-on-LAN magic packet to a MAC address.",
+    description="Sends a Wake-on-LAN (WoL) magic packet to a specified MAC address.",
     safe_mode=True,
-    purpose="Send a WoL packet to a powered-off machine to wake it up.",
+    purpose="Power on a remote machine that supports Wake-on-LAN.",
     category="network",
 )
 def send_wake_on_lan(input_data: WakeOnLANInput) -> str:
+    """Uses the `wakeonlan` command-line utility to send a WoL magic packet.
+
+    :param input_data: An object containing the target MAC address.
+    :type input_data: WakeOnLANInput
+    :return: A string indicating the result of the command.
+    :rtype: str
     """
-    send_wake_on_lan.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(f"Sending Wake-on-LAN packet to MAC {input_data.mac_address}")
+    logger.info(f"Sending Wake-on-LAN packet to MAC: {input_data.mac_address}")
     try:
+        # The 'wakeonlan' utility must be installed on the host system.
         result = subprocess.run(
             ["wakeonlan", input_data.mac_address],
             capture_output=True,
             text=True,
             timeout=10,
+            check=False
         )
-        return result.stdout.strip() + (
-            "\n" + result.stderr.strip() if result.stderr else ""
-        )
+        output = result.stdout.strip()
+        if result.stderr:
+            output += f"\n[STDERR]\n{result.stderr.strip()}"
+        return output
+    except FileNotFoundError:
+        error_msg = "[ERROR] The 'wakeonlan' command was not found. Please install it."
+        logger.error(error_msg)
+        return error_msg
     except Exception as e:
-        logger.exception(f"[primitive_network] Error: {e}")
-        return f"[ERROR] Failed to send Wake-on-LAN: {str(e)}"
+        logger.exception(f"Failed to send Wake-on-LAN packet to {input_data.mac_address}")
+        return f"[ERROR] Failed to send Wake-on-LAN packet: {e}"
 
 
 @register_tool(
     name="http_request",
     input_model=HttpRequestInput,
-    tags=["http", "primitive", "network", "flexible"],
-    description="Send a raw HTTP request with full control over method, headers, body, and query params.",
-    safe_mode=True,
-    purpose="Allow flexible HTTP access for tools that need to interact with APIs using various formats.",
+    tags=["http", "network", "api", "primitive"],
+    description="Sends a flexible HTTP request with full control over method, headers, body, and params.",
+    safe_mode=True,  # Considered safe as it only interacts with network resources, not the local filesystem.
+    purpose="Interact with web servers or REST APIs.",
     category="network",
 )
 def http_request(input_data: HttpRequestInput) -> str:
+    """Performs a generic HTTP request using the requests library.
+
+    :param input_data: An object containing all necessary request parameters.
+    :type input_data: HttpRequestInput
+    :return: A string containing the HTTP status code and response body.
+    :rtype: str
     """
-    http_request.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(f"Sending {input_data.method.upper()} request to {input_data.url}")
+    method = input_data.method.upper()
+    logger.info(f"Sending {method} request to {input_data.url}")
     try:
         response = requests.request(
-            method=input_data.method.upper(),
+            method=method,
             url=input_data.url,
             headers=input_data.headers,
             params=input_data.params,
-            data=input_data.body,
+            data=input_data.body.encode('utf-8') if input_data.body else None,  # requests prefers bytes for data
+            timeout=30  # A reasonable default timeout
         )
-        return f"Status: {response.status_code}\nBody: {response.text}"
+        # Raise an exception for bad status codes (4xx or 5xx)
+        response.raise_for_status()
+        return f"Status: {response.status_code}\nBody:\n{response.text}"
+    except requests.exceptions.RequestException as e:
+        logger.error(f"HTTP request to {input_data.url} failed: {e}")
+        return f"[ERROR] HTTP request failed: {e}"
     except Exception as e:
-        logger.exception(f"[primitive_network] Error: {e}")
-        return f"[ERROR] Failed HTTP request: {str(e)}"
+        logger.exception(f"An unexpected error occurred during HTTP request to {input_data.url}")
+        return f"[ERROR] An unexpected error occurred: {e}"

@@ -1,242 +1,182 @@
+# aegis/tools/primitives/primitive_system.py
 """
-Primitive tools for accessing system information and executing shell-level diagnostics.
+Primitive tools for local system interaction and diagnostics.
 
-Includes hardware stats, uptime, OS detection, and other low-level introspection tools.
+This module provides fundamental tools for interacting with the local operating
+system, including running shell commands, killing processes, and gathering
+basic hardware and system statistics.
 """
-import shlex
+
 import subprocess
-from typing import Optional
 
 import psutil
 from pydantic import BaseModel, Field
 
-from aegis.models.tool_inputs import CommandWithArgsInput
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
-def sanitize_shell_input(command: str) -> str:
-    """
-    Escape untrusted input for safe shell usage.
-    """
-    return shlex.quote(command)
-
-
 # === Input Models ===
 
-
 class KillProcessInput(BaseModel):
-    pid: int = Field(description="Process ID to kill.")
+    """Input for killing a process by its Process ID (PID)."""
+    pid: int = Field(..., description="The Process ID (PID) of the process to kill.")
 
 
 class GetLocalMemoryInfoInput(BaseModel):
+    """Input for getting local memory information. Takes no arguments."""
     pass
 
 
-class SimpleShellCommandInput(BaseModel):
-    extra_args: Optional[str] = Field(
-        default="", description="Extra arguments to pass to the command."
-    )
-
-
 class RunLocalCommandInput(BaseModel):
-    command: str = Field(description="The shell command to execute locally.")
+    """Input for running a command on the local shell."""
+    command: str = Field(..., description="The shell command to execute locally.")
     shell: bool = Field(
-        default=True, description="Whether to use shell execution mode."
+        default=True,
+        description="Whether to use the shell for execution. Recommended to be True for complex commands.",
     )
 
 
-class RunCommandWithTimeoutInput(BaseModel):
-    command: str = Field(..., description="The command string to run.")
-    timeout: int = Field(
-        default=10, description="Maximum time (in seconds) to allow the command to run."
-    )
-    shell: bool = Field(
-        default=False, description="Whether to use shell execution (e.g., for piping)."
-    )
-
-
-class GetRandomStringInput(BaseModel):
-    length: int = Field(
-        default=32, description="Number of bytes to read from /dev/random."
-    )
+class GetRandomBytesInput(BaseModel):
+    """Input for getting random bytes from the OS source."""
+    length: int = Field(default=32, gt=0, description="Number of bytes to read from /dev/random.")
 
 
 # === Tools ===
 
-
 @register_tool(
     name="kill_local_process",
     input_model=KillProcessInput,
-    description="Kills a local process by its PID using SIGKILL (-9).",
+    description="Terminates a local process by its PID using a SIGKILL signal.",
     tags=["system", "process", "primitive"],
-    safe_mode=False,
-    category="primitive",
+    safe_mode=False,  # This is a dangerous operation.
+    purpose="Forcibly terminate a running process on the local machine.",
+    category="system",
 )
 def kill_local_process(input_data: KillProcessInput) -> str:
+    """Executes `kill -9` on the given PID on Unix-based systems.
+
+    :param input_data: An object containing the PID of the process to kill.
+    :type input_data: KillProcessInput
+    :return: A string indicating the success or failure of the operation.
+    :rtype: str
     """
-    Executes `kill -9` on the given PID. Works on Unix-based systems.
-    """
-    logger.info(f"[kill_local_process] Attempting to kill PID: {input_data.pid}")
+    pid_to_kill = str(input_data.pid)
+    logger.info(f"Attempting to kill local PID: {pid_to_kill}")
     try:
+        # Using a direct command instead of shell=True is safer here.
         result = subprocess.run(
-            ["kill", "-9", str(input_data.pid)],
+            ["kill", "-9", pid_to_kill],
             capture_output=True,
             text=True,
             timeout=5,
+            check=False
         )
         if result.returncode == 0:
-            logger.info(
-                f"[kill_local_process] Successfully killed PID {input_data.pid}"
-            )
-            return f"Successfully killed process {input_data.pid}"
+            logger.info(f"Successfully sent SIGKILL to PID {pid_to_kill}")
+            return f"Successfully killed process {pid_to_kill}"
         else:
-            logger.error(f"[kill_local_process] Error: {result.stderr.strip()}")
-            return f"Kill failed: {result.stderr.strip() or result.stdout.strip()}"
+            error_message = result.stderr or result.stdout
+            logger.error(f"Failed to kill PID {pid_to_kill}: {error_message}")
+            return f"Kill command failed: {error_message}"
     except Exception as e:
-        logger.exception(f"[kill_local_process] Exception: {e}")
-        return f"Exception occurred while killing process: {e}"
-
-
-@register_tool(
-    name="list_block_devices",
-    input_model=CommandWithArgsInput,
-    tags=["block", "hardware", "primitive"],
-    description="Run lsblk to list block devices and partitions.",
-    safe_mode=True,
-    purpose="Show attached block devices and their mount points.",
-    category="system",
-)
-def list_block_devices(input_data: CommandWithArgsInput) -> str:
-    logger.info("Listing block devices using lsblk")
-    try:
-        result = subprocess.run(
-            f"lsblk {input_data.extra_args}".strip().split(),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return result.stdout.strip()
-    except Exception as e:
-        return f"[ERROR] lsblk failed: {str(e)}"
+        logger.exception(f"An exception occurred while trying to kill PID {pid_to_kill}")
+        return f"[ERROR] Exception occurred while killing process: {e}"
 
 
 @register_tool(
     name="run_local_command",
     input_model=RunLocalCommandInput,
-    description="Runs a shell command locally and returns output. Shell mode enabled by default.",
+    description="Runs a shell command on the local machine and returns its output.",
     tags=["system", "shell", "primitive"],
-    safe_mode=False,
-    category="primitive",
+    safe_mode=False,  # Executing arbitrary commands is inherently unsafe.
+    purpose="Execute a shell command on the local machine.",
+    category="system",
 )
 def run_local_command(input_data: RunLocalCommandInput) -> str:
+    """Executes a given shell command locally using the subprocess module.
+
+    :param input_data: An object containing the command string to execute.
+    :type input_data: RunLocalCommandInput
+    :return: The combined stdout and stderr from the executed command.
+    :rtype: str
     """
-    Executes the given shell command locally using subprocess.
-    """
-    logger.info(f"[run_local_command] Executing: {input_data.command}")
+    logger.info(f"Executing local command: {input_data.command}")
     try:
+        # Using shell=True can be a security risk if the command is constructed
+        # from external input, but for an agent it's often necessary.
         result = subprocess.run(
             input_data.command,
             shell=input_data.shell,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=60,
+            check=False
         )
-        if result.returncode == 0:
-            logger.info(f"[run_local_command] Success")
-            return result.stdout.strip()
-        else:
-            logger.error(
-                f"[run_local_command] Failed with stderr: {result.stderr.strip()}"
-            )
-            return f"Error: {result.stderr.strip() or result.stdout.strip()}"
+        output = result.stdout.strip()
+        if result.stderr:
+            output += f"\n[STDERR]\n{result.stderr.strip()}"
+        return output
     except Exception as e:
-        logger.exception(f"[run_local_command] Exception during execution: {e}")
-        return f"Execution failed: {e}"
+        logger.exception(f"Exception during local command execution: {input_data.command}")
+        return f"[ERROR] Command execution failed: {e}"
 
 
 @register_tool(
     name="get_local_memory_info",
     input_model=GetLocalMemoryInfoInput,
-    description="Returns local memory usage statistics using psutil or shell fallback.",
-    tags=["system", "memory", "introspection"],
+    description="Returns local system memory usage statistics using psutil.",
+    tags=["system", "memory", "monitoring", "primitive"],
     safe_mode=True,
-    category="primitive",
+    purpose="Retrieve detailed memory statistics from the local machine.",
+    category="system",
 )
 def get_local_memory_info(_: GetLocalMemoryInfoInput) -> str:
-    """
-    Uses psutil to return memory stats, or falls back to shell command.
+    """Uses the psutil library to return detailed memory statistics.
+
+    :param _: This tool takes no arguments.
+    :type _: GetLocalMemoryInfoInput
+    :return: A formatted string of memory statistics (Total, Available, Used, etc.).
+    :rtype: str
     """
     try:
         mem = psutil.virtual_memory()
+        # Formatting to gigabytes for readability
+        to_gb = lambda x: f"{x / (1024 ** 3):.2f} GB"
         result = (
-            f"Total: {mem.total / (1024 ** 3):.2f} GB\n"
-            f"Available: {mem.available / (1024 ** 3):.2f} GB\n"
-            f"Used: {mem.used / (1024 ** 3):.2f} GB\n"
-            f"Free: {mem.free / (1024 ** 3):.2f} GB\n"
-            f"Percent Used: {mem.percent}%"
+            f"Total: {to_gb(mem.total)}\n"
+            f"Available: {to_gb(mem.available)}\n"
+            f"Used: {to_gb(mem.used)} (Percent: {mem.percent}%)"
         )
-        logger.info("[get_local_memory_info] Memory stats retrieved via psutil")
+        logger.info("Memory stats retrieved successfully via psutil.")
         return result
     except Exception as e:
-        logger.warning(f"[get_local_memory_info] psutil failed: {e}")
-        return "psutil not available or failed. Consider installing psutil or using shell fallback."
+        logger.warning(f"psutil failed to get memory info: {e}. Is psutil installed?")
+        return "[ERROR] Could not retrieve memory info. psutil might be missing or failed."
 
 
 @register_tool(
-    name="run_command_with_timeout",
-    input_model=RunCommandWithTimeoutInput,
-    description="Execute a system command with a timeout and optional shell mode.",
-    tags=["system", "primitive"],
-    safe_mode=False,
-    timeout=15,
-    retries=0,
-    category="primitive",
-)
-def run_command_with_timeout(input_data: RunCommandWithTimeoutInput) -> str:
-    """
-    Executes the given command using subprocess with timeout control.
-    """
-    try:
-        result = subprocess.run(
-            input_data.command,
-            shell=input_data.shell,
-            capture_output=True,
-            timeout=input_data.timeout,
-            text=True,
-        )
-        return (
-            f"✅ Command completed with exit code {result.returncode}\n"
-            f"--- STDOUT ---\n{result.stdout.strip()}\n"
-            f"--- STDERR ---\n{result.stderr.strip()}"
-        )
-    except subprocess.TimeoutExpired as e:
-        return (
-            f"⏰ Timeout: Command exceeded {input_data.timeout}s\n"
-            f"--- STDOUT ---\n{e.stdout or ''}\n"
-            f"--- STDERR ---\n{e.stderr or ''}"
-        )
-    except Exception as e:
-        return f"❌ Command failed: {str(e)}"
-
-
-@register_tool(
-    name="get_random_string",
-    input_model=GetRandomStringInput,
-    description="Returns a string of complete gibberish from /dev/random.",
-    tags=["system", "primitive"],
+    name="get_random_bytes_as_hex",
+    input_model=GetRandomBytesInput,
+    description="Returns a hex-encoded string of random bytes from the OS.",
+    tags=["system", "random", "primitive"],
     safe_mode=True,
-    category="primitive",
+    purpose="Generate a cryptographically secure random string.",
+    category="system",
 )
-def get_random_string(input_data: GetRandomStringInput) -> str:
-    """
-    Reads raw bytes from /dev/random and returns them as a hex string.
+def get_random_bytes_as_hex(input_data: GetRandomBytesInput) -> str:
+    """Reads raw bytes from the OS's entropy source (/dev/random) and hex-encodes them.
+
+    :param input_data: An object specifying the number of bytes to read.
+    :type input_data: GetRandomBytesInput
+    :return: A hex-encoded string of random data.
+    :rtype: str
     """
     try:
         with open("/dev/random", "rb") as f:
             return f.read(input_data.length).hex()
     except Exception as e:
-        logger.exception("[get_random_string] Failed to read from /dev/random")
+        logger.exception("Failed to read from /dev/random")
         return f"[ERROR] Could not read random bytes: {e}"

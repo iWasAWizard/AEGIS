@@ -1,3 +1,4 @@
+// aegis/web/react_ui/src/LaunchTab.jsx
 import React, { useState, useEffect } from 'react';
 
 export default function LaunchTab() {
@@ -7,18 +8,20 @@ export default function LaunchTab() {
   const [selectedPreset, setSelectedPreset] = useState(null);
 
   useEffect(() => {
-    fetch('/presets')
+    fetch('/api/presets')
       .then(res => res.json())
       .then(setPresets);
   }, []);
 
   const launch = async () => {
     const body = {
-      input: prompt,
-      ...selectedPreset?.config
+      task: {
+        prompt: prompt,
+      },
+      config: selectedPreset ? selectedPreset.id : 'default'
     };
 
-    const res = await fetch('/launch', {
+    const res = await fetch('/api/launch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -51,7 +54,7 @@ export default function LaunchTab() {
       )}
 
       <textarea
-        placeholder="Prompt"
+        placeholder="Enter your task prompt here..."
         rows="4"
         value={prompt}
         onChange={e => setPrompt(e.target.value)}
@@ -61,7 +64,7 @@ export default function LaunchTab() {
       <button onClick={launch}>Launch Task</button>
 
       {response && (
-        <pre style={{ marginTop: '1rem', background: '#111', padding: '0.5rem', fontSize: '0.85em' }}>
+        <pre style={{ marginTop: '1rem', background: '#111', padding: '0.5rem', fontSize: '0.85em', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
           {response}
         </pre>
       )}

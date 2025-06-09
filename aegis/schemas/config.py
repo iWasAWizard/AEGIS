@@ -1,20 +1,20 @@
 """
-Schemas for runtime configuration profiles and loading behavior.
+Schemas for profile-based agent configuration, including execution behavior,
+graph topology, and default constraints.
 """
 
-from typing import Any, List, Tuple, Dict
 from typing import Optional
 
-from pydantic import BaseModel, Field
-
-from aegis.schemas.runtime_execution_config import RuntimeExecutionConfig
+from pydantic import BaseModel
 
 
 class ConfigProfile(BaseModel):
     """
-    Represents the ConfigProfile class.
+    Represents global configuration parameters for an execution profile.
 
-    Use this class to define a set of configuration parameters for agent execution profiles.
+    :param default_profile: Name of the default profile (if any).
+    :param timeout_override: Default timeout applied to tools.
+    :param safe_mode_default: Whether to enforce safe_mode by default.
     """
 
     default_profile: Optional[str] = None
@@ -22,15 +22,13 @@ class ConfigProfile(BaseModel):
     safe_mode_default: Optional[bool] = True
 
 
-class AgentConfig(BaseModel):
+class NodeConfig(BaseModel):
     """
-    Configuration model for building an agent task graph.
+    Represents a node within the agent execution graph.
+
+    :param id: Unique node identifier.
+    :param tool: Optional name of the tool associated with this node.
     """
 
-    state_type: Optional[Any] = None
-    entrypoint: Optional[str] = None
-    edges: Optional[List[Tuple[str, str]]] = None
-    condition_node: Optional[str] = None
-    condition_map: Optional[Dict[str, str]] = None
-    middleware: Optional[List[Any]] = None
-    runtime: RuntimeExecutionConfig = Field(default_factory=RuntimeExecutionConfig)
+    id: str
+    tool: Optional[str] = None

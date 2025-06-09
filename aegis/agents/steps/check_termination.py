@@ -1,39 +1,43 @@
+# aegis/agents/steps/check_termination.py
 """
-Evaluates whether the agent should halt execution due to max steps or an explicit termination reason.
+The termination and routing step for the agent graph.
+
+This function acts as the main conditional router. It inspects the agent's
+state after each tool execution to decide whether to continue the loop or
+to terminate the task.
 """
 
 from aegis.agents.task_state import TaskState
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
-MAX_STEPS = 20
 
 
-async def check_termination(state: TaskState) -> str:
-    """
-    Determines if the task should terminate based on internal state conditions.
+def check_termination(state: TaskState) -> str:
+    """Determines if the agent should continue planning or end the task.
 
-    :param state: Task execution state
+    This function acts as a conditional edge in the graph. It checks for
+    a 'finish' tool call or if the step limit has been reached.
+
+    :param state: The current state of the agent's task.
     :type state: TaskState
-    :return: Next step identifier ("complete" or "reflect")
+    :return: A routing string, either 'continue' to loop or 'end' to terminate.
     :rtype: str
     """
-    logger.info("Checking if task should terminate...")
-    logger.debug(
-        f"Steps taken: {state.steps_taken}, Terminate reason: {state.terminate_reason}"
-    )
+    logger.info("✅ Step: Check for Termination")
 
-    if state.terminate_reason:
-        logger.info(
-            f"Task {state.task_id} already marked complete: {state.terminate_reason}"
-        )
-        return "complete"
+    # Condition 1: Check if the last planned tool was 'finish'.
+    # The plan is the first element of the last tuple in the history.
+    if state.history and state.history[-1][0].tool_name == "finish":
+        logger.info("Termination condition met: 'finish' tool was called.")
+        return "end"
 
-    if state.steps_taken >= MAX_STEPS:
-        logger.info(f"Max steps reached for task {state.task_id}")
-        return "complete"
+    # Condition 2: Check if the maximum number of steps has been reached.
+    max_steps = state.runtime.iterations
+    if max_steps is not None and state.steps_taken >= max_steps:
+        logger.warning(f"Termination condition met: Max steps ({max_steps}) reached.")
+        return "end"
 
-    logger.info(
-        f"Task '{state.task_id}' has not met termination criteria. Proceeding to next step."
-    )
-    return "reflect"
+    # If no termination conditions are met, continue the loop.
+    logger.info("No termination condition met. Continuing to next planning step.")
+    return "continue"

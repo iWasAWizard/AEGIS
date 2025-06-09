@@ -1,7 +1,12 @@
+# aegis/utils/logger.py
 import logging
 import sys
 from logging import Logger, LoggerAdapter
 from typing import Any
+
+from aegis.utils.log_sinks import JsonlFileHandler, TaskIdFilter
+
+_LOGGING_CONFIGURED = False
 
 
 class LogColors:
@@ -23,11 +28,14 @@ class LogColors:
 
 
 class ColorFormatter(logging.Formatter):
-    """
-    Represents the ColorFormatter class.
+    """Custom log formatter that applies color coding and includes the task_id."""
 
-    Custom log formatter that applies color coding to log messages based on severity.
-    """
+    _format = (
+        "%(asctime)s - [%(task_id)s] - %(levelname)-8s - %(name)-25s - %(message)s"
+    )
+    _format_notask = (
+        "%(asctime)s - [SYSTEM]   - %(levelname)-8s - %(name)-25s - %(message)s"
+    )
 
     def format(self, record):
         """
@@ -44,8 +52,16 @@ class ColorFormatter(logging.Formatter):
             "ERROR": LogColors.FAIL,
             "CRITICAL": LogColors.FAIL,
         }.get(record.levelname, LogColors.ENDC)
-        formatted = super().format(record)
-        return f"{level_color}{formatted}{LogColors.ENDC}"
+
+        if hasattr(record, "task_id") and record.task_id:
+            log_fmt = self._format
+        else:
+            record.task_id = "SYSTEM"  # Default value for display
+            log_fmt = self._format_notask
+
+        formatter = logging.Formatter(log_fmt, "%Y-%m-%d %H:%M:%S")
+        formatted_msg = formatter.format(record)
+        return f"{level_color}{formatted_msg}{LogColors.ENDC}"
 
 
 class StructuredLoggerAdapter(logging.LoggerAdapter):
@@ -65,26 +81,46 @@ class StructuredLoggerAdapter(logging.LoggerAdapter):
         :return: Description of return value
         :rtype: Any
         """
-        extra = kwargs.get("extra", {})
-        extra["event_type"] = kwargs.pop("event_type", None)
-        extra["data"] = kwargs.pop("data", None)
-        kwargs["extra"] = extra
+        # Move the 'extra' dict into a specific key so it doesn't conflict
+        # with the standard 'extra' used by the logging system itself.
+        if "extra" in kwargs:
+            kwargs["extra"] = {"extra_data": kwargs["extra"]}
         return msg, kwargs
 
 
-def setup_logger(name: str) -> StructuredLoggerAdapter[Logger | LoggerAdapter[Any] | Any]:
+def setup_logger(
+    name: str,
+) -> StructuredLoggerAdapter[Logger | LoggerAdapter[Any] | Any]:
     """
-    setup_logger
+    Sets up the root logger with all handlers and returns a child logger.
     :param name: Description of name
     :type name: Any
     :return: Description of return value
     :rtype: Any
     """
+    global _LOGGING_CONFIGURED
+
+    if not _LOGGING_CONFIGURED:
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.INFO)  # Set the base level for the whole system
+
+        # Clear any existing handlers to prevent duplicates in interactive environments
+        if root_logger.hasHandlers():
+            root_logger.handlers.clear()
+
+        # 1. Console Handler (for developer-facing output)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(ColorFormatter())
+        console_handler.addFilter(TaskIdFilter())  # Add filter to get task_id
+        root_logger.addHandler(console_handler)
+
+        # 2. JSONL File Handler (for machine-readable audit trails)
+        jsonl_handler = JsonlFileHandler()
+        root_logger.addHandler(jsonl_handler)
+
+        root_logger.info("Root logger configured with Console and JSONL handlers.")
+        _LOGGING_CONFIGURED = True
+
+    # Return a logger for the specific module, now with a structured adapter.
     logger = logging.getLogger(name)
-    if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        formatter = ColorFormatter("%(asctime)s - %(levelname)s - %(message)s")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
     return StructuredLoggerAdapter(logger, {})

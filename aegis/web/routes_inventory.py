@@ -1,5 +1,6 @@
+# aegis/web/routes_inventory.py
 """
-Inventory route to expose currently registered tools and their metadata.
+API route to expose the inventory of currently registered tools.
 """
 
 from fastapi import APIRouter
@@ -11,20 +12,32 @@ router = APIRouter()
 logger = setup_logger(__name__)
 
 
-@router.get("/inventory")
-async def get_inventory():
+@router.get("/inventory", tags=["Inventory"])
+async def get_inventory() -> list[dict]:
+    """Retrieves and returns the metadata for all registered tools.
+
+    This endpoint powers the 'Tools' tab in the web UI, allowing users
+    to see the capabilities of the agent at a glance.
+
+    :return: A list of dictionaries, where each dictionary represents a tool.
+    :rtype: list[dict]
     """
-    get_inventory.
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info("→ [routes_inventory] Entering def()")
-    return [
-        {
-            "name": tool.name,
-            "category": tool.category or "unspecified",
-            "tags": tool.tags,
-            "description": tool.description,
-        }
-        for tool in TOOL_REGISTRY.values()
-    ]
+    logger.info("Inventory requested. Returning list of all registered tools.")
+
+    if not TOOL_REGISTRY:
+        return []
+
+    inventory_list = []
+    for tool in sorted(TOOL_REGISTRY.values(), key=lambda t: t.name):
+        inventory_list.append(
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "category": tool.category or "uncategorized",
+                "tags": tool.tags,
+                "safe_mode": tool.safe_mode,
+                "input_schema": tool.input_model.model_json_schema(),
+            }
+        )
+
+    return inventory_list

@@ -1,8 +1,10 @@
+# aegis/web/routes_artifacts.py
 """
-Artifact route for listing output summaries or generated files.
+API route for listing and managing task artifacts and reports.
 """
 
 from pathlib import Path
+from typing import List, Dict, Any
 
 from fastapi import APIRouter
 
@@ -13,26 +15,32 @@ REPORTS_DIR = Path("reports")
 logger = setup_logger(__name__)
 
 
-@router.get("/artifacts")
-async def list_artifacts():
+@router.get("/artifacts", tags=["Artifacts"])
+async def list_artifacts() -> List[Dict[str, Any]]:
+    """Scans the reports directory and lists all found task artifacts.
+
+    For each task ID (subdirectory), it identifies key artifacts like the
+    final summary markdown file.
+
+    :return: A list of dictionaries, each representing a task and its artifacts.
+    :rtype: List[Dict[str, Any]]
     """
-    list_artifacts.
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info("→ [routes_artifacts] Entering def()")
-    if not REPORTS_DIR.exists():
-        logger.warning("[routes_artifacts] Reports directory does not exist.")
+    logger.info("Artifact list requested. Scanning reports directory.")
+    if not REPORTS_DIR.exists() or not REPORTS_DIR.is_dir():
+        logger.warning(f"Reports directory '{REPORTS_DIR}' does not exist.")
         return []
-    result = []
-    for task_dir in REPORTS_DIR.iterdir():
+
+    results: List[Dict[str, Any]] = []
+    for task_dir in sorted(REPORTS_DIR.iterdir(), reverse=True):
         if task_dir.is_dir():
-            summary = task_dir / "summary.md"
-            result.append(
+            summary_path = task_dir / "summary.md"
+            results.append(
                 {
                     "task_id": task_dir.name,
-                    "has_summary": summary.exists(),
-                    "path": str(summary) if summary.exists() else None,
+                    "has_summary": summary_path.exists(),
+                    "summary_path": (
+                        str(summary_path) if summary_path.exists() else None
+                    ),
                 }
             )
-    return result
+    return results

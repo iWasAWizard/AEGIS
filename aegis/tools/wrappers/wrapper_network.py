@@ -1,25 +1,37 @@
+# aegis/tools/wrappers/wrapper_network.py
+"""
+Higher-level wrapper tools for common network operations.
+
+This module provides convenient wrappers around network primitives for tasks
+like sending structured JSON data, interacting with specific services like
+Grafana, or running common network scans like Nmap.
+"""
+
 import json
 from typing import Dict, Any, List
 
-import requests
 from pydantic import BaseModel, Field
 
 from aegis.registry import register_tool
-from aegis.tools.primitives import http_request, HttpRequestInput
-from aegis.tools.primitives import run_local_command, RunLocalCommandInput
+from aegis.tools.primitives.primitive_network import http_request, HttpRequestInput
+from aegis.tools.primitives.primitive_system import (
+    run_local_command,
+    RunLocalCommandInput,
+)
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
-class HttpPostJsonInput(BaseModel):
-    """
-    HttpPostJsonInput class.
-    """
+# === Input Models ===
 
-    url: str = Field(description="The target URL to send the POST request to.")
+
+class HttpPostJsonInput(BaseModel):
+    """Input for sending a POST request with a JSON payload."""
+
+    url: str = Field(..., description="The target URL to send the POST request to.")
     payload: Dict[str, Any] = Field(
-        description="The JSON-serializable payload to send."
+        ..., description="The JSON-serializable payload (dictionary) to send."
     )
     headers: Dict[str, str] = Field(
         default_factory=dict, description="Optional HTTP headers."
@@ -27,159 +39,122 @@ class HttpPostJsonInput(BaseModel):
 
 
 class GrafanaUploadInput(BaseModel):
-    """
-    GrafanaUploadInput class.
-    """
+    """Input for sending a payload to a Grafana API endpoint."""
 
-    url: str = Field(description="Grafana API endpoint URL.")
-    payload: Dict[str, Any] = Field(description="Payload to POST to Grafana.")
-    token: str = Field(description="Grafana Bearer token.")
+    url: str = Field(
+        ..., description="The Grafana API endpoint URL (e.g., for annotations or Loki)."
+    )
+    payload: Dict[str, Any] = Field(
+        ..., description="The JSON payload to POST to Grafana."
+    )
+    token: str = Field(
+        ...,
+        description="The Grafana API key or service account token (sent as a Bearer token).",
+    )
 
 
 class NmapScanInput(BaseModel):
-    """
-    NmapScanInput class.
-    """
+    """Input for performing an Nmap port scan."""
 
-    target: List[str] = Field(description="IP address or hostname to scan.")
+    targets: List[str] = Field(
+        ..., description="A list of IP addresses or hostnames to scan."
+    )
     ports: str = Field(
-        default="1-1024", description="Port range or list (e.g. '22,80,443')."
+        "1-1024", description="Port range or list (e.g., '22,80,443', '1-65535')."
     )
-    additional_flags: str = Field(default="-T4", description="Additional Nmap flags.")
+    scan_type_flag: str = Field(
+        "-sV", description="The Nmap scan type flag (e.g., -sS, -sT, -sV, -O)."
+    )
+    extra_flags: str = Field(
+        "-T4", description="Any additional Nmap flags to include (e.g., '-T4 -Pn')."
+    )
 
 
-class HttpPostInput(BaseModel):
-    """
-    HttpPostInput class.
-    """
-
-    url: str = Field(..., description="Target URL to send the POST request to.")
-    payload: dict = Field(
-        ..., description="JSON payload to include in the POST request."
-    )
-    headers: dict = Field(
-        default_factory=dict, description="Optional HTTP headers to include."
-    )
+# === Tools ===
 
 
 @register_tool(
-    name="http_post_json_structured",
+    name="http_post_json",
     input_model=HttpPostJsonInput,
-    tags=["wrapper", "http", "json"],
-    description="Send a POST request with a JSON payload and Content-Type headers.",
+    tags=["wrapper", "http", "json", "api"],
+    description="Sends a POST request with a JSON payload and appropriate headers.",
     safe_mode=True,
-    purpose="Simplify sending structured data to JSON-based APIs.",
+    purpose="Send structured data to a JSON-based API endpoint.",
     category="network",
 )
-def http_post_json_structured(input_data: HttpPostJsonInput) -> str:
+def http_post_json(input_data: HttpPostJsonInput) -> str:
+    """A convenient wrapper for sending JSON data via an HTTP POST request.
+
+    :param input_data: An object containing the URL, payload, and optional headers.
+    :type input_data: HttpPostJsonInput
+    :return: The result of the HTTP request.
+    :rtype: str
     """
-    http_post_json_structured.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    logger.info(f"POSTing JSON to {input_data.url}")
-    try:
-        return http_request(
-            HttpRequestInput(
-                method="POST",
-                url=input_data.url,
-                headers={**input_data.headers, "Content-Type": "application/json"},
-                params={},
-                data=json.dumps(input_data.payload),
-            )
-        )
-    except Exception as e:
-        logger.exception("[http_post_json_structured] Error")
-        return f"[ERROR] Could not send structured POST request: {e}"
+    logger.info(f"POSTing JSON data to {input_data.url}")
+    # The http_request primitive expects the body to be a string.
+    json_body = json.dumps(input_data.payload)
+    # Ensure the Content-Type header is set for JSON.
+    headers = {"Content-Type": "application/json", **input_data.headers}
+
+    request_input = HttpRequestInput(
+        method="POST", url=input_data.url, headers=headers, body=json_body
+    )
+    return http_request(request_input)
 
 
 @register_tool(
     name="upload_to_grafana",
     input_model=GrafanaUploadInput,
-    tags=["grafana", "monitoring", "wrapper", "http"],
-    description="Send a JSON payload to a Grafana endpoint using a bearer token.",
+    tags=["grafana", "monitoring", "http", "wrapper"],
+    description="Sends a JSON payload to a Grafana endpoint using a bearer token for authentication.",
     safe_mode=True,
-    purpose="Upload data or alerts to Grafana Cloud or On-Prem instance.",
+    purpose="Upload data, annotations, or alerts to a Grafana instance.",
     category="integration",
 )
 def upload_to_grafana(input_data: GrafanaUploadInput) -> str:
-    """
-    upload_to_grafana.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
+    """A specialized tool for sending data to Grafana's API.
+
+    :param input_data: An object containing the Grafana URL, payload, and auth token.
+    :type input_data: GrafanaUploadInput
+    :return: The result of the HTTP request to Grafana.
+    :rtype: str
     """
     logger.info(f"Uploading payload to Grafana at {input_data.url}")
-    try:
-        return http_request(
-            HttpRequestInput(
-                method="POST",
-                url=input_data.url,
-                headers={
-                    "Authorization": f"Bearer {input_data.token}",
-                    "Content-Type": "application/json",
-                },
-                params={},
-                data=json.dumps(input_data.payload),
-            )
-        )
-    except Exception as e:
-        logger.exception("[upload_to_grafana] Error")
-        return f"[ERROR] Failed to upload to Grafana: {e}"
+    json_body = json.dumps(input_data.payload)
+    headers = {
+        "Authorization": f"Bearer {input_data.token}",
+        "Content-Type": "application/json",
+    }
+
+    request_input = HttpRequestInput(
+        method="POST", url=input_data.url, headers=headers, body=json_body
+    )
+    return http_request(request_input)
 
 
 @register_tool(
     name="nmap_port_scan",
     input_model=NmapScanInput,
-    tags=["nmap", "network", "scanner", "wrapper"],
-    description="Perform an Nmap scan on a remote host.",
-    safe_mode=True,
-    purpose="Scan ports and identify services on a remote target.",
+    tags=["nmap", "network", "scan", "wrapper"],
+    description="Performs an Nmap scan on one or more remote hosts.",
+    safe_mode=True,  # Though a scanner, it is non-intrusive and does not modify state.
+    purpose="Scan ports and identify services on remote targets.",
     category="network",
 )
 def nmap_port_scan(input_data: NmapScanInput) -> str:
-    """
-    nmap_port_scan.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    cmd = f"nmap -p {input_data.ports} {input_data.additional_flags} {' '.join(input_data.target)}"
-    logger.info(f"Running Nmap scan: {cmd}")
-    return run_local_command(RunLocalCommandInput(command=cmd))
+    """Constructs and executes an Nmap command based on the provided parameters.
 
-
-@register_tool(
-    name="http_post_json",
-    input_model=HttpPostInput,
-    description="Send a JSON payload via POST to a given URL.",
-    tags=["network", "integration"],
-    category="wrapper",
-    timeout=10,
-    retries=1,
-    safe_mode=True,
-)
-def http_post_json(input_data: HttpPostInput) -> str:
+    :param input_data: An object containing targets, ports, and scan flags.
+    :type input_data: NmapScanInput
+    :return: The raw output of the Nmap command.
+    :rtype: str
     """
-    http_post_json.
-    :param input_data: Description of input_data
-    :type input_data: Any
-    :return: Description of return value
-    :rtype: Any
-    """
-    try:
-        response = requests.post(
-            input_data.url,
-            json=input_data.payload,
-            headers=input_data.headers,
-            timeout=5,
-        )
-        response.raise_for_status()
-        return f"✅ POST to {input_data.url} succeeded: {response.status_code}"
-    except Exception as e:
-        logger.exception("[http_post_json] Error")
-        return f"❌ POST request failed: {e}"
+    # Combine all parts into a single command string.
+    targets_str = " ".join(input_data.targets)
+    cmd = (
+        f"nmap {input_data.scan_type_flag} "
+        f"-p {input_data.ports} {input_data.extra_flags} {targets_str}"
+    )
+    logger.info(f"Running Nmap scan with command: {cmd}")
+    # Use the local command primitive to execute the scan.
+    return run_local_command(RunLocalCommandInput(command=cmd, shell=True))

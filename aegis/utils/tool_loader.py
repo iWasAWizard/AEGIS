@@ -8,7 +8,6 @@ with @register_tool are registered in TOOL_REGISTRY.
 
 import importlib
 import pathlib
-import traceback
 
 from aegis.utils.logger import setup_logger
 
@@ -36,11 +35,12 @@ def import_all_tools():
             continue  # Skip __init__.py and __pycache__
 
         rel_path = path.relative_to(base_dir).with_suffix("")
-        module_path = f"{base_package}.{str(rel_path).replace('/', '.').replace('\\', '.')}"
+        sanitized_path = str(rel_path).replace('/', '.').replace('\\', '.')
+        module_path = f"{base_package}.{sanitized_path}"
 
         try:
             importlib.import_module(module_path)
             logger.debug("Imported tool module: %s", module_path)
-        except Exception as e:
-            logger.warning("Failed to import tool module %s", module_path)
-            logger.debug("Traceback for %s:\n%s", module_path, traceback.format_exc())
+        except (ImportError, SyntaxError, AttributeError) as e:
+            logger.warning(f"Failed to import tool module {module_path}")
+            logger.debug(f"Traceback for {module_path}:\n{e}")
