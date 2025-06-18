@@ -101,8 +101,11 @@ def update_memory_index():
         faiss.write_index(index, str(INDEX_PATH))
 
         # Save the mapping file (from vector index to text chunk)
+        # Store as a dictionary with integer index as key (stringified for JSON)
+        # to allow non-contiguous indices if logs are deleted/re-indexed later.
+        mapping_dict = {str(i): chunk for i, chunk in enumerate(chunks)}
         with MAPPING_PATH.open("w", encoding="utf-8") as f:
-            json.dump(chunks, f)
+            json.dump(mapping_dict, f)
 
         logger.info(
             f"✅ Automatic memory index update complete. Index now contains {index.ntotal} entries."

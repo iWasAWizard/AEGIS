@@ -87,4 +87,4 @@ services:
 
 volumes:
   ollama-data:
-  koboldcpp-data: 
+  # koboldcpp-data: 

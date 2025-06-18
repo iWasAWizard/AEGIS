@@ -16,6 +16,10 @@ from aegis.registry import register_tool
 from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
 
+# Import ToolExecutionError
+from aegis.exceptions import ToolExecutionError
+
+
 logger = setup_logger(__name__)
 
 # Load the screenshot directory from the central config.
@@ -61,42 +65,54 @@ def capture_web_state(input_data: CaptureWebStateInput) -> str:
     :type input_data: CaptureWebStateInput
     :return: A formatted string summarizing the captured state and screenshot path.
     :rtype: str
+    :raises ToolExecutionError: If Selenium WebDriver encounters an error or any other exception occurs.
     """
     logger.info(f"Capturing web state from: {input_data.url}")
     options = Options()
     options.add_argument("--headless")
+    driver = None  # Ensure driver is defined for finally block
 
     try:
-        with webdriver.Firefox(options=options) as driver:
-            driver.get(input_data.url)
-            driver.implicitly_wait(input_data.wait_seconds)
+        driver = webdriver.Firefox(options=options)
+        driver.get(input_data.url)
+        driver.implicitly_wait(input_data.wait_seconds)
 
-            title = driver.title
-            current_url = driver.current_url
-            body = driver.find_element(By.TAG_NAME, "body")
-            text = body.text.strip()
-            html = driver.page_source.strip()
+        title = driver.title
+        current_url = driver.current_url
+        body = driver.find_element(By.TAG_NAME, "body")
+        text = body.text.strip()
+        html = driver.page_source.strip()
 
-            snapshot_id = (
-                f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-            )
-            screenshot_path = SCREENSHOT_DIR / f"{snapshot_id}.png"
-            driver.save_screenshot(str(screenshot_path))
+        snapshot_id = (
+            f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        )
+        screenshot_path = SCREENSHOT_DIR / f"{snapshot_id}.png"
+        # Ensure screenshot directory exists just before saving
+        screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+        driver.save_screenshot(str(screenshot_path))
 
-            logger.info(f"Screenshot saved to: {screenshot_path}")
+        logger.info(f"Screenshot saved to: {screenshot_path}")
 
-            return (
-                f"Title: {title}\n"
-                f"URL: {current_url}\n"
-                f"Text (first 500 chars): {text[:500]}...\n"
-                f"HTML (first 500 chars): {html[:500]}...\n"
-                f"Screenshot saved to: {screenshot_path}"
-            )
-    except WebDriverException as e:
+        return (
+            f"Title: {title}\n"
+            f"URL: {current_url}\n"
+            f"Text (first 500 chars): {text[:500]}...\n"
+            f"HTML (first 500 chars): {html[:500]}...\n"
+            f"Screenshot saved to: {screenshot_path}"
+        )
+    except WebDriverException as e:  # Catch specific Selenium errors
         logger.error(f"WebDriver error while capturing {input_data.url}: {e.msg}")
-        return f"[ERROR] Selenium WebDriver error: {e.msg}"
-    except Exception as e:
+        raise ToolExecutionError(f"Selenium WebDriver error: {e.msg}")
+    except Exception as e:  # Catch any other unexpected errors
         logger.exception(
             f"An unexpected error occurred while capturing {input_data.url}"
         )
-        return f"[ERROR] An unhandled exception occurred: {e}"
+        raise ToolExecutionError(
+            f"An unhandled exception occurred during web capture: {e}"
+        )
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except Exception as e:
+                logger.error(f"Error quitting WebDriver: {e}")

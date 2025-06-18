@@ -84,9 +84,7 @@ def validate_critical_imports():
 
 @app.on_event("startup")
 def on_startup():
-    """Performs application startup actions.
-    (Docstring mostly unchanged)
-    """
+    """Performs application startup actions."""
     logger.info("--- AEGIS Application Startup ---")
 
     validate_critical_imports()

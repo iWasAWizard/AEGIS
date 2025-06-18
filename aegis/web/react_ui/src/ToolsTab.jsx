@@ -1,4 +1,3 @@
-// aegis/web/react_ui/src/components/ToolsTab.jsx
 import React, { useEffect, useState } from 'react';
 
 /**

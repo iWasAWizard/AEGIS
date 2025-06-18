@@ -109,7 +109,7 @@ def route_after_verification(state: TaskState) -> str:
     """
     logger.info("🚦 Step: Route After Verification")
     if not state.history:
-        return "remediate_plan"  # Should not happen if graph is well-formed
+        return "remediate_plan"
 
     last_verification_status = state.history[-1].verification_status
     logger.debug(f"Routing based on verification status: '{last_verification_status}'")
@@ -161,7 +161,7 @@ async def remediate_plan(
         llm_response_str = await llm_query_func(
             system_prompt,
             user_prompt,
-            runtime_config=state.runtime,  # Pass the whole runtime_config
+            runtime_config=state.runtime,
         )
         parsed_json = json.loads(llm_response_str)
         scratchpad = AgentScratchpad.model_validate(parsed_json)

@@ -306,7 +306,7 @@ def check_remote_service_status(input_data: RemoteServiceInput) -> str:
     input_model=MachineUserInput,
     tags=["ssh", "user", "create", "wrapper"],
     description="Create a user on the remote system with home directory.",
-    safe_mode=True,  # Administrative but not destructive by default
+    safe_mode=True,
     purpose="Create a new user account on a remote machine",
     category="auth",
 )
@@ -321,7 +321,9 @@ def create_remote_user(input_data: MachineUserInput) -> str:
     logger.info(f"Creating user '{input_data.username}' on {input_data.machine_name}")
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
-    return executor.run(f"sudo useradd -m {input_data.username}")
+    # useradd is often silent on success. Return a confirmation message.
+    executor.run(f"sudo useradd -m {input_data.username}")
+    return f"User '{input_data.username}' created successfully on {input_data.machine_name} (if not already existing)."
 
 
 @register_tool(
@@ -344,7 +346,11 @@ def lock_remote_user_account(input_data: MachineUserInput) -> str:
     logger.info(f"Locking user '{input_data.username}' on {input_data.machine_name}")
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
-    return executor.run(f"sudo passwd -l {input_data.username}")
+    # passwd -l is often silent on success. Return a confirmation message.
+    executor.run(f"sudo passwd -l {input_data.username}")
+    return (
+        f"Account for user '{input_data.username}' locked on {input_data.machine_name}."
+    )
 
 
 @register_tool(
@@ -369,4 +375,6 @@ def add_user_to_group(input_data: RemoteUserGroupInput) -> str:
     )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
-    return executor.run(f"sudo usermod -aG {input_data.group} {input_data.username}")
+    # usermod -aG is often silent on success. Return a confirmation.
+    executor.run(f"sudo usermod -aG {input_data.group} {input_data.username}")
+    return f"User '{input_data.username}' added to group '{input_data.group}' on {input_data.machine_name}."

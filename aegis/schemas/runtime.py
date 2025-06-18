@@ -60,7 +60,7 @@ class RuntimeExecutionConfig(BaseModel):
         default=None,
         description="Name/identifier of the LLM model. If None, uses OLLAMA_MODEL or KOBOLDCPP_MODEL (based on backend_type) env var.",
     )
-    ollama_api_url: str = Field(  # Made non-optional again for default Ollama backend
+    ollama_api_url: str = Field(
         default="http://ollama:11434/api/generate",
         description="URL of the Ollama inference endpoint.",
     )

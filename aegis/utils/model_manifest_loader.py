@@ -202,16 +202,16 @@ def get_model_details_from_manifest(
             model_entry.backend_model_name
             or (
                 model_key_from_config
-                if found_by and model_key_from_config in found_by
+                if found_by and model_key_from_config in found_by  # type: ignore
                 else None
             )
             or (
                 backend_default_identifier_env
-                if found_by and backend_default_identifier_env in found_by
+                if found_by and backend_default_identifier_env in found_by  # type: ignore
                 else None
             )
             or model_entry.key
-        )  # Fallback to entry key if others don't make sense
+        )
 
         return (
             model_entry.formatter_hint,

@@ -18,8 +18,8 @@ from aegis.utils.logger import setup_logger
 # Attempt to import pwntools, but don't fail if it's not installed.
 # Each tool will check for its availability at runtime.
 try:
-    from pwn import remote, process, shellcraft, context, cyclic, cyclic_find, ELF
-    from pwnlib.exception import PwnlibException
+    from pwn import remote, process, shellcraft, context, cyclic, cyclic_find, ELF  # type: ignore
+    from pwnlib.exception import PwnlibException  # type: ignore
 
     PWNTOOLS_AVAILABLE = True
 except ImportError:
@@ -29,6 +29,7 @@ logger = setup_logger(__name__)
 
 
 # === Input Models ===
+
 
 class PwnRemoteConnectInput(BaseModel):
     """Input model for connecting to a remote TCP service with pwntools.
@@ -42,10 +43,17 @@ class PwnRemoteConnectInput(BaseModel):
     :ivar timeout: Timeout in seconds for the connection and receive operations.
     :vartype timeout: int
     """
+
     host: str = Field(..., description="The hostname or IP address of the target.")
-    port: int = Field(..., gt=0, lt=65536, description="The port number of the target service.")
-    payload: Optional[str] = Field(None, description="Optional initial payload to send upon connection.")
-    timeout: int = Field(5, description="Timeout in seconds for the connection and receive operations.")
+    port: int = Field(
+        ..., gt=0, lt=65536, description="The port number of the target service."
+    )
+    payload: Optional[str] = Field(
+        None, description="Optional initial payload to send upon connection."
+    )
+    timeout: int = Field(
+        5, description="Timeout in seconds for the connection and receive operations."
+    )
 
 
 class PwnShellcodeCraftInput(BaseModel):
@@ -58,9 +66,17 @@ class PwnShellcodeCraftInput(BaseModel):
     :ivar command: The command for the shellcode to execute (e.g., 'sh', 'cat /etc/passwd').
     :vartype command: str
     """
-    arch: str = Field("amd64", description="The target architecture (e.g., 'amd64', 'i386', 'arm').")
-    os: str = Field("linux", description="The target operating system (usually 'linux').")
-    command: str = Field("sh", description="The command for the shellcode to execute (e.g., 'sh', 'cat /etc/passwd').")
+
+    arch: str = Field(
+        "amd64", description="The target architecture (e.g., 'amd64', 'i386', 'arm')."
+    )
+    os: str = Field(
+        "linux", description="The target operating system (usually 'linux')."
+    )
+    command: str = Field(
+        "sh",
+        description="The command for the shellcode to execute (e.g., 'sh', 'cat /etc/passwd').",
+    )
 
 
 class PwnCyclicPatternInput(BaseModel):
@@ -71,9 +87,14 @@ class PwnCyclicPatternInput(BaseModel):
     :ivar find: A 4-byte value (e.g., '0x61616162' or 'aaba') to find the offset of.
     :vartype find: Optional[str]
     """
-    length: int = Field(100, description="The length of the cyclic pattern to generate.")
-    find: Optional[str] = Field(None,
-                                description="A 4-byte value (e.g., '0x61616162' or 'aaba') to find the offset of.")
+
+    length: int = Field(
+        100, description="The length of the cyclic pattern to generate."
+    )
+    find: Optional[str] = Field(
+        None,
+        description="A 4-byte value (e.g., '0x61616162' or 'aaba') to find the offset of.",
+    )
 
 
 class PwnElfInspectorInput(BaseModel):
@@ -82,7 +103,10 @@ class PwnElfInspectorInput(BaseModel):
     :ivar file_path: The local path to the ELF binary to inspect.
     :vartype file_path: str
     """
-    file_path: str = Field(..., description="The local path to the ELF binary to inspect.")
+
+    file_path: str = Field(
+        ..., description="The local path to the ELF binary to inspect."
+    )
 
 
 class PwnProcessInteractionInput(BaseModel):
@@ -95,12 +119,16 @@ class PwnProcessInteractionInput(BaseModel):
     :ivar timeout: Timeout in seconds for the interaction.
     :vartype timeout: int
     """
+
     file_path: str = Field(..., description="The local path to the executable to run.")
-    payload: str = Field(..., description="The payload to send to the process's standard input.")
+    payload: str = Field(
+        ..., description="The payload to send to the process's standard input."
+    )
     timeout: int = Field(5, description="Timeout in seconds for the interaction.")
 
 
 # === Tools ===
+
 
 @register_tool(
     name="pwn_remote_connect",
@@ -117,21 +145,32 @@ def pwn_remote_connect(input_data: PwnRemoteConnectInput) -> str:
     :type input_data: PwnRemoteConnectInput
     :return: The decoded response from the remote service.
     :rtype: str
-    :raises ToolExecutionError: If `pwntools` is not installed.
+    :raises ToolExecutionError: If `pwntools` is not installed or a PwnlibException occurs.
     """
     if not PWNTOOLS_AVAILABLE:
-        raise ToolExecutionError("The 'pwntools' library is not installed.")
-    logger.info(f"Attempting pwntools connection to {input_data.host}:{input_data.port}")
+        raise ToolExecutionError(
+            "The 'pwntools' library is not installed. This tool cannot be used."
+        )
+    logger.info(
+        f"Attempting pwntools connection to {input_data.host}:{input_data.port}"
+    )
     conn = None
     try:
         conn = remote(input_data.host, input_data.port, timeout=input_data.timeout)
         if input_data.payload:
-            conn.sendline(input_data.payload.encode('utf-8'))
+            conn.sendline(input_data.payload.encode("utf-8"))
         response_bytes = conn.recvall()
-        return response_bytes.decode('utf-8', errors='ignore')
-    except PwnlibException as e:
-        logger.error(f"pwntools connection to {input_data.host}:{input_data.port} failed: {e}")
-        return f"[ERROR] pwntools operation failed: {e}"
+        return response_bytes.decode("utf-8", errors="ignore")
+    except PwnlibException as e:  # type: ignore
+        logger.error(
+            f"pwntools connection to {input_data.host}:{input_data.port} failed: {e}"
+        )
+        raise ToolExecutionError(f"pwntools operation failed: {e}")
+    except Exception as e:  # Catch other unexpected errors
+        logger.exception(
+            f"Unexpected error in pwn_remote_connect to {input_data.host}:{input_data.port}: {e}"
+        )
+        raise ToolExecutionError(f"Unexpected error in pwn_remote_connect: {e}")
     finally:
         if conn:
             conn.close()
@@ -143,7 +182,7 @@ def pwn_remote_connect(input_data: PwnRemoteConnectInput) -> str:
     description="Generates common shellcode for a specified architecture and command.",
     tags=["pwn", "exploit", "shellcode", "security"],
     category="security",
-    safe_mode=False,
+    safe_mode=False,  # Shellcode generation itself is safe, but its use is not.
 )
 def pwn_shellcode_craft(input_data: PwnShellcodeCraftInput) -> str:
     """Generates shellcode using pwntools' shellcraft module and returns it as assembly.
@@ -152,28 +191,34 @@ def pwn_shellcode_craft(input_data: PwnShellcodeCraftInput) -> str:
     :type input_data: PwnShellcodeCraftInput
     :return: A string containing the generated shellcode assembly.
     :rtype: str
-    :raises ToolExecutionError: If `pwntools` is not installed.
+    :raises ToolExecutionError: If `pwntools` is not installed or generation fails.
     """
     if not PWNTOOLS_AVAILABLE:
-        raise ToolExecutionError("The 'pwntools' library is not installed.")
-    logger.info(f"Crafting shellcode for arch='{input_data.arch}' os='{input_data.os}' cmd='{input_data.command}'")
+        raise ToolExecutionError(
+            "The 'pwntools' library is not installed. This tool cannot be used."
+        )
+    logger.info(
+        f"Crafting shellcode for arch='{input_data.arch}' os='{input_data.os}' cmd='{input_data.command}'"
+    )
     try:
-        context.clear()
-        context.arch = input_data.arch
-        context.os = input_data.os
+        context.clear()  # type: ignore
+        context.arch = input_data.arch  # type: ignore
+        context.os = input_data.os  # type: ignore
 
         if input_data.command == "sh":
-            shellcode_asm = shellcraft.sh()
+            shellcode_asm = shellcraft.sh()  # type: ignore
         elif input_data.command.startswith("cat"):
             filename = input_data.command.split(None, 1)[1]
-            shellcode_asm = shellcraft.cat(filename)
+            shellcode_asm = shellcraft.cat(filename)  # type: ignore
         else:
-            return "[ERROR] Unsupported shellcode command. Supported: 'sh', 'cat <file>'."
+            raise ToolExecutionError(
+                "Unsupported shellcode command. Supported: 'sh', 'cat <file>'."
+            )
 
         return shellcode_asm
-    except Exception as e:
+    except Exception as e:  # Catch PwnlibException or other issues
         logger.error(f"Shellcode generation failed: {e}")
-        return f"[ERROR] Shellcode generation failed: {e}"
+        raise ToolExecutionError(f"Shellcode generation failed: {e}")
 
 
 @register_tool(
@@ -182,7 +227,7 @@ def pwn_shellcode_craft(input_data: PwnShellcodeCraftInput) -> str:
     description="Generates a De Bruijn pattern or finds an offset within one.",
     tags=["pwn", "exploit", "buffer-overflow", "security"],
     category="security",
-    safe_mode=True,  # This tool performs no I/O
+    safe_mode=True,
 )
 def pwn_cyclic_pattern(input_data: PwnCyclicPatternInput) -> str:
     """Generates a cyclic pattern or finds the offset of a substring within it.
@@ -194,28 +239,33 @@ def pwn_cyclic_pattern(input_data: PwnCyclicPatternInput) -> str:
     :type input_data: PwnCyclicPatternInput
     :return: The generated pattern or the found offset.
     :rtype: str
-    :raises ToolExecutionError: If `pwntools` is not installed.
+    :raises ToolExecutionError: If `pwntools` is not installed or pattern operation fails.
     """
     if not PWNTOOLS_AVAILABLE:
-        raise ToolExecutionError("The 'pwntools' library is not installed.")
+        raise ToolExecutionError(
+            "The 'pwntools' library is not installed. This tool cannot be used."
+        )
 
-    if input_data.find:
-        try:
+    try:
+        if input_data.find:
             value_to_find = input_data.find
-            if value_to_find.startswith('0x'):
+            if value_to_find.startswith("0x"):
                 value_to_find = int(value_to_find, 16)
             else:
-                value_to_find = value_to_find.encode()
+                # cyclic_find expects bytes for string patterns
+                value_to_find = value_to_find.encode("utf-8")
 
-            offset = cyclic_find(value_to_find, n=4)
+            offset = cyclic_find(value_to_find, n=4)  # type: ignore
             logger.info(f"Found cyclic offset for '{input_data.find}': {offset}")
             return f"Offset for '{input_data.find}' is: {offset}"
-        except Exception as e:
-            return f"[ERROR] Could not find offset: {e}"
-    else:
-        pattern = cyclic(input_data.length, n=4).decode()
-        logger.info(f"Generated {input_data.length}-byte cyclic pattern.")
-        return f"Generated pattern: {pattern}"
+        else:
+            pattern_bytes = cyclic(input_data.length, n=4)  # type: ignore
+            pattern = pattern_bytes.decode("utf-8", errors="ignore")
+            logger.info(f"Generated {input_data.length}-byte cyclic pattern.")
+            return f"Generated pattern: {pattern}"
+    except Exception as e:  # Catch PwnlibException or other issues
+        logger.error(f"Cyclic pattern operation failed: {e}")
+        raise ToolExecutionError(f"Cyclic pattern operation failed: {e}")
 
 
 @register_tool(
@@ -224,7 +274,7 @@ def pwn_cyclic_pattern(input_data: PwnCyclicPatternInput) -> str:
     description="Inspects an ELF binary to check for security mitigations and other properties.",
     tags=["pwn", "binary-analysis", "elf", "security"],
     category="security",
-    safe_mode=True,  # Read-only operation
+    safe_mode=True,
 )
 def pwn_elf_inspector(input_data: PwnElfInspectorInput) -> str:
     """Uses pwntools' ELF functionality to perform static analysis on a binary.
@@ -233,28 +283,33 @@ def pwn_elf_inspector(input_data: PwnElfInspectorInput) -> str:
     :type input_data: PwnElfInspectorInput
     :return: A formatted string of the binary's properties.
     :rtype: str
-    :raises ToolExecutionError: If `pwntools` is not installed.
+    :raises ToolExecutionError: If `pwntools` is not installed or ELF inspection fails.
     """
     if not PWNTOOLS_AVAILABLE:
-        raise ToolExecutionError("The 'pwntools' library is not installed.")
+        raise ToolExecutionError(
+            "The 'pwntools' library is not installed. This tool cannot be used."
+        )
     logger.info(f"Inspecting ELF binary: {input_data.file_path}")
     try:
-        elf = ELF(input_data.file_path)
+        elf = ELF(input_data.file_path)  # type: ignore
         results = [
             f"File: {elf.path}",
             f"Arch: {elf.arch}",
             f"Bits: {elf.bits}",
             f"OS: {elf.os}",
-            f"RELRO: {elf.relro}",
+            f"RELRO: {elf.relro}",  # type: ignore
             f"PIE: {elf.pie}",
             f"NX: {elf.nx}",
             f"Canary: {elf.canary}",
-            f"Functions: {list(elf.functions.keys())[:10]}..."  # Show first 10
+            f"Functions (first 10): {list(elf.functions.keys())[:10]}",
         ]
         return "\n".join(results)
-    except Exception as e:
+    except FileNotFoundError:
+        logger.error(f"ELF file not found: '{input_data.file_path}'")
+        raise ToolExecutionError(f"ELF file not found: {input_data.file_path}")
+    except Exception as e:  # Catch PwnlibException or other issues
         logger.error(f"Failed to inspect ELF file '{input_data.file_path}': {e}")
-        return f"[ERROR] Failed to inspect ELF: {e}"
+        raise ToolExecutionError(f"Failed to inspect ELF '{input_data.file_path}': {e}")
 
 
 @register_tool(
@@ -272,20 +327,31 @@ def pwn_process_interaction(input_data: PwnProcessInteractionInput) -> str:
     :type input_data: PwnProcessInteractionInput
     :return: The decoded output from the process.
     :rtype: str
-    :raises ToolExecutionError: If `pwntools` is not installed.
+    :raises ToolExecutionError: If `pwntools` is not installed or process interaction fails.
     """
     if not PWNTOOLS_AVAILABLE:
-        raise ToolExecutionError("The 'pwntools' library is not installed.")
+        raise ToolExecutionError(
+            "The 'pwntools' library is not installed. This tool cannot be used."
+        )
     logger.info(f"Starting local process: {input_data.file_path}")
     p = None
     try:
-        p = process(input_data.file_path)
-        p.sendline(input_data.payload.encode('utf-8'))
-        response = p.recvall(timeout=input_data.timeout).decode('utf-8', errors='ignore')
+        p = process(input_data.file_path)  # type: ignore
+        p.sendline(input_data.payload.encode("utf-8"))
+        response = p.recvall(timeout=input_data.timeout).decode(
+            "utf-8", errors="ignore"
+        )
         return response
-    except Exception as e:
+    except FileNotFoundError:
+        logger.error(
+            f"Executable not found for pwn_process_interaction: '{input_data.file_path}'"
+        )
+        raise ToolExecutionError(f"Executable not found: {input_data.file_path}")
+    except Exception as e:  # Catch PwnlibException or other issues
         logger.error(f"Process interaction failed for '{input_data.file_path}': {e}")
-        return f"[ERROR] Process interaction failed: {e}"
+        raise ToolExecutionError(
+            f"Process interaction failed for '{input_data.file_path}': {e}"
+        )
     finally:
         if p:
             p.close()

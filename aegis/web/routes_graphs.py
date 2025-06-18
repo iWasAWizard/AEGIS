@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 
 from aegis.utils.logger import setup_logger
 
-GRAPH_DIR = "presets"  # Changed to presets to align with config loading
+GRAPH_DIR = "presets"
 router = APIRouter(prefix="/graphs", tags=["graphs"])
 logger = setup_logger(__name__)
 
@@ -40,7 +40,7 @@ def upload_graph(file: UploadFile = File(...)):
     if not os.path.exists(GRAPH_DIR):
         os.makedirs(GRAPH_DIR)
 
-    file_path = os.path.join(GRAPH_DIR, file.filename)
+    file_path = os.path.join(GRAPH_DIR, file.filename)  # type: ignore
     try:
         content = file.file.read()
         # Basic validation to ensure it's valid YAML

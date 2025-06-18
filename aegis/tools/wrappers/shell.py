@@ -79,7 +79,7 @@ class RunRemotePythonSnippetInput(MachineTargetInput):
     input_model=RunRemoteBackgroundCommandInput,
     tags=["system", "remote", "ssh", "background", "wrapper"],
     description="Run a background command remotely using nohup.",
-    safe_mode=True,  # The command is contained on the remote host
+    safe_mode=True,
     purpose="Launch persistent background processes on remote machines.",
     category="system",
 )
@@ -88,14 +88,18 @@ def run_remote_background_command(input_data: RunRemoteBackgroundCommandInput) -
 
     :param input_data: An object containing machine name and the command.
     :type input_data: RunRemoteBackgroundCommandInput
-    :return: The output from the SSH command.
+    :return: The output from the SSH command (usually empty for nohup success).
     :rtype: str
     """
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
     # The `&` ensures it runs in the background. nohup prevents it from being killed on session exit.
     wrapped_command = f"nohup {input_data.command} > /dev/null 2>&1 &"
-    return executor.run(wrapped_command)
+    # executor.run() returns output on success or raises ToolExecutionError
+    # For nohup like this, stdout/stderr are redirected, so output is usually empty.
+    # We'll return a confirmation message.
+    executor.run(wrapped_command)
+    return f"Successfully launched background command on {input_data.machine_name}: {input_data.command}"
 
 
 @register_tool(
@@ -103,7 +107,7 @@ def run_remote_background_command(input_data: RunRemoteBackgroundCommandInput) -
     input_model=RunRemotePythonSnippetInput,
     tags=["system", "remote", "ssh", "python", "wrapper"],
     description="Run a short Python snippet remotely using 'python3 -c'.",
-    safe_mode=False,  # Allows arbitrary code execution on a remote machine
+    safe_mode=False,
     purpose="Quick remote introspection or scripting using Python.",
     category="system",
 )
@@ -147,13 +151,16 @@ def run_script_if_absent(input_data: RunScriptIfAbsentInput) -> str:
     if executor.check_file_exists(input_data.check_path):
         return f"[INFO] File {input_data.check_path} already exists. Skipping script."
 
-    upload_result = executor.upload(
+    # executor.upload will raise ToolExecutionError if it fails.
+    # It returns a success message string if successful.
+    upload_message = executor.upload(
         input_data.local_script_path, input_data.remote_script_path
     )
-    if "[ERROR]" in upload_result:
-        return f"[ERROR] Script upload failed: {upload_result}"
+    logger.info(upload_message)  # Log the success message from upload
 
-    return executor.run(f"bash {shlex.quote(input_data.remote_script_path)}")
+    # If upload was successful, run the script. executor.run will raise if script fails.
+    script_output = executor.run(f"bash {shlex.quote(input_data.remote_script_path)}")
+    return script_output
 
 
 @register_tool(
@@ -161,7 +168,7 @@ def run_script_if_absent(input_data: RunScriptIfAbsentInput) -> str:
     input_model=SafeShellInput,
     tags=["shell", "wrapper", "local", "safe"],
     description="Run a local shell command after validating it for safety.",
-    safe_mode=True,  # The safety check makes this tool safe by default.
+    safe_mode=True,
     purpose="Safely run local shell commands with basic validation.",
     category="system",
 )
@@ -180,9 +187,14 @@ def safe_shell_execute(input_data: SafeShellInput) -> str:
     dangerous = ["rm -rf", "shutdown", "halt", "reboot", ":(){", "mkfs", "dd "]
     lowered = input_data.command.lower()
     if any(term in lowered for term in dangerous):
-        logger.warning(f"Blocking potentially dangerous command: '{input_data.command}'")
+        logger.warning(
+            f"Blocking potentially dangerous command: '{input_data.command}'"
+        )
         return "[BLOCKED] Command contains potentially dangerous operations."
     logger.info(f"Executing safe local shell command: {input_data.command}")
+    # run_local_command itself might raise ToolExecutionError, or return error string
+    # For consistency, we should ensure it also raises ToolExecutionError.
+    # For now, assuming it returns a string which might contain error info.
     return run_local_command(
         RunLocalCommandInput(command=input_data.command, shell=True)
     )

@@ -4,7 +4,7 @@ import LaunchTab from './LaunchTab';
 import PresetsTab from './PresetsTab';
 import ArtifactsTab from './ArtifactsTab';
 import ReportsTab from './ReportsTab';
-import ToolsTab from './ToolsTab'; // Corrected import path
+import ToolsTab from './ToolsTab';
 import LogStreamTab from './LogStreamTab';
 import GraphViewTab from './GraphViewTab';
 import DashboardTab from './DashboardTab';

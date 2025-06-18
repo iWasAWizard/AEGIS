@@ -6,7 +6,6 @@ This module provides the primary entry point for loading and validating an
 agent's behavioral configuration from various sources, such as a preset
 profile name, a direct file path, or a raw dictionary.
 """
-# NEW: Import json for pretty printing
 import json
 from pathlib import Path
 from typing import Union, Optional
@@ -25,9 +24,9 @@ logger = setup_logger(__name__)
 
 
 def load_agent_config(
-        config_file: Optional[Union[str, Path]] = None,
-        profile: Optional[str] = None,
-        raw_config: Optional[dict] = None,
+    config_file: Optional[Union[str, Path]] = None,
+    profile: Optional[str] = None,
+    raw_config: Optional[dict] = None,
 ) -> AgentConfig:
     """Loads, validates, and resolves an agent configuration into a full AgentConfig object.
 
@@ -68,7 +67,6 @@ def load_agent_config(
 
         validate_node_names(config_data)
 
-        # NEW: Log the data just before Pydantic validation
         logger.debug(
             "Attempting to validate the following config data against AgentConfig:\n"
             f"{json.dumps(config_data, indent=2, default=str)}"
@@ -77,11 +75,11 @@ def load_agent_config(
         return AgentConfig(**config_data)
 
     except (
-            FileNotFoundError,
-            yaml.YAMLError,
-            ValueError,
-            ValidationError,
-            ImportError,
+        FileNotFoundError,
+        yaml.YAMLError,
+        ValueError,
+        ValidationError,
+        ImportError,
     ) as e:
         logger.exception(f"Failed to load agent configuration: {e}")
         raise ConfigurationError(

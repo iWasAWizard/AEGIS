@@ -48,6 +48,7 @@ class AgentGraphConfig(BaseModel):
 
     class Config:
         """Pydantic configuration to allow arbitrary types like callables."""
+
         arbitrary_types_allowed = True
 
 
@@ -87,6 +88,7 @@ class AgentConfig(BaseModel):
 
     class Config:
         """Pydantic configuration to allow arbitrary types like callables."""
+
         arbitrary_types_allowed = True
 
 

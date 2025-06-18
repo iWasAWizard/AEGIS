@@ -70,12 +70,12 @@ def list_processes(_: ListProcessesInput) -> str:
         procs = []
         for p in psutil.process_iter(["pid", "name", "username"]):
             procs.append(
-                f"PID: {p.pid:<6} | User: {p.username():<15} | Name: {p.name()}"
+                f"PID: {p.pid:<6} | User: {p.username():<15} | Name: {p.name()}"  # type: ignore
             )
         return "\n".join(procs) if procs else "No processes found."
-    except Exception as e:
+    except Exception as e:  # Catches psutil.Error, psutil.AccessDenied, etc.
         logger.exception("Failed to list processes using psutil.")
-        raise ToolExecutionError(f"Could not list processes: {e}") from e
+        raise ToolExecutionError(f"Could not list processes: {e}")
 
 
 @register_tool(
@@ -94,7 +94,7 @@ def get_disk_usage(input_data: GetDiskUsageInput) -> str:
     :type input_data: GetDiskUsageInput
     :return: A formatted string of disk usage statistics, or an error message.
     :rtype: str
-    :raises ToolExecutionError: If `psutil` fails for reasons other than a missing path.
+    :raises ToolExecutionError: If `psutil` fails or the path is not found.
     """
     path = input_data.path
     logger.info(f"Getting disk usage for path: {path}")
@@ -106,10 +106,10 @@ def get_disk_usage(input_data: GetDiskUsageInput) -> str:
             f"  - Used:  {_format_bytes_to_gb(usage.used)} ({usage.percent}%)\n"
             f"  - Free:  {_format_bytes_to_gb(usage.free)}"
         )
-    except FileNotFoundError:
-        error_msg = f"[ERROR] Path not found: {path}"
-        logger.error(error_msg)
-        return error_msg
-    except Exception as e:
+    except FileNotFoundError as e:
+        error_msg = f"Path not found for disk usage check: {path}"
+        logger.error(f"{error_msg}: {e}")
+        raise ToolExecutionError(error_msg)
+    except Exception as e:  # Catches other psutil errors
         logger.exception(f"Failed to get disk usage for {path}.")
-        raise ToolExecutionError(f"Could not get disk usage for '{path}': {e}") from e
+        raise ToolExecutionError(f"Could not get disk usage for '{path}': {e}")

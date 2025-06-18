@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Tuple
 
+from aegis.exceptions import ToolExecutionError
 from aegis.schemas.machine import MachineManifest
 from aegis.utils.logger import setup_logger
 
@@ -73,25 +74,33 @@ class SSHExecutor:
             logger.error(
                 f"Command not found: {command[0]}. Is the client (ssh, scp) installed?"
             )
-            return -1, "", f"Command not found: {command[0]}"
+            raise ToolExecutionError(
+                f"SSH/SCP client not found: {command[0]}. Please ensure it is installed and in PATH."
+            )
         except subprocess.TimeoutExpired:
             logger.warning(f"Command timed out after {timeout}s: {' '.join(command)}")
-            return -1, "", f"Command timed out after {timeout} seconds."
+            raise ToolExecutionError(
+                f"Remote command timed out after {timeout} seconds: {' '.join(command)}"
+            )
         except Exception as e:
             logger.exception(
                 f"An unexpected error occurred while running command: {' '.join(command)}"
             )
-            return -1, "", str(e)
+            raise ToolExecutionError(
+                f"Unexpected error during remote subprocess execution: {e}"
+            )
 
-    def run(self, command: str, timeout: int = 30) -> Tuple[str, int]:
+    def run(self, command: str, timeout: int = 30) -> str:
         """Executes a shell command on the remote host via SSH.
+        If the command returns a non-zero exit code, ToolExecutionError is raised.
 
         :param command: The shell command to execute.
         :type command: str
         :param timeout: The timeout in seconds for the command.
         :type timeout: int
-        :return: A tuple of (combined_output, return_code).
-        :rtype: Tuple[str, int]
+        :return: The combined stdout and stderr from the command if successful.
+        :rtype: str
+        :raises ToolExecutionError: If the command fails (non-zero exit code) or other execution error.
         """
         cmd_list = ["ssh", *self.ssh_opts, self.ssh_target, command]
         returncode, stdout, stderr = self._run_subprocess(cmd_list, timeout=timeout)
@@ -100,7 +109,15 @@ class SSHExecutor:
         if stderr:
             combined_output = f"{stdout}\n[STDERR]\n{stderr}".strip()
 
-        return combined_output, returncode
+        if returncode != 0:
+            logger.error(
+                f"Remote command '{command}' failed on '{self.ssh_target}' with RC {returncode}. Output:\n{combined_output}"
+            )
+            raise ToolExecutionError(
+                f"Remote command failed with exit code {returncode}. Output: {combined_output}"
+            )
+
+        return combined_output
 
     def upload(
         self, local_path: str | Path, remote_path: str | Path, timeout: int = 60
@@ -113,16 +130,26 @@ class SSHExecutor:
         :type remote_path: str | Path
         :param timeout: The timeout in seconds for the transfer.
         :type timeout: int
-        :return: A success or error message.
+        :return: A success message.
         :rtype: str
+        :raises ToolExecutionError: If SCP upload fails.
         """
         source = str(local_path)
         destination = f"{self.ssh_target}:{remote_path}"
         cmd_list = ["scp", *self.scp_opts, source, destination]
         returncode, stdout, stderr = self._run_subprocess(cmd_list, timeout=timeout)
-        if returncode == 0:
-            return f"Successfully uploaded {source} to {destination}"
-        return f"[ERROR] SCP upload failed: {stderr or stdout}"
+
+        if returncode != 0:
+            logger.error(
+                f"SCP upload from '{source}' to '{destination}' failed with RC {returncode}. Error: {stderr or stdout}"
+            )
+            raise ToolExecutionError(
+                f"SCP upload failed. RC: {returncode}. Error: {stderr or stdout}"
+            )
+
+        success_msg = f"Successfully uploaded {source} to {destination}"
+        logger.info(success_msg)
+        return success_msg
 
     def download(
         self, remote_path: str | Path, local_path: str | Path, timeout: int = 60
@@ -135,16 +162,26 @@ class SSHExecutor:
         :type local_path: str | Path
         :param timeout: The timeout in seconds for the transfer.
         :type timeout: int
-        :return: A success or error message.
+        :return: A success message.
         :rtype: str
+        :raises ToolExecutionError: If SCP download fails.
         """
         source = f"{self.ssh_target}:{remote_path}"
         destination = str(local_path)
         cmd_list = ["scp", *self.scp_opts, source, destination]
         returncode, stdout, stderr = self._run_subprocess(cmd_list, timeout=timeout)
-        if returncode == 0:
-            return f"Successfully downloaded {source} to {destination}"
-        return f"[ERROR] SCP download failed: {stderr or stdout}"
+
+        if returncode != 0:
+            logger.error(
+                f"SCP download from '{source}' to '{destination}' failed with RC {returncode}. Error: {stderr or stdout}"
+            )
+            raise ToolExecutionError(
+                f"SCP download failed. RC: {returncode}. Error: {stderr or stdout}"
+            )
+
+        success_msg = f"Successfully downloaded {source} to {destination}"
+        logger.info(success_msg)
+        return success_msg
 
     def check_file_exists(self, file_path: str, timeout: int = 20) -> bool:
         """Checks if a file exists on the remote host using a reliable test command.
@@ -155,7 +192,22 @@ class SSHExecutor:
         :type timeout: int
         :return: True if the file exists, False otherwise.
         :rtype: bool
+        :raises ToolExecutionError: If the SSH command itself fails unexpectedly (not if the file doesn't exist).
         """
-        command = f"test -f {shlex.quote(file_path)}"
-        _output, return_code = self.run(command, timeout=timeout)
-        return return_code == 0
+        marker_string = "AEGIS_FILE_EXISTS_SUCCESS_MARKER"
+        command = f"test -f {shlex.quote(file_path)} && echo {marker_string}"
+
+        try:
+            output = self.run(command, timeout=timeout)
+            return marker_string in output
+        except ToolExecutionError as e:
+            if "Remote command failed with exit code" in str(e):
+                logger.debug(
+                    f"File '{file_path}' does not exist on '{self.ssh_target}' (test -f failed)."
+                )
+                return False
+            else:
+                logger.error(
+                    f"Error checking file existence for '{file_path}' on '{self.ssh_target}': {e}"
+                )
+                raise

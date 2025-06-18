@@ -55,7 +55,7 @@ class JsonlFileHandler(logging.Handler):
         super().__init__()
         self.logs_dir = Path(logs_dir)
         self.logs_dir.mkdir(exist_ok=True)
-        self.addFilter(TaskIdFilter())  # Ensure task_id is always available
+        self.addFilter(TaskIdFilter())
 
     def emit(self, record: logging.LogRecord) -> None:
         """
@@ -87,8 +87,8 @@ class JsonlFileHandler(logging.Handler):
 
         # If the log call included structured data in 'extra_data', merge it in.
         # The StructuredLoggerAdapter wraps this in 'extra_data'.
-        if hasattr(record, "extra_data") and isinstance(record.extra_data, dict):
-            log_entry.update(record.extra_data)
+        if hasattr(record, "extra_data") and isinstance(record.extra_data, dict):  # type: ignore
+            log_entry.update(record.extra_data)  # type: ignore
 
         log_path = self.logs_dir / f"{task_id}.jsonl"
 

@@ -14,6 +14,9 @@ from pydantic import BaseModel, Field
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 
+# Import ToolExecutionError
+from aegis.exceptions import ToolExecutionError
+
 logger = setup_logger(__name__)
 
 
@@ -36,7 +39,7 @@ class WebSnapshotCompareInput(BaseModel):
     description="Compares two HTML snapshots and returns a unified diff of their contents.",
     tags=["browser", "diff", "snapshot", "web", "wrapper"],
     category="wrapper",
-    safe_mode=True,  # Operates only on local files.
+    safe_mode=True,
     purpose="Identify differences between two captured web page states.",
 )
 def web_snapshot_compare(input_data: WebSnapshotCompareInput) -> str:
@@ -50,6 +53,7 @@ def web_snapshot_compare(input_data: WebSnapshotCompareInput) -> str:
     :type input_data: WebSnapshotCompareInput
     :return: A string containing the diff, or a message if no differences are found.
     :rtype: str
+    :raises ToolExecutionError: If files are not found or cannot be read.
     """
     logger.info(f"Comparing web snapshots: {input_data.file1} vs {input_data.file2}")
 
@@ -57,16 +61,16 @@ def web_snapshot_compare(input_data: WebSnapshotCompareInput) -> str:
     path2 = Path(input_data.file2)
 
     if not path1.is_file():
-        return f"[ERROR] File not found: {path1}"
+        raise ToolExecutionError(f"File not found: {path1}")
     if not path2.is_file():
-        return f"[ERROR] File not found: {path2}"
+        raise ToolExecutionError(f"File not found: {path2}")
 
     try:
         html1_lines = path1.read_text(encoding="utf-8").splitlines()
         html2_lines = path2.read_text(encoding="utf-8").splitlines()
     except Exception as e:
         logger.exception("Failed to read one of the snapshot files.")
-        return f"[ERROR] Could not read snapshot files: {e}"
+        raise ToolExecutionError(f"Could not read snapshot files: {e}")
 
     diff = unified_diff(
         html1_lines, html2_lines, fromfile=path1.name, tofile=path2.name, lineterm=""

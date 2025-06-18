@@ -10,6 +10,7 @@ issues, tool execution problems, or LLM planning errors.
 
 class AegisError(Exception):
     """Base exception class for all custom errors in the AEGIS application."""
+
     pass
 
 
@@ -19,11 +20,13 @@ class ConfigurationError(AegisError):
     This can include a missing preset file, an unresolvable secret, or an
     invalid graph structure.
     """
+
     pass
 
 
 class ToolError(AegisError):
     """Base exception for errors related to tool handling."""
+
     pass
 
 
@@ -34,6 +37,7 @@ class ToolNotFoundError(ToolError, KeyError):
     registered or has been misspelled. Inherits from `KeyError` for some
     backwards compatibility.
     """
+
     pass
 
 
@@ -44,6 +48,7 @@ class ToolExecutionError(ToolError):
     This includes network errors, subprocess failures, timeouts, or any
     unhandled internal exception within the tool's logic.
     """
+
     pass
 
 
@@ -54,6 +59,7 @@ class ToolValidationError(ToolError, ValueError):
     plan provided arguments that do not match the tool's required input schema.
     Inherits from `ValueError` for some backwards compatibility.
     """
+
     pass
 
 
@@ -64,4 +70,5 @@ class PlannerError(AegisError):
     that fails schema validation, or a network failure when communicating
     with the LLM service.
     """
+
     pass

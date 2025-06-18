@@ -45,7 +45,7 @@ class CreateRandomFileInput(BaseModel):
     size: str = Field(
         ...,
         description="The desired size of the file. Supports shorthands like '10k', '25M', '1G'. "
-                    "Defaults to bytes if no suffix is given.",
+        "Defaults to bytes if no suffix is given.",
     )
 
 
@@ -153,8 +153,10 @@ def create_random_file(input_data: CreateRandomFileInput) -> str:
     match = re.match(r"^(\d+)([kmgtp]?)b?$", size_str)
 
     if not match:
-        return f"[ERROR] Invalid size format: '{input_data.size}'. " \
-               f"Use a number with an optional suffix (k, M, G, T, P)."
+        return (
+            f"[ERROR] Invalid size format: '{input_data.size}'. "
+            f"Use a number with an optional suffix (k, M, G, T, P)."
+        )
 
     value = int(match.group(1))
     suffix = match.group(2)
@@ -257,7 +259,7 @@ def read_remote_file(input_data: MachineFileInput) -> str:
     )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
-    output, _ = executor.run(f"cat {shlex.quote(input_data.file_path)}")
+    output = executor.run(f"cat {shlex.quote(input_data.file_path)}")
     return output
 
 
@@ -308,10 +310,8 @@ def run_remote_script(input_data: RunRemoteScriptInput) -> str:
     )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
-    upload_result = executor.upload(input_data.script_path, input_data.remote_path)
-    if "[ERROR]" in upload_result:
-        return f"[ERROR] Script upload failed: {upload_result}"
-    output, _ = executor.run(f"bash {shlex.quote(input_data.remote_path)}")
+    executor.upload(input_data.script_path, input_data.remote_path)
+    output = executor.run(f"bash {shlex.quote(input_data.remote_path)}")
     return output
 
 
@@ -338,7 +338,7 @@ def append_to_remote_file(input_data: AppendToRemoteFileInput) -> str:
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
     cmd = f"echo {shlex.quote(input_data.content)} | sudo tee -a {shlex.quote(input_data.file_path)}"
-    output, _ = executor.run(cmd)
+    output = executor.run(cmd)
     return output
 
 
@@ -364,7 +364,7 @@ def get_remote_directory_listing(input_data: GetRemoteDirectoryListingInput) -> 
     )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
-    output, _ = executor.run(f"ls -la {shlex.quote(input_data.directory_path)}")
+    output = executor.run(f"ls -la {shlex.quote(input_data.directory_path)}")
     return output
 
 

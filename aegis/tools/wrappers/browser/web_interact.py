@@ -20,6 +20,9 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 
+# Import ToolExecutionError
+from aegis.exceptions import ToolExecutionError
+
 logger = setup_logger(__name__)
 
 
@@ -76,6 +79,7 @@ def web_interact(input_data: WebInteractionInput) -> str:
     :type input_data: WebInteractionInput
     :return: A string indicating the outcome of the action.
     :rtype: str
+    :raises ToolExecutionError: If Selenium WebDriver encounters an error or any other exception occurs.
     """
     logger.info(
         f"Performing web action: '{input_data.action}' on selector: '{input_data.selector or input_data.url}'"
@@ -90,13 +94,15 @@ def web_interact(input_data: WebInteractionInput) -> str:
 
         if input_data.action == "navigate":
             if not input_data.url:
-                return "[ERROR] URL must be provided for 'navigate' action."
+                raise ToolExecutionError("URL must be provided for 'navigate' action.")
             driver.get(input_data.url)
             return f"Successfully navigated to {input_data.url}"
 
         # All other actions require a selector
         if not input_data.selector:
-            return f"[ERROR] CSS selector must be provided for '{input_data.action}' action."
+            raise ToolExecutionError(
+                f"CSS selector must be provided for '{input_data.action}' action."
+            )
 
         # Explicitly wait for the element to be present before interacting.
         wait = WebDriverWait(driver, input_data.wait_timeout)
@@ -109,32 +115,51 @@ def web_interact(input_data: WebInteractionInput) -> str:
             return f"Clicked element with selector: '{input_data.selector}'"
         elif input_data.action == "type":
             if input_data.value is None:
-                return "[ERROR] A 'value' must be provided for 'type' action."
+                raise ToolExecutionError(
+                    "A 'value' must be provided for 'type' action."
+                )
             element.clear()
             element.send_keys(input_data.value)
             return f"Typed '{input_data.value}' into element: '{input_data.selector}'"
         elif input_data.action == "select":
             if input_data.value is None:
-                return "[ERROR] A 'value' must be provided for 'select' action."
+                raise ToolExecutionError(
+                    "A 'value' must be provided for 'select' action."
+                )
             select_element = Select(element)
             select_element.select_by_value(input_data.value)
             return f"Selected option with value '{input_data.value}' from dropdown: '{input_data.selector}'"
         elif input_data.action == "wait":
             return f"Element '{input_data.selector}' was successfully found and waited for."
+        else:
+            # This case should ideally not be reached if Pydantic validation of 'action' is exhaustive.
+            raise ToolExecutionError(
+                f"Unknown web_interact action: {input_data.action}"
+            )
 
     except TimeoutException:
-        current_url = driver.current_url if driver else "N/A"
-        error_msg = f"Timeout waiting for element '{input_data.selector}' on URL '{current_url}'."
+        current_url_msg = driver.current_url if driver else "N/A"
+        error_msg = f"Timeout waiting for element '{input_data.selector}' on URL '{current_url_msg}' after {input_data.wait_timeout}s."
         logger.warning(error_msg)
-        return f"[ERROR] {error_msg}"
-    except WebDriverException as e:
+        raise ToolExecutionError(error_msg)
+    except WebDriverException as e:  # Catch specific Selenium errors
         logger.error(f"WebDriver action '{input_data.action}' failed: {e.msg}")
-        return f"[ERROR] Selenium WebDriver error: {e.msg}"
-    except Exception as e:
+        raise ToolExecutionError(f"Selenium WebDriver error: {e.msg}")
+    except ToolExecutionError:  # Re-raise ToolExecutionErrors from our checks
+        raise
+    except Exception as e:  # Catch any other unexpected errors
         logger.exception("An unexpected error occurred during web interaction.")
-        return f"[ERROR] An unhandled exception occurred: {e}"
+        raise ToolExecutionError(
+            f"An unhandled exception occurred during web interaction: {e}"
+        )
     finally:
         if driver:
-            driver.quit()
+            try:
+                driver.quit()
+            except Exception as e:
+                logger.error(f"Error quitting WebDriver: {e}")
 
-    return "[ERROR] Unknown action specified or action failed to return a result."
+    # This line should not be reached if all paths return or raise. Added for safety.
+    raise ToolExecutionError(
+        "Unknown web_interact action specified or action failed to return a result."
+    )

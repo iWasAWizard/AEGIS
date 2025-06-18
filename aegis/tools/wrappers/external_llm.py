@@ -11,12 +11,16 @@ specific tasks where a different capability is desired.
 import os
 from typing import List, Optional, Literal
 
-import openai
-import requests  # Restored
+import openai  # type: ignore
+import requests
 from pydantic import BaseModel, Field
 
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
+
+# Import ToolExecutionError
+from aegis.exceptions import ToolExecutionError, ConfigurationError
+
 
 logger = setup_logger(__name__)
 
@@ -74,7 +78,6 @@ class LLMChatInput(BaseModel):
     )
 
 
-# --- Restored OllamaGenerateInput and ollama_generate_direct tool ---
 class OllamaGenerateInput(BaseModel):
     """Input for generating text with a local Ollama model via a direct request.
 
@@ -98,15 +101,10 @@ class OllamaGenerateInput(BaseModel):
     system: Optional[str] = Field(
         None, description="An optional system-level context string."
     )
-    temperature: Optional[float] = Field(
-        0.7, description="The sampling temperature."
-    )  # Default for Ollama
+    temperature: Optional[float] = Field(0.7, description="The sampling temperature.")
     timeout: Optional[int] = Field(
         60, description="The timeout in seconds for the API call."
     )
-
-
-# --- End of restored OllamaGenerateInput ---
 
 
 @register_tool(
@@ -125,27 +123,37 @@ def llm_chat_openai(input_data: LLMChatInput) -> str:
     :type input_data: LLMChatInput
     :return: The content of the assistant's response message.
     :rtype: str
+    :raises ToolExecutionError: If the OpenAI API call fails.
     """
     logger.info(f"Initiating OpenAI chat with model: {input_data.model}")
     try:
-        client = (
-            openai.OpenAI(api_key=input_data.api_key)
-            if input_data.api_key
-            else openai.OpenAI()
-        )
+        # Ensure OPENAI_API_KEY is available either via input or environment
+        api_key_to_use = input_data.api_key or os.getenv("OPENAI_API_KEY")
+        if not api_key_to_use:
+            raise ConfigurationError(
+                "OpenAI API key not provided or found in environment (OPENAI_API_KEY)."
+            )
+
+        client = openai.OpenAI(api_key=api_key_to_use)  # type: ignore
+
         response = client.chat.completions.create(
             model=input_data.model,
-            messages=[m.model_dump() for m in input_data.messages],
+            messages=[m.model_dump() for m in input_data.messages],  # type: ignore
             temperature=input_data.temperature,
             timeout=input_data.timeout,
         )
-        return response.choices[0].message.content or "[No content in response]"
-    except Exception as e:
+        content = response.choices[0].message.content
+        return content or "[No content in OpenAI response]"
+    except openai.APIError as e:  # Catch specific OpenAI errors
+        logger.exception(f"OpenAI API error for model {input_data.model}: {e}")
+        raise ToolExecutionError(f"OpenAI API error: {e}")
+    except ConfigurationError:  # Re-raise our config error
+        raise
+    except Exception as e:  # Catch other unexpected errors (network, etc.)
         logger.exception(f"OpenAI chat completion failed for model {input_data.model}")
-        return f"[ERROR] OpenAI chat completion failed: {e}"
+        raise ToolExecutionError(f"OpenAI chat completion failed: {e}")
 
 
-# --- Restored ollama_generate_direct tool ---
 @register_tool(
     name="ollama_generate_direct",
     input_model=OllamaGenerateInput,
@@ -167,39 +175,69 @@ def ollama_generate_direct(input_data: OllamaGenerateInput) -> str:
     :type input_data: OllamaGenerateInput
     :return: The generated text response from the Ollama model.
     :rtype: str
+    :raises ToolExecutionError: If the request to Ollama fails.
     """
     logger.info(
         f"Sending direct prompt to Ollama model: {input_data.model} via URL: {OLLAMA_DIRECT_API_URL}"
     )
+    if not OLLAMA_DIRECT_API_URL:
+        raise ConfigurationError(
+            "OLLAMA_DIRECT_API_URL is not configured for ollama_generate_direct tool."
+        )
+
     try:
         payload = {
             "model": input_data.model,
             "prompt": input_data.prompt,
-            "stream": False,  # Explicitly false for non-streaming
+            "stream": False,
         }
-        # Add optional parameters if they are provided
         if input_data.system is not None:
             payload["system"] = input_data.system
+        if input_data.temperature is not None:
+            payload["temperature"] = input_data.temperature
+
+        options_payload = {}
         if (
             input_data.temperature is not None
-        ):  # Ollama /generate takes temp directly, not in options
-            payload["temperature"] = input_data.temperature
-        # Other Ollama options like num_ctx, top_k, top_p would go into an "options" dict if needed
-        # For this simple tool, we keep it minimal.
+        ):  # Ollama takes temperature in options for /api/generate
+            options_payload["temperature"] = input_data.temperature
+        # Add other common Ollama options if they were part of your input schema and needed
+        # For now, keeping it minimal to what was in the original schema.
+        if options_payload:
+            payload["options"] = options_payload
 
         response = requests.post(
             OLLAMA_DIRECT_API_URL,
             json=payload,
-            timeout=input_data.timeout,
+            timeout=input_data.timeout or 60,  # Ensure timeout has a default
         )
-        response.raise_for_status()
-        # Ollama's direct /generate response format
-        return response.json().get("response", "[No response field in result]")
-    except requests.RequestException as e:
+        response.raise_for_status()  # Raises HTTPError for bad responses (4xx or 5xx)
+
+        response_json = response.json()
+        generated_text = response_json.get("response")
+        if (
+            generated_text is None
+        ):  # Check for None specifically, as empty string might be valid
+            # Ollama sometimes puts error messages in the response field on non-200 or other issues
+            if "error" in response_json:
+                raise ToolExecutionError(
+                    f"Ollama returned an error: {response_json['error']}"
+                )
+            raise ToolExecutionError(
+                "Ollama response missing 'response' field or it is null."
+            )
+
+        return generated_text
+
+    except requests.exceptions.RequestException as e:
         logger.exception(
             f"Direct Ollama generation request failed to {OLLAMA_DIRECT_API_URL}"
         )
-        return f"[ERROR] Ollama request failed: {e}"
-
-
-# --- End of restored ollama_generate_direct tool ---
+        raise ToolExecutionError(f"Ollama request failed: {e}")
+    except ConfigurationError:
+        raise
+    except Exception as e:  # Catch other unexpected errors
+        logger.exception(
+            f"Unexpected error in ollama_generate_direct to {OLLAMA_DIRECT_API_URL}"
+        )
+        raise ToolExecutionError(f"Unexpected error in ollama_generate_direct: {e}")

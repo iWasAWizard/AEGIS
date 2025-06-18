@@ -89,7 +89,7 @@ class GuiFindAndReadInput(BaseModel):
     offset_box: Tuple[int, int, int, int] = Field(
         ...,
         description="The bounding box (left, top, width, height) relative to the anchor image's "
-                    "top-left corner where text should be read.",
+        "top-left corner where text should be read.",
     )
     timeout_seconds: int = Field(
         10, description="How long to search for the anchor image."
@@ -131,6 +131,7 @@ def capture_screenshot(input_data: CaptureScreenshotInput) -> str:
         gui_input = GuiActionInput(
             action="screenshot", screenshot_path=input_data.save_path
         )
+        # Assuming gui_action will raise ToolExecutionError on failure.
         return gui_action(gui_input)
 
     # --- Case 2: Remote Screenshot ---
@@ -138,7 +139,9 @@ def capture_screenshot(input_data: CaptureScreenshotInput) -> str:
     try:
         machine = get_machine(input_data.machine_name)
         if machine.platform != "linux":
-            return "[ERROR] Remote screenshot is currently only supported on Linux machines (requires 'scrot')."
+            raise ToolExecutionError(
+                "Remote screenshot is currently only supported on Linux machines (requires 'scrot')."
+            )
 
         executor = SSHExecutor(machine)
 
@@ -148,42 +151,52 @@ def capture_screenshot(input_data: CaptureScreenshotInput) -> str:
         # The `-d 1` adds a 1-second delay to allow for UI transitions.
         capture_command = f"DISPLAY=:0 scrot -d 1 {shlex.quote(remote_tmp_path)}"
         logger.info(f"Executing remote capture command: {capture_command}")
-        result = executor.run(capture_command)
 
-        if "ERROR" in result or "cannot open display" in result.lower():
-            return f"[ERROR] Failed to capture remote screenshot. The remote machine may not have a " \
-                   f"running X server or 'scrot' may not be installed. Result: {result}"
+        # executor.run() will raise ToolExecutionError if scrot fails or DISPLAY is not found.
+        # scrot is usually silent on success.
+        executor.run(capture_command)
+        logger.info(
+            f"Remote screenshot captured to {remote_tmp_path} on {input_data.machine_name}."
+        )
 
         logger.info(
             f"Downloading remote file '{remote_tmp_path}' to '{input_data.save_path}'"
         )
-        download_result = executor.download(remote_tmp_path, input_data.save_path)
-        if "[ERROR]" in download_result:
-            return f"[ERROR] Failed to download screenshot from remote host: {download_result}"
+        # executor.download() will raise ToolExecutionError if download fails.
+        download_message = executor.download(remote_tmp_path, input_data.save_path)
+        logger.info(download_message)
 
         # Clean up the temporary file on the remote host
         cleanup_command = f"rm {shlex.quote(remote_tmp_path)}"
         logger.info(f"Cleaning up remote file: {cleanup_command}")
-        executor.run(cleanup_command)
+        executor.run(
+            cleanup_command
+        )  # Will raise if rm fails, but we might not care as much.
 
-        return f"Successfully captured screenshot from '{input_data.machine_name}' " \
-               f"and saved to '{input_data.save_path}'."
+        return (
+            f"Successfully captured screenshot from '{input_data.machine_name}' "
+            f"and saved to '{input_data.save_path}'."
+        )
 
-    except Exception as e:
+    except ToolExecutionError:  # Catch errors from executor calls
+        raise  # Re-raise to be handled by execute_tool
+    except Exception as e:  # Catch other unexpected errors
         logger.exception(
             f"An unexpected error occurred during remote screenshot capture."
         )
-        return f"[ERROR] An unexpected error occurred: {e}"
+        raise ToolExecutionError(
+            f"An unexpected error occurred during remote screenshot: {e}"
+        )
 
 
 @register_tool(
     name="ocr_read_screen_area",
     input_model=OcrReadScreenAreaInput,
     description="Captures either a specified area of the screen, or the full screen,"
-                " and returns any text found within it using OCR.",
+    " and returns any text found within it using OCR.",
     tags=["ocr", "perception", "gui", "vision"],
     category="desktop",
-    safe_mode=True,  # Read-only operation
+    safe_mode=True,
 )
 def ocr_read_screen_area(input_data: OcrReadScreenAreaInput) -> str:
     """
@@ -203,7 +216,7 @@ def ocr_read_screen_area(input_data: OcrReadScreenAreaInput) -> str:
         raise ToolExecutionError(
             "OCR functionality requires pyautogui, Pillow, and pytesseract."
         )
-    if pyautogui.size() == (0, 0):
+    if pyautogui.size() == (0, 0):  # type: ignore
         raise ToolExecutionError(
             "Could not determine screen size. Ensure you are in a graphical environment."
         )
@@ -212,8 +225,8 @@ def ocr_read_screen_area(input_data: OcrReadScreenAreaInput) -> str:
         f"Performing OCR on screen region: {input_data.region or 'Full Screen'}"
     )
     try:
-        screenshot_image = pyautogui.screenshot(region=input_data.region)
-        extracted_text = pytesseract.image_to_string(screenshot_image).strip()
+        screenshot_image = pyautogui.screenshot(region=input_data.region)  # type: ignore
+        extracted_text = pytesseract.image_to_string(screenshot_image).strip()  # type: ignore
 
         logger.info(f"OCR extracted {len(extracted_text)} characters.")
         return (
@@ -221,9 +234,9 @@ def ocr_read_screen_area(input_data: OcrReadScreenAreaInput) -> str:
             if extracted_text
             else "[INFO] OCR found no text in the specified area."
         )
-    except Exception as e:
+    except Exception as e:  # Includes pytesseract.TesseractNotFoundError etc.
         logger.exception(f"An error occurred during OCR operation.")
-        return f"[ERROR] OCR operation failed: {e}"
+        raise ToolExecutionError(f"OCR operation failed: {e}")
 
 
 @register_tool(
@@ -232,7 +245,7 @@ def ocr_read_screen_area(input_data: OcrReadScreenAreaInput) -> str:
     description="Finds a template image (anchor) on screen, then reads text from a specified area next to it.",
     tags=["ocr", "perception", "gui", "vision", "automation"],
     category="desktop",
-    safe_mode=False,  # Can move the mouse, which is an interaction
+    safe_mode=False,
 )
 def gui_find_and_read(input_data: GuiFindAndReadInput) -> str:
     """
@@ -251,6 +264,10 @@ def gui_find_and_read(input_data: GuiFindAndReadInput) -> str:
     """
     if not PYAUTOGUI_AVAILABLE:
         raise ToolExecutionError("This tool requires pyautogui and opencv-python.")
+    if pyautogui.size() == (0, 0):  # type: ignore
+        raise ToolExecutionError(
+            "Could not determine screen size. Ensure GUI is available."
+        )
 
     logger.info(
         f"Attempting to find anchor image '{input_data.template_image_path}' to read text."
@@ -261,18 +278,24 @@ def gui_find_and_read(input_data: GuiFindAndReadInput) -> str:
     while time.time() - search_start_time < input_data.timeout_seconds:
         try:
             # pyautogui.locateOnScreen returns a Box(left, top, width, height) object
-            anchor_location = pyautogui.locateOnScreen(
+            anchor_location = pyautogui.locateOnScreen(  # type: ignore
                 input_data.template_image_path, confidence=0.9
             )
             if anchor_location:
                 logger.info(f"Found anchor image at: {anchor_location}")
                 break
-        except Exception as e:
-            return f"[ERROR] Could not search for template image. Is 'opencv-python' installed? Error: {e}"
+        except (
+            Exception
+        ) as e:  # This can be pyautogui.ImageNotFoundException if opencv-python is missing
+            raise ToolExecutionError(
+                f"Could not search for template image. Is 'opencv-python' installed? Error: {e}"
+            )
         time.sleep(1)
 
     if not anchor_location:
-        return f"[ERROR] Anchor image '{input_data.template_image_path}' not found on screen."
+        raise ToolExecutionError(
+            f"Anchor image '{input_data.template_image_path}' not found on screen after {input_data.timeout_seconds}s."
+        )
 
     anchor_left, anchor_top, _, _ = anchor_location
     offset_left, offset_top, read_width, read_height = input_data.offset_box

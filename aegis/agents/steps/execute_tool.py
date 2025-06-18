@@ -8,7 +8,7 @@ recording the results in a structured history entry.
 """
 
 import asyncio
-import json  # Added for attempting to serialize complex tool_output
+import json
 import time
 from typing import Dict, Any, Callable, Literal
 
@@ -179,13 +179,13 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
 
     if status == "failure":
         logger.error(
-            f"Tool `{tool_name}` failed. Observation/Error: {observation_str}",  # ADDED observation_str HERE
+            f"Tool `{tool_name}` failed. Observation/Error: {observation_str}",
             extra={
                 "event_type": "ToolEnd",
                 "tool_name": tool_name,
                 "tool_args": tool_args,
                 "status": "failure",
-                "error_message": observation_str,  # This will also contain the detailed error
+                "error_message": observation_str,
             },
         )
     else:

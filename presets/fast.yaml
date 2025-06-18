@@ -1,9 +1,0 @@
-state_type: aegis.agents.task_state.TaskState
-entrypoint: "reflect"
-edges:
-  - ["reflect", "route"]
-  - ["route", "summarize"]
-condition_node: "summarize"
-condition_map:
-  success: "summarize"
-  failure: "reflect"

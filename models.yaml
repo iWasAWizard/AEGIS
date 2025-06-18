@@ -38,7 +38,7 @@ models:
     url: "https://huggingface.co/Qwen/Qwen1.5-7B-Chat-GGUF/resolve/main/qwen1_5-7b-chat-q5_k_m.gguf"
     notes: "AEGIS will use 'qwen:7b-chat-v1.5-q5_K_M' when querying Ollama."
 
-  # Example for a KoboldCPP configuration, if user switches backend_type
+  # Example for a KoboldCPP configuration
   - key: "kobold-llama3-gguf" 
     name: "Llama 3 8B Instruct (via KoboldCPP)"
     # backend_model_name is not directly used in KoboldCPP /generate payload if model is pre-loaded.

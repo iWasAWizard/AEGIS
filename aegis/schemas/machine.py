@@ -71,16 +71,3 @@ class MachineManifest(BaseModel):
 
     tags: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
-
-
-class MachineManifestCollection(BaseModel):
-    """DEPRECATED - Wrapper for loading a list of machines from a manifest.
-
-    This was intended for bulk loading but is no longer used, as machines are
-    loaded individually by name.
-
-    :ivar machines: A list of machine manifest objects.
-    :vartype machines: List[MachineManifest]
-    """
-
-    machines: List[MachineManifest]

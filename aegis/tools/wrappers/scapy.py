@@ -136,23 +136,25 @@ def scapy_ping(input_data: ScapyPingInput) -> str:
     :type input_data: ScapyPingInput
     :return: A string indicating if the host is up or down.
     :rtype: str
-    :raises ToolExecutionError: If the `scapy` library is not installed.
+    :raises ToolExecutionError: If `scapy` is not installed or other scapy error occurs.
     """
     if not SCAPY_AVAILABLE:
-        raise ToolExecutionError("The 'scapy' library is not installed.")
+        raise ToolExecutionError(
+            "The 'scapy' library is not installed. This tool cannot be used."
+        )
 
     logger.info(f"Pinging host {input_data.target} with scapy.")
     try:
-        packet = IP(dst=input_data.target) / ICMP()
-        reply = sr1(packet, timeout=input_data.timeout, verbose=0)
+        packet = IP(dst=input_data.target) / ICMP()  # type: ignore
+        reply = sr1(packet, timeout=input_data.timeout, verbose=0)  # type: ignore
 
         if reply is None:
             return f"Host {input_data.target} is down or not responding."
         else:
             return f"Host {input_data.target} is up."
-    except Exception as e:
+    except Exception as e:  # Catch any scapy-related or other runtime errors
         logger.exception(f"scapy_ping failed for target {input_data.target}: {e}")
-        return f"[ERROR] An error occurred during ping: {e}"
+        raise ToolExecutionError(f"An error occurred during scapy ping: {e}")
 
 
 @register_tool(
@@ -170,43 +172,47 @@ def scapy_tcp_scan(input_data: ScapyTcpScanInput) -> str:
     :type input_data: ScapyTcpScanInput
     :return: A string indicating if the port is open, closed, or filtered.
     :rtype: str
-    :raises ToolExecutionError: If the `scapy` library is not installed.
+    :raises ToolExecutionError: If `scapy` is not installed or other scapy error occurs.
     """
     if not SCAPY_AVAILABLE:
-        raise ToolExecutionError("The 'scapy' library is not installed.")
+        raise ToolExecutionError(
+            "The 'scapy' library is not installed. This tool cannot be used."
+        )
 
     logger.info(
         f"Scanning port {input_data.port} on host {input_data.target} with scapy."
     )
     try:
-        packet = IP(dst=input_data.target) / TCP(dport=input_data.port, flags="S")
-        response = sr1(packet, timeout=input_data.timeout, verbose=0)
+        packet = IP(dst=input_data.target) / TCP(dport=input_data.port, flags="S")  # type: ignore
+        response = sr1(packet, timeout=input_data.timeout, verbose=0)  # type: ignore
 
         if response is None:
             return f"Port {input_data.port} on {input_data.target} is filtered (No response)."
-        elif response.haslayer(TCP):
-            if response.getlayer(TCP).flags == 0x12:  # SYN/ACK
-                send(
-                    IP(dst=input_data.target) / TCP(dport=input_data.port, flags="R"),
+        elif response.haslayer(TCP):  # type: ignore
+            if response.getlayer(TCP).flags == 0x12:  # SYN/ACK # type: ignore
+                send(  # type: ignore
+                    IP(dst=input_data.target) / TCP(dport=input_data.port, flags="R"),  # type: ignore
                     verbose=0,
                 )
                 return f"Port {input_data.port} on {input_data.target} is open."
-            elif response.getlayer(TCP).flags == 0x14:  # RST/ACK
+            elif response.getlayer(TCP).flags == 0x14:  # RST/ACK # type: ignore
                 return f"Port {input_data.port} on {input_data.target} is closed."
+            else:  # Other flags
+                return f"Port {input_data.port} on {input_data.target} received an unexpected TCP response (flags={response.getlayer(TCP).flags})."  # type: ignore
 
-        return f"Port {input_data.port} on {input_data.target} state is unknown."
-    except Exception as e:
+        return f"Port {input_data.port} on {input_data.target} state is unknown (unexpected response type)."
+    except Exception as e:  # Catch any scapy-related or other runtime errors
         logger.exception(
             f"scapy_tcp_scan failed for {input_data.target}:{input_data.port}: {e}"
         )
-        return f"[ERROR] An error occurred during TCP scan: {e}"
+        raise ToolExecutionError(f"An error occurred during TCP scan: {e}")
 
 
 @register_tool(
     name="scapy_craft_and_send",
     input_model=ScapyCraftSendInput,
     description="Dynamically crafts and sends a custom packet defined by a list of layers."
-                "This is a safe alternative to using eval().",
+    "This is a safe alternative to using eval().",
     tags=["scapy", "network", "crafting", "packet"],
     category="network",
     safe_mode=False,
@@ -214,19 +220,21 @@ def scapy_tcp_scan(input_data: ScapyTcpScanInput) -> str:
 def scapy_craft_and_send(input_data: ScapyCraftSendInput) -> str:
     """Constructs a packet from a list of structured layer objects and sends it."""
     if not SCAPY_AVAILABLE:
-        raise ToolExecutionError("The 'scapy' library is not installed.")
+        raise ToolExecutionError(
+            "The 'scapy' library is not installed. This tool cannot be used."
+        )
 
     logger.info(f"Safely crafting custom packet with layers: {input_data.layers}")
 
     allowed_layers = {
-        "Ether": scapy.Ether,
-        "IP": scapy.IP,
-        "TCP": scapy.TCP,
-        "UDP": scapy.UDP,
-        "ICMP": scapy.ICMP,
-        "ARP": scapy.ARP,
-        "DNS": scapy.DNS,
-        "DNSQR": scapy.DNSQR,
+        "Ether": scapy.Ether,  # type: ignore
+        "IP": scapy.IP,  # type: ignore
+        "TCP": scapy.TCP,  # type: ignore
+        "UDP": scapy.UDP,  # type: ignore
+        "ICMP": scapy.ICMP,  # type: ignore
+        "ARP": scapy.ARP,  # type: ignore
+        "DNS": scapy.DNS,  # type: ignore
+        "DNSQR": scapy.DNSQR,  # type: ignore
     }
 
     try:
@@ -234,23 +242,25 @@ def scapy_craft_and_send(input_data: ScapyCraftSendInput) -> str:
         for layer_data in input_data.layers:
             layer_class = allowed_layers.get(layer_data.name)
             if not layer_class:
-                return f"[ERROR] Packet crafting failed: Layer '{layer_data.name}' is not supported."
+                raise ToolExecutionError(
+                    f"Packet crafting failed: Layer '{layer_data.name}' is not supported."
+                )
             packet_layers.append(layer_class(**layer_data.args))
 
         if not packet_layers:
-            return "[ERROR] No layers provided for packet crafting."
+            raise ToolExecutionError("No layers provided for packet crafting.")
 
         final_packet = packet_layers[0]
         for layer in packet_layers[1:]:
             final_packet /= layer
 
         logger.info(f"Sending crafted packet: {final_packet.summary()}")
-        send(final_packet, count=input_data.count, verbose=0)
+        send(final_packet, count=input_data.count, verbose=0)  # type: ignore
 
         return f"Successfully sent {input_data.count} packet(s) of type {final_packet.summary()}"
-    except Exception as e:
+    except Exception as e:  # Catch any scapy errors or other runtime issues
         logger.exception(f"Packet crafting or sending failed: {e}")
-        return f"[ERROR] Failed to craft or send packet: {e}"
+        raise ToolExecutionError(f"Failed to craft or send packet: {e}")
 
 
 @register_tool(
@@ -268,16 +278,18 @@ def scapy_arp_scan(input_data: ScapyArpScanInput) -> str:
     :type input_data: ScapyArpScanInput
     :return: A formatted list of discovered hosts with their IP and MAC addresses.
     :rtype: str
-    :raises ToolExecutionError: If the `scapy` library is not installed.
+    :raises ToolExecutionError: If `scapy` is not installed or other scapy error occurs.
     """
     if not SCAPY_AVAILABLE:
-        raise ToolExecutionError("The 'scapy' library is not installed.")
+        raise ToolExecutionError(
+            "The 'scapy' library is not installed. This tool cannot be used."
+        )
 
     logger.info(f"Performing ARP scan on network range: {input_data.target_range}")
     try:
-        arp_request = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=input_data.target_range)
+        arp_request = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=input_data.target_range)  # type: ignore
 
-        answered, _ = srp(arp_request, timeout=input_data.timeout, verbose=0)
+        answered, _ = srp(arp_request, timeout=input_data.timeout, verbose=0)  # type: ignore
 
         if not answered:
             return f"No hosts found in range {input_data.target_range}."
@@ -287,11 +299,11 @@ def scapy_arp_scan(input_data: ScapyArpScanInput) -> str:
             results.append(f"  - IP: {received.psrc:<16} MAC: {received.hwsrc}")
 
         return "\n".join(results)
-    except Exception as e:
+    except Exception as e:  # Catch any scapy-related or other runtime errors
         logger.exception(
             f"scapy_arp_scan failed for range {input_data.target_range}: {e}"
         )
-        return f"[ERROR] An error occurred during ARP scan: {e}"
+        raise ToolExecutionError(f"An error occurred during ARP scan: {e}")
 
 
 @register_tool(
@@ -309,16 +321,18 @@ def scapy_sniff(input_data: ScapySniffInput) -> str:
     :type input_data: ScapySniffInput
     :return: A summary of the captured packets or a 'no packets' message.
     :rtype: str
-    :raises ToolExecutionError: If the `scapy` library is not installed.
+    :raises ToolExecutionError: If `scapy` is not installed or other scapy error occurs.
     """
     if not SCAPY_AVAILABLE:
-        raise ToolExecutionError("The 'scapy' library is not installed.")
+        raise ToolExecutionError(
+            "The 'scapy' library is not installed. This tool cannot be used."
+        )
 
     logger.info(
         f"Starting packet sniff for {input_data.packet_count} packets. Filter: '{input_data.filter_bpf or 'None'}'"
     )
     try:
-        packets = sniff(
+        packets = sniff(  # type: ignore
             count=input_data.packet_count,
             filter=input_data.filter_bpf,
             timeout=input_data.timeout,
@@ -329,6 +343,6 @@ def scapy_sniff(input_data: ScapySniffInput) -> str:
 
         return packets.nsummary()
 
-    except Exception as e:
+    except Exception as e:  # Catch any scapy-related or other runtime errors
         logger.exception(f"scapy_sniff failed: {e}")
-        return f"[ERROR] An error occurred during packet sniffing: {e}"
+        raise ToolExecutionError(f"An error occurred during packet sniffing: {e}")

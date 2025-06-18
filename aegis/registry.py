@@ -50,7 +50,7 @@ class ToolEntry(BaseModel):
     """
 
     name: str
-    run: Callable[[Any], Any]  # The input is a Pydantic model instance
+    run: Callable[[Any], Any]
     input_model: Type[BaseModel]
     tags: List[str]
     description: str
@@ -185,8 +185,9 @@ def get_tool(name: str, safe_mode: bool = True) -> ToolEntry:
     tool = TOOL_REGISTRY.get(name)
     if tool is None:
         logger.warning(f"Requested tool '{name}' not found in registry.")
+        available_tools = list(TOOL_REGISTRY.keys())
         raise ToolNotFoundError(
-            f"Tool '{name}' not found in registry. Please ensure it is spelled correctly and registered."
+            f"Tool '{name}' not found in registry. Available: {available_tools}"
         )
     if safe_mode and not tool.safe_mode:
         logger.warning(

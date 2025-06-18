@@ -12,7 +12,7 @@ def test_task_state_initialization():
     state = TaskState(
         task_id="init-test",
         task_prompt="A test prompt",
-        runtime=RuntimeExecutionConfig()
+        runtime=RuntimeExecutionConfig(),
     )
 
     assert state.task_id == "init-test"
@@ -28,7 +28,7 @@ def test_steps_taken_property():
     state = TaskState(
         task_id="steps-test",
         task_prompt="A test prompt",
-        runtime=RuntimeExecutionConfig()
+        runtime=RuntimeExecutionConfig(),
     )
 
     assert state.steps_taken == 0

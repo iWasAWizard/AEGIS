@@ -14,6 +14,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from aegis.executors.ssh import SSHExecutor
+from aegis.exceptions import ToolExecutionError
 from aegis.registry import register_tool
 from aegis.schemas.common_inputs import MachineFileInput
 from aegis.utils.logger import setup_logger
@@ -157,7 +158,8 @@ def backup_remote_file(input_data: BackupRemoteFileInput) -> str:
         return f"[INFO] File '{input_data.file_path}' does not exist. Skipping backup."
 
     backup_cmd = f"cp {shlex.quote(input_data.file_path)} {shlex.quote(input_data.file_path + '.bak')}"
-    return executor.run(f"sudo {backup_cmd}")
+    executor.run(f"sudo {backup_cmd}")
+    return f"Successfully created backup: {input_data.file_path}.bak"
 
 
 @register_tool(
@@ -174,13 +176,14 @@ def inject_line_into_config(input_data: InjectLineIntoConfigInput) -> str:
 
     :param input_data: An object containing the machine name, file path, and line to inject.
     :type input_data: InjectLineIntoConfigInput
-    :return: The output of the `tee` command.
+    :return: The output of the `tee` command (often empty) or a success message.
     :rtype: str
     """
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
     append_cmd = f"echo {shlex.quote(input_data.line)} | sudo tee -a {shlex.quote(input_data.file_path)}"
-    return executor.run(append_cmd)
+    executor.run(append_cmd)
+    return f"Successfully injected line into {input_data.file_path}"
 
 
 @register_tool(
@@ -188,7 +191,7 @@ def inject_line_into_config(input_data: InjectLineIntoConfigInput) -> str:
     input_model=DiffLocalFileAfterEditInput,
     tags=["local", "file", "edit", "diff", "wrapper"],
     description="Reads a local file, overwrites it with new text, and returns a diff of the changes.",
-    safe_mode=False,  # Modifies a local file.
+    safe_mode=False,
     purpose="Compare local file contents before and after an in-place replacement.",
     category="file_ops",
 )
@@ -203,7 +206,7 @@ def diff_local_file_after_edit(input_data: DiffLocalFileAfterEditInput) -> str:
     try:
         file_path = Path(input_data.file_path)
         if not file_path.is_file():
-            return f"[ERROR] Local file not found: {file_path}"
+            raise ToolExecutionError(f"Local file not found: {file_path}")
 
         original_content = file_path.read_text(encoding="utf-8")
         file_path.write_text(input_data.replacement_text, encoding="utf-8")
@@ -218,7 +221,7 @@ def diff_local_file_after_edit(input_data: DiffLocalFileAfterEditInput) -> str:
         return "\n".join(diff) or "File content was identical; no changes made."
     except Exception as e:
         logger.exception(f"Failed to edit and diff local file: {input_data.file_path}")
-        return f"[ERROR] Failed to edit and diff local file: {e}"
+        raise ToolExecutionError(f"Failed to edit and diff local file: {e}")
 
 
 @register_tool(
@@ -226,7 +229,7 @@ def diff_local_file_after_edit(input_data: DiffLocalFileAfterEditInput) -> str:
     input_model=DiffRemoteFileAfterEditInput,
     tags=["remote", "file", "edit", "diff", "wrapper"],
     description="Reads a remote file, overwrites it with new text, and returns a diff.",
-    safe_mode=True,  # Remote changes are contained.
+    safe_mode=True,
     purpose="Compare remote file contents before and after an in-place replacement.",
     category="file_ops",
 )
@@ -246,14 +249,10 @@ def diff_remote_file_after_edit(input_data: DiffRemoteFileAfterEditInput) -> str
 
     # 1. Read the original contents.
     original_contents = executor.run(f"cat {shlex.quote(input_data.file_path)}")
-    if "[ERROR]" in original_contents or "[STDERR]" in original_contents:
-        return f"[ERROR] Could not read original remote file to create diff: {original_contents}"
 
     # 2. Write the new contents.
-    echo_cmd = f"echo {shlex.quote(input_data.new_contents)} | sudo tee {shlex.quote(input_data.file_path)}"
-    write_result = executor.run(echo_cmd)
-    if "[ERROR]" in write_result or "[STDERR]" in write_result:
-        return f"[ERROR] Could not write new content to remote file: {write_result}"
+    echo_cmd = f"echo {shlex.quote(input_data.new_contents)} | sudo tee {shlex.quote(input_data.file_path)} > /dev/null"
+    executor.run(echo_cmd)
 
     # 3. Generate the diff locally.
     diff = difflib.unified_diff(

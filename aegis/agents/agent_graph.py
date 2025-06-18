@@ -3,13 +3,13 @@
 Constructs and compiles a LangGraph StateGraph from an AgentGraphConfig.
 """
 from functools import partial
-from typing import Callable  # Added Callable for type hinting
+from typing import Callable
 
-from langgraph.graph import StateGraph  # Ensured StateGraph is imported
+from langgraph.graph import StateGraph
 from langgraph.pregel import Pregel
 
 from aegis.agents.steps.check_termination import check_termination
-from aegis.agents.steps.verification import route_after_verification  # Import this
+from aegis.agents.steps.verification import route_after_verification
 from aegis.exceptions import ConfigurationError
 from aegis.schemas.agent import AgentGraphConfig
 from aegis.schemas.node_registry import AGENT_NODE_REGISTRY
@@ -17,7 +17,6 @@ from aegis.utils.llm_query import llm_query
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
-# logger.info("Initializing aegis.agents.agent_graph module...") # Already in original
 
 
 class AgentGraph:
@@ -59,7 +58,7 @@ class AgentGraph:
 
                 node_to_add = node_func
                 if node_config.tool in ["reflect_and_plan", "remediate_plan"]:
-                    node_to_add = partial(node_func, llm_query_func=llm_query)
+                    node_to_add = partial(node_func, llm_query_func=llm_query)  # type: ignore
 
                 builder.add_node(node_config.id, node_to_add)
                 logger.debug(
@@ -78,16 +77,12 @@ class AgentGraph:
 
                 decision_function_for_routing: Callable
                 # Explicitly choose the routing function based on the source node ID from config
-                if (
-                    source_node_id_for_conditional == "execute"
-                ):  # This is for default.yaml
+                if source_node_id_for_conditional == "execute":
                     decision_function_for_routing = check_termination
                     logger.debug(
                         f"Using 'check_termination' as decision function for conditional edge from '{source_node_id_for_conditional}'."
                     )
-                elif (
-                    source_node_id_for_conditional == "verify"
-                ):  # This is for verified_flow.yaml
+                elif source_node_id_for_conditional == "verify":
                     decision_function_for_routing = route_after_verification
                     logger.debug(
                         f"Using 'route_after_verification' as decision function for conditional edge from '{source_node_id_for_conditional}'."
@@ -138,7 +133,7 @@ class AgentGraph:
             TypeError,
             ValueError,
             ConfigurationError,
-        ) as e:  # Added ConfigurationError
+        ) as e:
             logger.exception(
                 f"Failed to build agent graph due to configuration error: {e}"
             )

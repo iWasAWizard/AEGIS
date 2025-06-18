@@ -75,9 +75,6 @@ async def launch_task(payload: LaunchRequest) -> dict:
             middleware=preset_config.middleware,
         )
 
-        # import pdb
-
-        # pdb.set_trace()  # noqa: T201
         agent_graph = AgentGraph(graph_structure).build_graph()
         final_state_dict = await agent_graph.ainvoke(initial_state.model_dump())
         final_state = TaskState(**final_state_dict)

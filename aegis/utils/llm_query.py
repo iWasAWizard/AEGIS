@@ -23,7 +23,6 @@ from aegis.utils.model_manifest_loader import (
 
 logger = setup_logger(__name__)
 
-# Fallback default models if not specified in RuntimeExecutionConfig.llm_model_name
 OLLAMA_DEFAULT_MODEL_ENV = os.getenv("OLLAMA_MODEL")
 KOBOLDCPP_DEFAULT_MODEL_HINT_ENV = os.getenv("KOBOLDCPP_MODEL")
 
@@ -39,7 +38,7 @@ async def _query_ollama_api(
 ) -> str:
     """Sends a request to the Ollama /api/generate endpoint."""
     payload = {
-        "model": model_name,  # This 'model_name' is the actual tag Ollama expects
+        "model": model_name,
         "prompt": formatted_prompt,
         "format": OLLAMA_FORMAT,
         "stream": False,
@@ -76,9 +75,7 @@ async def _query_ollama_api(
 async def _query_koboldcpp_api(
     session: aiohttp.ClientSession,
     url: str,
-    model_name_hint: Optional[
-        str
-    ],  # For Kobold, this is just a hint, not used in payload
+    model_name_hint: Optional[str],
     formatted_prompt: str,
     runtime_config: RuntimeExecutionConfig,
 ) -> str:
@@ -198,9 +195,7 @@ async def llm_query(
         query_func = _query_ollama_api
         if not api_url:
             raise ConfigurationError("Ollama backend: ollama_api_url not configured.")
-        if (
-            not api_payload_model_name
-        ):  # Should be caught above, but double check for Ollama
+        if not api_payload_model_name:
             raise ConfigurationError(
                 "Ollama backend: model name for API payload is missing."
             )
@@ -225,10 +220,10 @@ async def llm_query(
         async with aiohttp.ClientSession() as session:
             # For _query_ollama_api, api_payload_model_name is the actual model tag for the payload.
             # For _query_koboldcpp_api, it's passed as model_name_hint, not used in payload.
-            response_text = await query_func(
+            response_text = await query_func(  # type: ignore
                 session,
-                api_url,
-                api_payload_model_name,  # This is correct for Ollama, and just a hint for Kobold.
+                api_url,  # type: ignore
+                api_payload_model_name,
                 formatted_prompt,
                 query_time_runtime_config,
             )

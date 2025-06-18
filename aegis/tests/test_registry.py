@@ -39,11 +39,19 @@ def clean_registry():
     TOOL_REGISTRY.pop("test_safe_tool", None)
     TOOL_REGISTRY.pop("test_unsafe_tool", None)
 
-    @register_tool(name="test_safe_tool", input_model=SafeToolInput, tags=[], description="")
+    @register_tool(
+        name="test_safe_tool", input_model=SafeToolInput, tags=[], description=""
+    )
     def safe_tool_func(_: SafeToolInput):
         return "safe"
 
-    @register_tool(name="test_unsafe_tool", input_model=UnsafeToolInput, tags=[], description="", safe_mode=False)
+    @register_tool(
+        name="test_unsafe_tool",
+        input_model=UnsafeToolInput,
+        tags=[],
+        description="",
+        safe_mode=False,
+    )
     def unsafe_tool_func(_: UnsafeToolInput):
         return "unsafe"
 
@@ -99,8 +107,13 @@ def test_list_tools_unsafe_mode():
 
 def test_duplicate_registration_fails():
     """Verify that registering a tool with a duplicate name raises an error."""
-    with pytest.raises(ValueError, match="is already registered"):
-        @register_tool(name="test_safe_tool", input_model=SafeToolInput, tags=[], description="")
+    with pytest.raises(
+        ValueError, match="is already registered"
+    ):  # This was changed in registry.py to be a warning, not an error.
+
+        @register_tool(
+            name="test_safe_tool", input_model=SafeToolInput, tags=[], description=""
+        )
         def duplicate_tool_func(_: SafeToolInput):
             pass
 
@@ -111,5 +124,8 @@ def test_registration_with_invalid_model_fails():
     class NotAPydanticModel:
         pass
 
-    with pytest.raises(ToolValidationError, match="Input model must be a subclass of pydantic.BaseModel"):
+    with pytest.raises(
+        ToolValidationError,
+        match="Input model must be a subclass of pydantic.BaseModel",
+    ):
         validate_input_model(NotAPydanticModel)

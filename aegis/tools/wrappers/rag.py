@@ -24,7 +24,7 @@ try:
 except ImportError:
     VECTOR_SEARCH_ENABLED = False
     # Log this at module load time so it's clear if dependencies are missing
-    setup_logger(__name__).warning(  # Use setup_logger directly for early logging
+    setup_logger(__name__).warning(
         "faiss-cpu or sentence-transformers not installed. RAG semantic search will be disabled. "
         "Tool will fallback to keyword search or fail if logs are also unavailable."
     )
@@ -76,14 +76,15 @@ def _fallback_keyword_search(query: str, top_k: int) -> str:
     :type top_k: int
     :return: A formatted string of search results.
     :rtype: str
+    :raises ToolExecutionError: If there's an issue accessing the log directory.
     """
     logger.warning("Falling back to basic keyword search for RAG query.")
     logger.debug(f"Logs directory for keyword search: {LOGS_DIR.resolve()}")
-    if not LOGS_DIR.exists():
-        logger.error(
-            f"No knowledge base (logs directory) found at '{LOGS_DIR.resolve()}' for keyword search."
-        )
-        return f"No knowledge base (logs directory) found at '{LOGS_DIR}'. Cannot perform keyword search."
+    if not LOGS_DIR.exists() or not LOGS_DIR.is_dir():  # Check is_dir as well
+        # This is an operational issue with the tool's setup, so raise.
+        msg = f"Knowledge base (logs directory) not found or not a directory at '{LOGS_DIR.resolve()}'."
+        logger.error(msg)
+        raise ToolExecutionError(msg)
 
     matches = []
     files_scanned_count = 0
@@ -102,6 +103,8 @@ def _fallback_keyword_search(query: str, top_k: int) -> str:
                 logger.error(
                     f"Could not process log file {log_file} during keyword search: {e}"
                 )
+                # Optionally, re-raise as ToolExecutionError or collect these minor errors
+                # For now, let's log and continue, as one corrupt log file shouldn't stop all keyword search.
         logger.debug(
             f"Keyword search scanned {files_scanned_count} files and found {len(matches)} potential matches."
         )
@@ -109,15 +112,14 @@ def _fallback_keyword_search(query: str, top_k: int) -> str:
         logger.exception(
             f"Error while globbing or iterating log files for keyword search: {e}"
         )
-        return (
-            f"[ERROR] An error occurred during keyword search directory traversal: {e}"
+        # This is a more critical failure in accessing logs.
+        raise ToolExecutionError(
+            f"An error occurred during keyword search directory traversal: {e}"
         )
 
     if not matches:
         return "No relevant information found in knowledge base via keyword search."
 
-    # Return the most recent matches (from potentially later files or later in files)
-    # This is a simple heuristic; true recency would need timestamp parsing.
     return "Found the following relevant entries (via keyword search):\n\n" + "\n".join(
         matches[-top_k:]
     )
@@ -141,12 +143,20 @@ def _semantic_search(query: str, top_k: int) -> str:
         logger.debug(f"SentenceTransformer model '{MODEL_NAME}' loaded successfully.")
 
         logger.debug(f"Attempting to read FAISS index from: {INDEX_PATH.resolve()}")
+        if not INDEX_PATH.exists():
+            raise ToolExecutionError(
+                f"FAISS index file not found at {INDEX_PATH}. Run memory indexer."
+            )
         index = faiss.read_index(str(INDEX_PATH))
         logger.debug(
             f"FAISS index loaded successfully. Index contains {index.ntotal} vectors."
         )
 
         logger.debug(f"Attempting to read mapping file from: {MAPPING_PATH.resolve()}")
+        if not MAPPING_PATH.exists():
+            raise ToolExecutionError(
+                f"FAISS mapping file not found at {MAPPING_PATH}. Run memory indexer."
+            )
         with MAPPING_PATH.open("r", encoding="utf-8") as f:
             text_mapping = json.load(f)
         logger.debug(
@@ -177,17 +187,14 @@ def _semantic_search(query: str, top_k: int) -> str:
         results = []
         for i in range(len(indices[0])):
             idx = indices[0][i]
-            if idx != -1:  # -1 means no more valid results for that query vector
+            if idx != -1:
                 dist = distances[0][i]
                 try:
-                    # Handle if text_mapping is a list (older way) or dict (newer robust way from memory_indexer)
                     if isinstance(text_mapping, list):
                         text_content = text_mapping[idx]
-                    elif isinstance(
-                        text_mapping, dict
-                    ):  # Current memory_indexer saves a dict with string keys '0', '1', ...
+                    elif isinstance(text_mapping, dict):
                         text_content = text_mapping.get(str(idx))
-                    else:  # Should have been caught by earlier check
+                    else:
                         text_content = None
 
                     if text_content is not None:
@@ -216,29 +223,33 @@ def _semantic_search(query: str, top_k: int) -> str:
         return "Found the following relevant entries in my memory:\n\n" + "\n\n".join(
             results
         )
-    except FileNotFoundError as e:
+    except (
+        FileNotFoundError
+    ) as e:  # Should be caught by explicit checks now, but kept as safety
         logger.error(
             f"Required file not found during semantic search: {e.filename}. Full error: {e}"
         )
         raise ToolExecutionError(
             f"Semantic search setup error: A required file ({e.filename}) was not found. Ensure index is built."
         ) from e
+    except ToolExecutionError:  # Re-raise ToolExecutionErrors from our checks
+        raise
     except Exception as e:
         logger.exception(f"Semantic search failed internally: {e}")
-        raise ToolExecutionError(f"Semantic search failed: {e}") from e
+        raise ToolExecutionError(f"Semantic search failed: {e}")
 
 
 @register_tool(
     name="query_knowledge_base",
     input_model=KnowledgeQueryInput,
     description="Queries the agent's long-term memory (indexed logs) to find relevant context or past examples.",
-    category="LLM",  # Changed from "RAG" to "LLM" as it assists the LLM
+    category="LLM",
     tags=[
         "rag",
         "memory",
         "internal",
         "llm",
-    ],  # "internal" as it queries agent's own data
+    ],
     safe_mode=True,
     purpose="Search past experiences to inform current decisions.",
 )
@@ -253,6 +264,7 @@ def query_knowledge_base(input_data: KnowledgeQueryInput) -> str:
     :type input_data: KnowledgeQueryInput
     :return: A string containing the search results.
     :rtype: str
+    :raises ToolExecutionError: If semantic search fails critically or keyword search cannot access logs.
     """
     print("DEBUG RAG: query_knowledge_base FUNCTION ENTERED", flush=True)
     logger.info(
@@ -268,22 +280,20 @@ def query_knowledge_base(input_data: KnowledgeQueryInput) -> str:
         try:
             logger.info("Attempting semantic search for knowledge query.")
             return _semantic_search(input_data.query, input_data.top_k)
-        except ToolExecutionError as e:
+        except ToolExecutionError as e:  # Catch errors raised by _semantic_search
             logger.warning(
                 f"Semantic search failed with ToolExecutionError: {e}. Falling back to keyword search."
             )
-            return _fallback_keyword_search(input_data.query, input_data.top_k)
-        except (
-            Exception
-        ) as e:  # Catch any other unexpected error during the semantic search attempt
+            # Fall through to keyword search
+        except Exception as e:
             logger.exception(
                 f"Unexpected error during semantic search attempt, before fallback: {e}"
             )
             logger.warning(
                 "Falling back to keyword search due to unexpected error in semantic search."
             )
-            return _fallback_keyword_search(input_data.query, input_data.top_k)
-    else:
+            # Fall through to keyword search
+    else:  # Conditions for semantic search not met
         if not VECTOR_SEARCH_ENABLED:
             logger.warning(
                 "Dependencies for vector search not installed (faiss-cpu, sentence-transformers). Cannot perform semantic search."
@@ -297,7 +307,7 @@ def query_knowledge_base(input_data: KnowledgeQueryInput) -> str:
                 f"Memory mapping file not found at '{MAPPING_PATH.resolve()}'. Cannot perform semantic search."
             )
 
-        logger.info(
-            "Proceeding with keyword search due to missing components for semantic search."
-        )
-        return _fallback_keyword_search(input_data.query, input_data.top_k)
+    # If semantic search was skipped or failed and fell through, try keyword search.
+    # _fallback_keyword_search will raise ToolExecutionError if it has critical issues.
+    logger.info("Proceeding with keyword search.")
+    return _fallback_keyword_search(input_data.query, input_data.top_k)

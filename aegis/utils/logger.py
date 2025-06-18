@@ -77,7 +77,9 @@ class StructuredLoggerAdapter(logging.LoggerAdapter):
     conflicts with the standard logging system's own use of `extra`.
     """
 
-    def process(self, msg: str, kwargs: MutableMapping[str, Any]) -> tuple[str, MutableMapping[str, Any]]:
+    def process(
+        self, msg: str, kwargs: MutableMapping[str, Any]
+    ) -> tuple[str, MutableMapping[str, Any]]:
         """Processes the log message and keyword arguments.
 
         If `extra` is found in the kwargs, it is moved to a `extra_data` key
@@ -91,12 +93,12 @@ class StructuredLoggerAdapter(logging.LoggerAdapter):
         :rtype: tuple[str, MutableMapping[str, Any]]
         """
         if "extra" in kwargs:
-            kwargs["extra"] = {"extra_data": kwargs["extra"]}
+            kwargs["extra_data"] = kwargs.pop("extra")
         return msg, kwargs
 
 
 def setup_logger(
-        name: str,
+    name: str,
 ) -> StructuredLoggerAdapter:
     """Sets up the root logger and returns a structured child logger.
 
@@ -113,7 +115,7 @@ def setup_logger(
 
     if not _LOGGING_CONFIGURED:
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)  # Set the base level for the whole system
+        root_logger.setLevel(logging.INFO)
 
         if root_logger.hasHandlers():
             root_logger.handlers.clear()

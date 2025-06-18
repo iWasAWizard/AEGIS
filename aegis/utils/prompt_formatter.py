@@ -68,26 +68,24 @@ def _format_alpaca_vicuna(messages: List[Dict[str, Any]]) -> str:
     temp_messages = []
     for msg in messages:
         if msg["role"] == "system":
-            system_message_content = msg["content"] + "\n"  # Add newline after system
+            system_message_content = msg["content"] + "\n"
         else:
             temp_messages.append(msg)
 
-    prompt += system_message_content  # Prepend system message if it exists
+    prompt += system_message_content
 
     for msg in temp_messages:
         role_upper = msg["role"].upper()
         # Use USER: and ASSISTANT: convention
         if role_upper == "USER":
             prompt += f"USER: {msg['content']}\n"
-        elif (
-            role_upper == "ASSISTANT"
-        ):  # This part is for few-shot examples in the prompt
+        elif role_upper == "ASSISTANT":
             prompt += f"ASSISTANT: {msg['content']}\n"
         # else: # Other roles might not be standard in this format
         #     prompt += f"{role_upper}: {msg['content']}\n"
 
     prompt += "ASSISTANT: "  # Prompt for the assistant's turn
-    return prompt.strip() + "\n"  # Ensure a newline for some models
+    return prompt.strip() + "\n"
 
 
 def _format_phi3(messages: List[Dict[str, Any]]) -> str:
@@ -117,7 +115,7 @@ def _format_phi3(messages: List[Dict[str, Any]]) -> str:
         processed_messages[0]["content"] = (
             system_content + processed_messages[0]["content"]
         )
-    elif system_content:  # If only system prompt, treat as user for simplicity for now
+    elif system_content:
         prompt_parts.append(f"<|user|>\n{system_content.strip()}<|end|>")
 
     for msg in processed_messages:
@@ -125,11 +123,11 @@ def _format_phi3(messages: List[Dict[str, Any]]) -> str:
         content = msg["content"].strip()
         if role == "user":
             prompt_parts.append(f"<|user|>\n{content}<|end|>")
-        elif role == "assistant":  # For few-shot examples
+        elif role == "assistant":
             prompt_parts.append(f"<|assistant|>\n{content}<|end|>")
         # Other roles not standard for Phi-3
 
-    prompt_parts.append("<|assistant|>")  # Prompt for assistant's turn
+    prompt_parts.append("<|assistant|>")
     return "\n".join(prompt_parts)
 
 
@@ -137,7 +135,7 @@ def _format_codellama_instruct(messages: List[Dict[str, Any]]) -> str:
     """Formats prompts for CodeLlama Instruct models (original format).
     [INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n{user_prompt} [/INST]
     """
-    system_prompt_str = "You are a helpful coding assistant."  # Default system prompt
+    system_prompt_str = "You are a helpful coding assistant."
     user_prompts_content = []
 
     # Extract system prompt and concatenate user messages
@@ -154,19 +152,15 @@ def _format_codellama_instruct(messages: List[Dict[str, Any]]) -> str:
             # For robust multi-turn CodeLlama, this might need more sophistication.
             # For now, we'll append assistant's response to the previous user prompt string.
             if user_prompts_content:
-                user_prompts_content[
-                    -1
-                ] += f" [/INST] {msg['content']}\n[INST] "  # Re-open for next user turn
-            else:  # Assistant message without prior user message? Unusual.
-                pass  # Ignore for now or prepend to system_prompt_str
+                user_prompts_content[-1] += f" [/INST] {msg['content']}\n[INST] "
+            else:
+                pass
 
-    if not user_prompts_content:  # Must have at least one user prompt
-        if (
-            system_prompt_str != "You are a helpful coding assistant."
-        ):  # If only system prompt, make it the user prompt
+    if not user_prompts_content:
+        if system_prompt_str != "You are a helpful coding assistant.":
             user_prompts_content.append(system_prompt_str)
             system_prompt_str = "You are a helpful coding assistant."
-        else:  # No user content at all
+        else:
             user_prompts_content.append("Write a simple hello world program in Python.")
 
     full_user_prompt = "\n".join(user_prompts_content).strip()
@@ -177,7 +171,7 @@ def _format_codellama_instruct(messages: List[Dict[str, Any]]) -> str:
     # But for raw string, we build it.
     if system_prompt_str:
         prompt = f"[INST] <<SYS>>\n{system_prompt_str}\n<</SYS>>\n\n{full_user_prompt} [/INST]"
-    else:  # No system prompt provided
+    else:
         prompt = f"[INST] {full_user_prompt} [/INST]"
 
     # No need to add an assistant token here, the format implies assistant response follows [/INST]
@@ -200,10 +194,10 @@ def format_prompt(formatter_hint: str, messages: List[Dict[str, Any]]) -> str:
     :rtype: str
     """
     hint_lower = ""
-    if formatter_hint:  # Ensure formatter_hint is not None
+    if formatter_hint:
         hint_lower = formatter_hint.lower()
 
-    if not messages:  # Handle empty messages list gracefully
+    if not messages:
         logger.warning(
             "format_prompt called with empty messages list. Returning empty prompt."
         )
@@ -221,8 +215,8 @@ def format_prompt(formatter_hint: str, messages: List[Dict[str, Any]]) -> str:
         if "phi3" in hint_lower:
             return "<|assistant|>"
         if "codellama-instruct" in hint_lower:
-            return "[INST]  [/INST]"  # Minimal valid prompt
-        return "<|im_start|>assistant\n"  # Default fallback for empty messages
+            return "[INST]  [/INST]"
+        return "<|im_start|>assistant\n"
 
     if "llama3" in hint_lower:
         logger.debug(f"Using Llama 3 prompt format based on hint: {formatter_hint}")
@@ -251,7 +245,7 @@ def format_prompt(formatter_hint: str, messages: List[Dict[str, Any]]) -> str:
         or "mixtral" in hint_lower
         or "qwen" in hint_lower
         or "chatml" in hint_lower
-    ):  # Explicit "chatml" hint
+    ):
         logger.debug(f"Using ChatML prompt format based on hint: {formatter_hint}")
         return _format_chatml(messages)
 

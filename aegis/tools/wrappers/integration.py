@@ -63,14 +63,16 @@ def schedule_cron_job(input_data: ScheduleCronJobInput) -> str:
 
     :param input_data: An object containing the machine name and crontab entry.
     :type input_data: ScheduleCronJobInput
-    :return: The output of the crontab command.
+    :return: The output of the crontab command (usually empty on success) or a success message.
     :rtype: str
     """
     logger.info(f"Scheduling cron job on machine: {input_data.machine_name}")
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
     cron_cmd = f"(crontab -l 2>/dev/null; echo {shlex.quote(input_data.cron_entry)}) | crontab -"
-    return executor.run(cron_cmd)
+    # executor.run() raises on error. crontab command is usually silent on success.
+    executor.run(cron_cmd)
+    return f"Successfully scheduled cron job on {input_data.machine_name}: '{input_data.cron_entry}'"
 
 
 @register_tool(
@@ -121,7 +123,7 @@ def spawn_background_monitor(input_data: SpawnBackgroundMonitorInput) -> str:
 
     :param input_data: An object containing the machine name and the command to run.
     :type input_data: SpawnBackgroundMonitorInput
-    :return: The output of the nohup command (typically empty on success).
+    :return: The output of the nohup command (typically empty on success) or a success message.
     :rtype: str
     """
     logger.info(
@@ -130,4 +132,6 @@ def spawn_background_monitor(input_data: SpawnBackgroundMonitorInput) -> str:
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
     wrapped_command = f"nohup {input_data.command} > /dev/null 2>&1 &"
-    return executor.run(wrapped_command)
+    # executor.run() raises on error. nohup command is silent on success.
+    executor.run(wrapped_command)
+    return f"Successfully spawned background monitor on {input_data.machine_name} with command: '{input_data.command}'"
