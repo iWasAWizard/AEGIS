@@ -5,24 +5,28 @@ A tool to capture the state of a webpage using Selenium.
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
+from selenium import webdriver
 
 from pydantic import BaseModel, Field
-from selenium import webdriver
-from selenium.common.exceptions import WebDriverException
-from selenium.webdriver.common.by import By
-from selenium.webdriver.firefox.options import Options
+
+# Selenium imports no longer needed directly here
+# from selenium import webdriver
+# from selenium.common.exceptions import WebDriverException
+# from selenium.webdriver.common.by import By
+# from selenium.webdriver.firefox.options import Options
 
 from aegis.registry import register_tool
 from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
-
-# Import ToolExecutionError
 from aegis.exceptions import ToolExecutionError
+
+# Import SeleniumExecutor
+from aegis.executors.selenium import SeleniumExecutor
 
 
 logger = setup_logger(__name__)
 
-# Load the screenshot directory from the central config.
 config = get_config()
 SCREENSHOT_DIR = Path(config.get("paths", {}).get("screenshots", "reports/screenshots"))
 SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -33,86 +37,103 @@ class CaptureWebStateInput(BaseModel):
 
     :ivar url: The full URL of the webpage to capture.
     :vartype url: str
-    :ivar wait_seconds: Seconds to wait for the page to load before capturing.
+    :ivar wait_seconds: Seconds to wait for the page to implicitly load elements before capturing.
     :vartype wait_seconds: int
+    :ivar browser: Name of the browser to use (default: firefox).
+    :vartype browser: Optional[str]
     """
 
     url: str = Field(..., description="The full URL of the webpage to capture.")
     wait_seconds: int = Field(
-        10, description="Seconds to wait for the page to load before capturing."
+        10, gt=0, description="Seconds for implicit wait for page elements."
+    )
+    browser: Optional[str] = Field(
+        "firefox", description="Browser to use (e.g., 'firefox')."
     )
 
 
 @register_tool(
     name="capture_web_state",
     input_model=CaptureWebStateInput,
-    description="Captures a web page's title, URL, text, DOM, and a screenshot.",
+    description="Captures a web page's title, URL, text, DOM, and a screenshot using SeleniumExecutor.",
     tags=["browser", "selenium", "web", "wrapper"],
     category="wrapper",
     safe_mode=False,
     purpose="Get a comprehensive snapshot of a webpage's state.",
 )
 def capture_web_state(input_data: CaptureWebStateInput) -> str:
-    """Uses a headless Firefox browser to navigate to a URL and capture its state.
+    """Uses SeleniumExecutor to navigate to a URL and capture its state including a screenshot.
 
-    This tool initializes a Selenium WebDriver, navigates to the specified URL,
-    waits for the page to load, and then extracts the title, current URL, visible
-    text, and full HTML source. It also saves a PNG screenshot to a configured
-    directory, returning a summary of the captured data along with the path
-    to the screenshot.
-
-    :param input_data: An object containing the URL and wait time.
+    :param input_data: An object containing the URL, wait time, and browser.
     :type input_data: CaptureWebStateInput
     :return: A formatted string summarizing the captured state and screenshot path.
     :rtype: str
-    :raises ToolExecutionError: If Selenium WebDriver encounters an error or any other exception occurs.
+    :raises ToolExecutionError: If SeleniumExecutor encounters an error.
     """
-    logger.info(f"Capturing web state from: {input_data.url}")
-    options = Options()
-    options.add_argument("--headless")
-    driver = None  # Ensure driver is defined for finally block
+    logger.info(
+        f"Capturing web state from: {input_data.url} using {input_data.browser or 'firefox'}"
+    )
+
+    executor = SeleniumExecutor(
+        browser_name=input_data.browser or "firefox",
+        implicit_wait=input_data.wait_seconds,  # Pass wait_seconds as implicit_wait
+    )
 
     try:
-        driver = webdriver.Firefox(options=options)
-        driver.get(input_data.url)
-        driver.implicitly_wait(input_data.wait_seconds)
+        # Get page details (title, url, text, html)
+        page_details = executor.get_page_details(input_data.url)
 
-        title = driver.title
-        current_url = driver.current_url
-        body = driver.find_element(By.TAG_NAME, "body")
-        text = body.text.strip()
-        html = driver.page_source.strip()
-
+        # Take screenshot
         snapshot_id = (
             f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         )
         screenshot_path = SCREENSHOT_DIR / f"{snapshot_id}.png"
-        # Ensure screenshot directory exists just before saving
-        screenshot_path.parent.mkdir(parents=True, exist_ok=True)
-        driver.save_screenshot(str(screenshot_path))
 
-        logger.info(f"Screenshot saved to: {screenshot_path}")
+        # The take_screenshot method in executor handles navigation again, which is redundant here.
+        # We can either:
+        # 1. Modify executor to have a method that takes screenshot of current page.
+        # 2. Call driver.save_screenshot directly within a custom action_func.
+        # Let's use option 2 for now for simplicity, then consider enhancing executor.
+
+        def _capture_action(
+            driver: webdriver.remote.webdriver.WebDriver,
+        ) -> tuple[dict, str]:
+            driver.get(input_data.url)  # Navigate first
+            title = driver.title
+            current_url = driver.current_url
+            body = driver.find_element(webdriver.common.by.By.TAG_NAME, "body")
+            text = body.text.strip()
+            html = driver.page_source.strip()
+
+            _screenshot_path = SCREENSHOT_DIR / f"{snapshot_id}.png"
+            _screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+            driver.save_screenshot(str(_screenshot_path))
+            logger.info(f"Screenshot saved to: {_screenshot_path}")
+
+            details = {
+                "title": title,
+                "current_url": current_url,
+                "text": text,
+                "html": html,
+            }
+            return details, str(_screenshot_path)
+
+        page_details_dict, actual_screenshot_path_str = executor.execute_action(
+            _capture_action
+        )
 
         return (
-            f"Title: {title}\n"
-            f"URL: {current_url}\n"
-            f"Text (first 500 chars): {text[:500]}...\n"
-            f"HTML (first 500 chars): {html[:500]}...\n"
-            f"Screenshot saved to: {screenshot_path}"
+            f"Title: {page_details_dict['title']}\n"
+            f"URL: {page_details_dict['current_url']}\n"
+            f"Text (first 500 chars): {page_details_dict['text'][:500]}...\n"
+            f"HTML (first 500 chars): {page_details_dict['html'][:500]}...\n"
+            f"Screenshot saved to: {actual_screenshot_path_str}"
         )
-    except WebDriverException as e:  # Catch specific Selenium errors
-        logger.error(f"WebDriver error while capturing {input_data.url}: {e.msg}")
-        raise ToolExecutionError(f"Selenium WebDriver error: {e.msg}")
-    except Exception as e:  # Catch any other unexpected errors
+    # ToolExecutionError from SeleniumExecutor will propagate
+    except ToolExecutionError:
+        raise
+    except Exception as e:  # Catch any other unexpected error in this tool's logic
         logger.exception(
-            f"An unexpected error occurred while capturing {input_data.url}"
+            f"Unexpected error in capture_web_state tool logic for {input_data.url}"
         )
-        raise ToolExecutionError(
-            f"An unhandled exception occurred during web capture: {e}"
-        )
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception as e:
-                logger.error(f"Error quitting WebDriver: {e}")
+        raise ToolExecutionError(f"Unexpected tool error in capture_web_state: {e}")

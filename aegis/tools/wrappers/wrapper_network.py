@@ -7,19 +7,23 @@ multi-step tasks such as formatted Nmap scans or posting structured JSON data
 to specific endpoints like Grafana.
 """
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from pydantic import BaseModel, Field
 
 from aegis.registry import register_tool
 from aegis.tools.primitives.primitive_network import http_request, HttpRequestInput
-from aegis.tools.primitives.primitive_system import run_local_command, RunLocalCommandInput
+from aegis.tools.primitives.primitive_system import (
+    run_local_command,
+    RunLocalCommandInput,
+)
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
 # === Input Models ===
+
 
 class NmapScanInput(BaseModel):
     """Input for running a customized Nmap scan.
@@ -33,6 +37,7 @@ class NmapScanInput(BaseModel):
     :ivar extra_flags: Any additional flags to pass to Nmap.
     :vartype extra_flags: str
     """
+
     targets: List[str] = Field(..., description="List of hosts or IPs to scan.")
     ports: str = Field(..., description="Comma-separated string of ports.")
     scan_type_flag: str = Field("-sT", description="Nmap scan type flag (e.g., -sS).")
@@ -46,9 +51,15 @@ class HttpPostJsonInput(BaseModel):
     :vartype url: str
     :ivar payload: A dictionary to be sent as the JSON body.
     :vartype payload: Dict[str, Any]
+    :ivar timeout: Optional timeout for this specific request in seconds.
+    :vartype timeout: Optional[int]
     """
+
     url: str = Field(..., description="Target URL for the POST request.")
     payload: Dict[str, Any] = Field(..., description="Dictionary to send as JSON.")
+    timeout: Optional[int] = Field(
+        None, gt=0, description="Optional timeout in seconds for this request."
+    )
 
 
 class GrafanaUploadInput(HttpPostJsonInput):
@@ -57,17 +68,19 @@ class GrafanaUploadInput(HttpPostJsonInput):
     :ivar token: The Grafana API token for authentication.
     :vartype token: str
     """
+
     token: str = Field(..., description="Grafana API token for authentication.")
 
 
 # === Tools ===
+
 
 @register_tool(
     name="nmap_port_scan",
     input_model=NmapScanInput,
     tags=["network", "scan", "nmap", "wrapper"],
     description="Runs a configurable Nmap scan against specified targets and ports.",
-    safe_mode=False,  # Actively scans the network
+    safe_mode=False,
     purpose="Scan network targets for open ports using Nmap.",
     category="network",
 )
@@ -105,10 +118,14 @@ def http_post_json(input_data: HttpPostJsonInput) -> str:
     :return: The response from the `http_request` primitive.
     :rtype: str
     """
-    body_str = json.dumps(input_data.payload)
     headers = {"Content-Type": "application/json"}
+
     http_input = HttpRequestInput(
-        method="POST", url=input_data.url, headers=headers, body=body_str
+        method="POST",
+        url=input_data.url,
+        headers=headers,
+        json_payload=input_data.payload,
+        timeout=input_data.timeout,
     )
     return http_request(http_input)
 
@@ -133,12 +150,16 @@ def upload_to_grafana(input_data: GrafanaUploadInput) -> str:
     :return: The response from the `http_request` primitive.
     :rtype: str
     """
-    body_str = json.dumps(input_data.payload)
     headers = {
-        "Content-Type": "application/json",
         "Authorization": f"Bearer {input_data.token}",
+        "Content-Type": "application/json",
     }
+
     http_input = HttpRequestInput(
-        method="POST", url=input_data.url, headers=headers, body=body_str
+        method="POST",
+        url=input_data.url,
+        headers=headers,
+        json_payload=input_data.payload,
+        timeout=input_data.timeout,
     )
     return http_request(http_input)

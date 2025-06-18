@@ -5,7 +5,7 @@ import PresetsTab from './PresetsTab';
 import ArtifactsTab from './ArtifactsTab';
 import ReportsTab from './ReportsTab';
 import ToolsTab from './ToolsTab';
-import LogStreamTab from './LogStreamTab';
+// LogStreamTab is no longer imported as a top-level tab
 import GraphViewTab from './GraphViewTab';
 import DashboardTab from './DashboardTab';
 
@@ -50,8 +50,7 @@ export default function App() {
         return <ReportsTab />;
       case 'tools':
         return <ToolsTab />;
-      case 'logs':
-        return <LogStreamTab />;
+      // 'logs' case removed
       case 'graph':
         return <GraphViewTab />;
       default:
@@ -91,7 +90,7 @@ export default function App() {
         <nav style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <NavButton tabId="dashboard">🏠 Dashboard</NavButton>
           <NavButton tabId="launch">🚀 Launch</NavButton>
-          <NavButton tabId="logs">📡 Live Logs</NavButton>
+          {/* "Live Logs" NavButton removed */}
           <NavButton tabId="graph">🗺️ Graph</NavButton>
           <NavButton tabId="tools">🧰 Tools</NavButton>
           <NavButton tabId="presets">🧠 Presets</NavButton>

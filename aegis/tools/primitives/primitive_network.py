@@ -11,12 +11,13 @@ import socket
 import subprocess
 from typing import Optional, Dict, Any
 
-import requests
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, Optional
 
 from aegis.exceptions import ToolExecutionError
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
+from aegis.executors.http import HttpExecutor
+
 
 logger = setup_logger(__name__)
 
@@ -48,7 +49,14 @@ class HttpRequestInput(BaseModel):
     :ivar params: URL query string parameters.
     :vartype params: Optional[Dict[str, Any]]
     :ivar body: The raw request body as a string (for POST/PUT).
+                If this is used, it's assumed to be form data or plain text.
+                For JSON, use the `json_payload` field if tool is adapted or use HttpPostJson wrapper.
     :vartype body: Optional[str]
+    :ivar json_payload: Optional dictionary to send as JSON. If provided, `body` should be None.
+                        'Content-Type: application/json' will be set automatically.
+    :vartype json_payload: Optional[Dict[str, Any]]
+    :ivar timeout: Optional timeout for this specific request in seconds.
+    :vartype timeout: Optional[int]
     """
 
     method: str = Field(
@@ -62,7 +70,14 @@ class HttpRequestInput(BaseModel):
         default_factory=dict, description="URL query string parameters."
     )
     body: Optional[str] = Field(
-        None, description="The raw request body as a string (for POST/PUT)."
+        None,
+        description="The raw request body as a string (e.g. form-data, plain text).",
+    )
+    json_payload: Optional[Dict[str, Any]] = Field(
+        None, description="Dictionary to send as JSON payload. Overrides 'body' if set."
+    )
+    timeout: Optional[int] = Field(
+        None, gt=0, description="Optional timeout in seconds for this request."
     )
 
 
@@ -110,7 +125,7 @@ def send_wake_on_lan(input_data: WakeOnLANInput) -> str:
             capture_output=True,
             text=True,
             timeout=10,
-            check=False,  # Check returncode manually
+            check=False,
         )
         output = result.stdout.strip()
         if result.stderr:
@@ -162,7 +177,7 @@ def send_wake_on_lan(input_data: WakeOnLANInput) -> str:
     category="network",
 )
 def http_request(input_data: HttpRequestInput) -> str:
-    """Performs a generic HTTP request using the requests library.
+    """Performs a generic HTTP request using the HttpExecutor.
 
     :param input_data: An object containing all necessary request parameters.
     :type input_data: HttpRequestInput
@@ -171,23 +186,24 @@ def http_request(input_data: HttpRequestInput) -> str:
     :raises ToolExecutionError: If the HTTP request fails due to network or server issues.
     """
     method = input_data.method.upper()
-    logger.info(f"Sending {method} request to {input_data.url}")
-    try:
-        response = requests.request(
-            method=method,
-            url=input_data.url,
-            headers=input_data.headers,
-            params=input_data.params,
-            data=(input_data.body.encode("utf-8") if input_data.body else None),
-            timeout=30,
-        )
-        response.raise_for_status()  # This will raise an HTTPError for bad responses (4xx or 5xx)
-        return f"Status: {response.status_code}\nBody:\n{response.text}"
-    except (
-        requests.exceptions.RequestException
-    ) as e:  # Catches connection errors, timeouts, HTTPError, etc.
-        logger.error(f"HTTP request to {input_data.url} failed: {e}")
-        raise ToolExecutionError(f"HTTP request failed: {e}")
+    logger.info(f"Tool 'http_request' called for: {method} {input_data.url}")
+
+    executor = HttpExecutor()
+
+    response = executor.request(
+        method=method,
+        url=input_data.url,
+        headers=input_data.headers,
+        params=input_data.params,
+        data=(
+            input_data.body.encode("utf-8")
+            if input_data.body and input_data.json_payload is None
+            else None
+        ),
+        json_payload=input_data.json_payload,
+        timeout=input_data.timeout,
+    )
+    return f"Status: {response.status_code}\nBody:\n{response.text}"
 
 
 @register_tool(
@@ -225,11 +241,9 @@ def check_port_status(input_data: CheckPortStatusInput) -> str:
         error_msg = f"Hostname '{host}' could not be resolved: {e}"
         logger.error(error_msg)
         raise ToolExecutionError(error_msg)
-    except socket.timeout:  # Specific exception for socket timeout
+    except socket.timeout:
         error_msg = f"Connection to {host}:{port} timed out after {timeout}s."
         logger.warning(error_msg)
-        # For port scanning, a timeout often implies filtered, so we can return this info
-        # Or, choose to raise ToolExecutionError. Let's be informative for this tool.
         return f"Port {port} on {host} is Filtered (Connection Timed Out)."
     except socket.error as e:
         error_msg = f"A socket error occurred while checking {host}:{port}: {e}"

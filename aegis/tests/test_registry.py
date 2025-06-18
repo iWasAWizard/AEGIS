@@ -4,6 +4,7 @@ Tests for the tool registration and lookup system.
 """
 import pytest
 from pydantic import BaseModel
+import logging
 
 from aegis.exceptions import ToolNotFoundError, ToolValidationError
 from aegis.registry import TOOL_REGISTRY
@@ -24,44 +25,41 @@ class UnsafeToolInput(BaseModel):
     pass
 
 
-# A global variable to hold the original tool so we can re-register it
-_original_safe_tool = None
+_original_safe_tool_entry_for_overwrite_test = None
 
 
 @pytest.fixture(autouse=True)
-def clean_registry():
-    """Fixture to ensure the registry is clean before and after each test."""
-    global _original_safe_tool
+def clean_registry_and_setup_base_tools():
+    """Fixture to ensure the registry is clean and base tools are set up."""
+    global _original_safe_tool_entry_for_overwrite_test
 
-    if "test_safe_tool" in TOOL_REGISTRY:
-        _original_safe_tool = TOOL_REGISTRY["test_safe_tool"]
-
-    TOOL_REGISTRY.pop("test_safe_tool", None)
-    TOOL_REGISTRY.pop("test_unsafe_tool", None)
+    TOOL_REGISTRY.clear()
 
     @register_tool(
-        name="test_safe_tool", input_model=SafeToolInput, tags=[], description=""
+        name="test_safe_tool",
+        input_model=SafeToolInput,
+        tags=["safe"],
+        description="A safe test tool.",
     )
     def safe_tool_func(_: SafeToolInput):
-        return "safe"
+        return "safe_tool_output"
+
+    _original_safe_tool_entry_for_overwrite_test = TOOL_REGISTRY["test_safe_tool"]
 
     @register_tool(
         name="test_unsafe_tool",
         input_model=UnsafeToolInput,
-        tags=[],
-        description="",
+        tags=["unsafe"],
+        description="An unsafe test tool.",
         safe_mode=False,
     )
     def unsafe_tool_func(_: UnsafeToolInput):
-        return "unsafe"
+        return "unsafe_tool_output"
 
     yield
 
-    TOOL_REGISTRY.pop("test_safe_tool", None)
-    TOOL_REGISTRY.pop("test_unsafe_tool", None)
-
-    if _original_safe_tool:
-        TOOL_REGISTRY["test_safe_tool"] = _original_safe_tool
+    TOOL_REGISTRY.clear()
+    _original_safe_tool_entry_for_overwrite_test = None
 
 
 def test_get_tool_success():
@@ -74,7 +72,7 @@ def test_get_tool_success():
 
 def test_get_tool_not_found():
     """Verify that get_tool raises ToolNotFoundError for a non-existent tool."""
-    with pytest.raises(ToolNotFoundError, match="not found in registry"):
+    with pytest.raises(ToolNotFoundError, match="not found in registry. Available:"):
         get_tool("non_existent_tool")
 
 
@@ -105,17 +103,32 @@ def test_list_tools_unsafe_mode():
     assert "test_unsafe_tool" in tools
 
 
-def test_duplicate_registration_fails():
-    """Verify that registering a tool with a duplicate name raises an error."""
-    with pytest.raises(
-        ValueError, match="is already registered"
-    ):  # This was changed in registry.py to be a warning, not an error.
+def test_duplicate_registration_warns_and_overwrites(caplog):
+    """Verify that registering a tool with a duplicate name logs a warning and overwrites."""
+
+    original_tool_function = TOOL_REGISTRY["test_safe_tool"].run
+
+    with caplog.at_level(logging.WARNING):
 
         @register_tool(
-            name="test_safe_tool", input_model=SafeToolInput, tags=[], description=""
+            name="test_safe_tool",
+            input_model=SafeToolInput,
+            tags=["overwritten"],
+            description="Overwritten tool.",
         )
-        def duplicate_tool_func(_: SafeToolInput):
-            pass
+        def new_duplicate_tool_func(_: SafeToolInput):
+            return "overwritten_output"
+
+    assert (
+        "A tool with the name 'test_safe_tool' is already registered. Overwriting."
+        in caplog.text
+    )
+
+    overwritten_tool_entry = TOOL_REGISTRY["test_safe_tool"]
+    assert overwritten_tool_entry.description == "Overwritten tool."
+    assert "overwritten" in overwritten_tool_entry.tags
+    assert overwritten_tool_entry.run is not original_tool_function
+    assert overwritten_tool_entry.run(SafeToolInput()) == "overwritten_output"
 
 
 def test_registration_with_invalid_model_fails():
@@ -128,4 +141,4 @@ def test_registration_with_invalid_model_fails():
         ToolValidationError,
         match="Input model must be a subclass of pydantic.BaseModel",
     ):
-        validate_input_model(NotAPydanticModel)
+        validate_input_model(NotAPydanticModel)  # type: ignore

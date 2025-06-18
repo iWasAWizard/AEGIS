@@ -10,11 +10,13 @@ basic hardware and system statistics.
 import subprocess
 
 import psutil
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, Optional
 
 from aegis.exceptions import ToolExecutionError
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
+from aegis.executors.local import LocalExecutor
+
 
 logger = setup_logger(__name__)
 
@@ -45,12 +47,19 @@ class RunLocalCommandInput(BaseModel):
     :vartype command: str
     :ivar shell: Whether to use the shell for execution. Recommended to be True for complex commands.
     :vartype shell: bool
+    :ivar timeout: Optional timeout for this specific command execution, in seconds.
+    :vartype timeout: Optional[int]
     """
 
     command: str = Field(..., description="The shell command to execute locally.")
     shell: bool = Field(
         default=True,
         description="Whether to use the shell for execution. Recommended to be True for complex commands.",
+    )
+    timeout: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="Optional timeout in seconds for this command. Overrides executor default if set.",
     )
 
 
@@ -90,9 +99,6 @@ def kill_local_process(input_data: KillProcessInput) -> str:
     pid_to_kill = str(input_data.pid)
     logger.info(f"Attempting to kill local PID: {pid_to_kill}")
     try:
-        # Using shlex.split for better security if command was constructed with user input,
-        # though here it's fixed. For `shell=False` (default for subprocess.run),
-        # command should be a list.
         cmd_list = ["kill", "-9", pid_to_kill]
         result = subprocess.run(
             cmd_list, capture_output=True, text=True, timeout=5, check=False
@@ -110,7 +116,7 @@ def kill_local_process(input_data: KillProcessInput) -> str:
     except subprocess.TimeoutExpired:
         logger.warning(f"Kill command for PID {pid_to_kill} timed out.")
         raise ToolExecutionError(f"Kill command for PID {pid_to_kill} timed out.")
-    except FileNotFoundError:  # kill command not found
+    except FileNotFoundError:
         logger.error(
             "'kill' command not found. Please ensure it is installed and in PATH."
         )
@@ -136,62 +142,21 @@ def kill_local_process(input_data: KillProcessInput) -> str:
     category="system",
 )
 def run_local_command(input_data: RunLocalCommandInput) -> str:
-    """Executes a given shell command locally using the subprocess module.
+    """Executes a given shell command locally using the LocalExecutor.
     Raises ToolExecutionError if the command returns a non-zero exit code or
     if other subprocess exceptions occur.
 
-    :param input_data: An object containing the command string to execute.
+    :param input_data: An object containing the command string to execute and shell/timeout options.
     :type input_data: RunLocalCommandInput
     :return: The combined stdout and stderr from the executed command if successful.
     :rtype: str
     :raises ToolExecutionError: If command execution fails.
     """
-    logger.info(f"Executing local command: {input_data.command}")
-    try:
-        # When shell=True, command is a string.
-        # When shell=False, command should be a list (e.g., shlex.split(input_data.command))
-        # For simplicity and current usage (where shell=True is often for complex commands),
-        # we keep it as is but acknowledge this subtlety.
-        result = subprocess.run(
-            input_data.command,
-            shell=input_data.shell,  # `shell=True` can be a security risk if command comes from untrusted input
-            capture_output=True,
-            text=True,
-            timeout=60,  # Default timeout
-            check=False,  # We will check returncode manually
-        )
-
-        output = result.stdout.strip()
-        if result.stderr:
-            output += f"\n[STDERR]\n{result.stderr.strip()}"
-
-        if result.returncode != 0:
-            logger.error(
-                f"Local command '{input_data.command}' failed with RC {result.returncode}. Output:\n{output}"
-            )
-            raise ToolExecutionError(
-                f"Local command failed with exit code {result.returncode}. Output: {output}"
-            )
-
-        return output
-
-    except subprocess.TimeoutExpired:
-        logger.warning(f"Local command '{input_data.command}' timed out.")
-        raise ToolExecutionError(f"Local command timed out: {input_data.command}")
-    except FileNotFoundError:  # Only if shell=False and executable not found
-        logger.error(
-            f"Executable not found for command (shell=False): {input_data.command.split()[0] if not input_data.shell else input_data.command}"
-        )
-        raise ToolExecutionError(
-            f"Executable not found for command: {input_data.command.split()[0] if not input_data.shell else input_data.command}"
-        )
-    except Exception as e:
-        logger.exception(
-            f"Exception during local command execution: {input_data.command}"
-        )
-        raise ToolExecutionError(
-            f"Command execution failed for '{input_data.command}': {e}"
-        )
+    logger.info(f"Tool 'run_local_command' called for: {input_data.command}")
+    executor = LocalExecutor()
+    return executor.run(
+        command=input_data.command, shell=input_data.shell, timeout=input_data.timeout
+    )
 
 
 def _format_bytes_to_gb(num_bytes: int) -> str:
@@ -226,7 +191,7 @@ def get_local_memory_info(_: GetLocalMemoryInfoInput) -> str:
             f"Used: {_format_bytes_to_gb(mem.used)} (Percent: {mem.percent}%)"
         )
         return result
-    except Exception as e:  # psutil might raise various errors, or not be installed
+    except Exception as e:
         logger.warning(f"psutil failed to get memory info: {e}. Is psutil installed?")
         raise ToolExecutionError(
             f"Could not retrieve memory info. psutil might be missing or failed: {e}"
