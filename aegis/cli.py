@@ -42,7 +42,7 @@ logger = setup_logger(__name__)
 
 
 @app.callback()
-def main() -> None:
+def main_callback() -> None:
     """AEGIS command-line interface."""
     # This function runs before any command.
     # We ensure tools are loaded once for the CLI session.
@@ -52,16 +52,16 @@ def main() -> None:
 
 @app.command(name="run-task")
 def run_task(
-        task_file: Annotated[
-            Path,
-            typer.Argument(
-                exists=True,
-                file_okay=True,
-                dir_okay=False,
-                readable=True,
-                help="Path to the YAML file containing the task request.",
-            ),
-        ],
+    task_file: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            help="Path to the YAML file containing the task request.",
+        ),
+    ],
 ) -> None:
     """
     Runs a single agent task from a specified YAML file.
@@ -92,7 +92,9 @@ def run_task(
     try:
         asyncio.run(execute_graph(launch_payload))
     except AegisError as e:
-        console.print(f"\n[bold red]AGENT FAILED:[/bold red] A critical error occurred during execution.")
+        console.print(
+            f"\n[bold red]AGENT FAILED:[/bold red] A critical error occurred during execution."
+        )
         console.print(f"[bold]Type:[/bold] {e.__class__.__name__}")
         console.print(f"[bold]Reason:[/bold] {e}")
         raise typer.Exit(code=1)
@@ -121,7 +123,16 @@ async def execute_graph(payload: LaunchRequest) -> None:
         task_id=task_id, task_prompt=payload.task.prompt, runtime=runtime_config
     )
 
-    graph_structure = AgentGraphConfig(**preset_config.model_dump())
+    graph_structure = AgentGraphConfig(
+        state_type=preset_config.state_type,
+        entrypoint=preset_config.entrypoint,
+        nodes=preset_config.nodes,
+        edges=preset_config.edges,
+        condition_node=preset_config.condition_node,
+        condition_map=preset_config.condition_map,
+        middleware=preset_config.middleware,
+    )
+
     agent_graph = AgentGraph(graph_structure).build_graph()
 
     console.print("\n[yellow]--- Agent Execution Starting ---[/yellow]")
@@ -158,16 +169,16 @@ def list_tools() -> None:
 
 @app.command(name="validate-tool")
 def validate_tool(
-        file_path: Annotated[
-            Path,
-            typer.Argument(
-                exists=True,
-                file_okay=True,
-                dir_okay=False,
-                readable=True,
-                help="Path to the Python file containing the tool to validate.",
-            ),
-        ],
+    file_path: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            help="Path to the Python file containing the tool to validate.",
+        ),
+    ],
 ) -> None:
     """
     Validates a single tool file by attempting to import it.
@@ -199,17 +210,37 @@ def validate_tool(
 
 
 def _to_pascal_case(snake_str: str) -> str:
-    return "".join(word.capitalize() for word in snake_str.split('_'))
+    return "".join(word.capitalize() for word in snake_str.split("_"))
 
 
 @app.command(name="new-tool")
 def new_tool(
-        name: Annotated[str, typer.Option(prompt=True, help="The callable name of the tool (e.g., 'get_weather').")],
-        description: Annotated[str, typer.Option(prompt=True, help="A short, one-sentence description of the tool.")],
-        category: Annotated[
-            str, typer.Option(prompt=True, default="custom", help="A high-level category (e.g., 'network', 'file').")],
-        is_safe: Annotated[
-            bool, typer.Option(prompt=True, help="Is this tool safe to run without user confirmation?")] = True,
+    name: Annotated[
+        str,
+        typer.Option(
+            prompt=True, help="The callable name of the tool (e.g., 'get_weather')."
+        ),
+    ],
+    description: Annotated[
+        str,
+        typer.Option(
+            prompt=True, help="A short, one-sentence description of the tool."
+        ),
+    ],
+    category: Annotated[
+        str,
+        typer.Option(
+            prompt=True,
+            default="custom",
+            help="A high-level category (e.g., 'network', 'file').",
+        ),
+    ],
+    is_safe: Annotated[
+        bool,
+        typer.Option(
+            prompt=True, help="Is this tool safe to run without user confirmation?"
+        ),
+    ] = True,
 ) -> None:
     """
     Creates a new boilerplate tool file in the 'plugins/' directory.
@@ -264,7 +295,7 @@ def {name}(input_data: {class_name}) -> str:
     logger.info(f"Executing tool: {name}")
 
     # --- YOUR TOOL LOGIC GOES HERE ---
-    result = f"Tool '{name}' executed with arg: {{input_data.example_arg}}"
+    result = f"Tool '{{name}}' executed with arg: {{input_data.example_arg}}"
     # ---------------------------------
 
     return result
@@ -272,10 +303,14 @@ def {name}(input_data: {class_name}) -> str:
 
     try:
         file_path.write_text(content, encoding="utf-8")
-        console.print(f"[bold green]✅ Success![/bold green] New tool created at: [bold cyan]{file_path}[/bold cyan]")
+        console.print(
+            f"[bold green]✅ Success![/bold green] New tool created at: [bold cyan]{file_path}[/bold cyan]"
+        )
         console.print("You can now edit this file to implement your tool's logic.")
     except IOError as e:
-        console.print(f"[bold red]Error:[/bold red] Could not write to file '{file_path}': {e}")
+        console.print(
+            f"[bold red]Error:[/bold red] Could not write to file '{file_path}': {e}"
+        )
         raise typer.Exit(code=1)
 
 

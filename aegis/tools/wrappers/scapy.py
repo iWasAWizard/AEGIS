@@ -8,7 +8,7 @@ capabilities, allowing the agent to perform low-level network tasks like
 pinging, port scanning, and custom packet generation.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,7 @@ from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 
 try:
+    import scapy.all as scapy
     from scapy.all import srp, sr1, IP, ICMP, TCP, ARP, Ether, send, sniff
 
     SCAPY_AVAILABLE = True
@@ -28,6 +29,7 @@ logger = setup_logger(__name__)
 
 # --- Input Models ---
 
+
 class ScapyPingInput(BaseModel):
     """Input model for sending a single ICMP ping packet.
 
@@ -36,7 +38,10 @@ class ScapyPingInput(BaseModel):
     :ivar timeout: The time in seconds to wait for a reply.
     :vartype timeout: int
     """
-    target: str = Field(..., description="The destination IP address or hostname to ping.")
+
+    target: str = Field(
+        ..., description="The destination IP address or hostname to ping."
+    )
     timeout: int = Field(2, description="The time in seconds to wait for a reply.")
 
 
@@ -50,22 +55,30 @@ class ScapyTcpScanInput(BaseModel):
     :ivar timeout: The time in seconds to wait for a reply.
     :vartype timeout: int
     """
+
     target: str = Field(..., description="The destination IP address or hostname.")
     port: int = Field(..., gt=0, lt=65536, description="The TCP port to scan.")
     timeout: int = Field(2, description="The time in seconds to wait for a reply.")
 
 
-class ScapyCraftSendInput(BaseModel):
-    """Input model for crafting and sending a custom packet.
+class ScapyLayer(BaseModel):
+    """Defines a single, safe layer for packet crafting."""
 
-    :ivar layers: A list of scapy layer definitions as strings, from outermost to
-                  innermost (e.g., ["Ether()", "IP(dst='1.1.1.1')", "UDP(dport=53)"]).
-    :vartype layers: List[str]
-    :ivar count: The number of packets to send.
-    :vartype count: int
-    """
-    layers: List[str] = Field(...,
-                              description="A list of scapy layer definitions as strings, from outermost to innermost (e.g., [\"Ether()\", \"IP(dst='1.1.1.1')\", \"UDP(dport=53)\"]).")
+    name: str = Field(
+        ..., description="The name of the Scapy layer (e.g., 'IP', 'TCP')."
+    )
+    args: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="A dictionary of arguments for the layer (e.g., {'dst': '8.8.8.8'}).",
+    )
+
+
+class ScapyCraftSendInput(BaseModel):
+    """A safe input model for crafting and sending a custom packet."""
+
+    layers: List[ScapyLayer] = Field(
+        ..., description="A list of Scapy layers to construct the packet."
+    )
     count: int = Field(1, description="The number of packets to send.")
 
 
@@ -77,7 +90,11 @@ class ScapyArpScanInput(BaseModel):
     :ivar timeout: The timeout in seconds for the scan.
     :vartype timeout: int
     """
-    target_range: str = Field(..., description="The target network range in CIDR notation (e.g., '192.168.1.0/24').")
+
+    target_range: str = Field(
+        ...,
+        description="The target network range in CIDR notation (e.g., '192.168.1.0/24').",
+    )
     timeout: int = Field(2, description="The timeout in seconds for the scan.")
 
 
@@ -91,12 +108,18 @@ class ScapySniffInput(BaseModel):
     :ivar timeout: The maximum time in seconds to wait for the packets.
     :vartype timeout: int
     """
+
     packet_count: int = Field(10, description="The number of packets to capture.")
-    filter_bpf: Optional[str] = Field(None, description="Optional BPF filter string (e.g., 'tcp port 80').")
-    timeout: int = Field(20, description="The maximum time in seconds to wait for the packets.")
+    filter_bpf: Optional[str] = Field(
+        None, description="Optional BPF filter string (e.g., 'tcp port 80')."
+    )
+    timeout: int = Field(
+        20, description="The maximum time in seconds to wait for the packets."
+    )
 
 
 # --- Tools ---
+
 
 @register_tool(
     name="scapy_ping",
@@ -104,7 +127,7 @@ class ScapySniffInput(BaseModel):
     description="Sends a single ICMP (ping) packet to a target to check for reachability.",
     tags=["scapy", "network", "scan", "icmp"],
     category="network",
-    safe_mode=False,  # Sends packets on the network
+    safe_mode=False,
 )
 def scapy_ping(input_data: ScapyPingInput) -> str:
     """Uses scapy to send an ICMP echo request and determines if the host is up.
@@ -152,7 +175,9 @@ def scapy_tcp_scan(input_data: ScapyTcpScanInput) -> str:
     if not SCAPY_AVAILABLE:
         raise ToolExecutionError("The 'scapy' library is not installed.")
 
-    logger.info(f"Scanning port {input_data.port} on host {input_data.target} with scapy.")
+    logger.info(
+        f"Scanning port {input_data.port} on host {input_data.target} with scapy."
+    )
     try:
         packet = IP(dst=input_data.target) / TCP(dport=input_data.port, flags="S")
         response = sr1(packet, timeout=input_data.timeout, verbose=0)
@@ -161,51 +186,68 @@ def scapy_tcp_scan(input_data: ScapyTcpScanInput) -> str:
             return f"Port {input_data.port} on {input_data.target} is filtered (No response)."
         elif response.haslayer(TCP):
             if response.getlayer(TCP).flags == 0x12:  # SYN/ACK
-                # Send a RST to gracefully close the connection
-                send(IP(dst=input_data.target) / TCP(dport=input_data.port, flags="R"), verbose=0)
+                send(
+                    IP(dst=input_data.target) / TCP(dport=input_data.port, flags="R"),
+                    verbose=0,
+                )
                 return f"Port {input_data.port} on {input_data.target} is open."
             elif response.getlayer(TCP).flags == 0x14:  # RST/ACK
                 return f"Port {input_data.port} on {input_data.target} is closed."
 
         return f"Port {input_data.port} on {input_data.target} state is unknown."
     except Exception as e:
-        logger.exception(f"scapy_tcp_scan failed for {input_data.target}:{input_data.port}: {e}")
+        logger.exception(
+            f"scapy_tcp_scan failed for {input_data.target}:{input_data.port}: {e}"
+        )
         return f"[ERROR] An error occurred during TCP scan: {e}"
 
 
 @register_tool(
     name="scapy_craft_and_send",
     input_model=ScapyCraftSendInput,
-    description="Dynamically crafts and sends a custom packet defined by a list of layers.",
+    description="Dynamically crafts and sends a custom packet defined by a list of layers."
+                "This is a safe alternative to using eval().",
     tags=["scapy", "network", "crafting", "packet"],
     category="network",
     safe_mode=False,
 )
 def scapy_craft_and_send(input_data: ScapyCraftSendInput) -> str:
-    """Constructs a packet from a list of string-defined layers and sends it.
-
-    This tool uses `eval()` to interpret the layer strings, giving the LLM
-    full flexibility to craft complex packets. This is a powerful but
-    potentially dangerous capability.
-
-    :param input_data: An object containing the list of layers and packet count.
-    :type input_data: ScapyCraftSendInput
-    :return: A confirmation message of the sent packet.
-    :rtype: str
-    :raises ToolExecutionError: If the `scapy` library is not installed.
-    """
+    """Constructs a packet from a list of structured layer objects and sends it."""
     if not SCAPY_AVAILABLE:
         raise ToolExecutionError("The 'scapy' library is not installed.")
 
-    logger.info(f"Crafting custom packet with layers: {input_data.layers}")
+    logger.info(f"Safely crafting custom packet with layers: {input_data.layers}")
+
+    allowed_layers = {
+        "Ether": scapy.Ether,
+        "IP": scapy.IP,
+        "TCP": scapy.TCP,
+        "UDP": scapy.UDP,
+        "ICMP": scapy.ICMP,
+        "ARP": scapy.ARP,
+        "DNS": scapy.DNS,
+        "DNSQR": scapy.DNSQR,
+    }
 
     try:
-        packet = eval("/".join(input_data.layers), {"__builtins__": None}, scapy.all.__dict__)
+        packet_layers = []
+        for layer_data in input_data.layers:
+            layer_class = allowed_layers.get(layer_data.name)
+            if not layer_class:
+                return f"[ERROR] Packet crafting failed: Layer '{layer_data.name}' is not supported."
+            packet_layers.append(layer_class(**layer_data.args))
 
-        logger.info(f"Sending crafted packet: {packet.summary()}")
-        send(packet, count=input_data.count, verbose=0)
+        if not packet_layers:
+            return "[ERROR] No layers provided for packet crafting."
 
-        return f"Successfully sent {input_data.count} packet(s) of type {packet.summary()}"
+        final_packet = packet_layers[0]
+        for layer in packet_layers[1:]:
+            final_packet /= layer
+
+        logger.info(f"Sending crafted packet: {final_packet.summary()}")
+        send(final_packet, count=input_data.count, verbose=0)
+
+        return f"Successfully sent {input_data.count} packet(s) of type {final_packet.summary()}"
     except Exception as e:
         logger.exception(f"Packet crafting or sending failed: {e}")
         return f"[ERROR] Failed to craft or send packet: {e}"
@@ -246,7 +288,9 @@ def scapy_arp_scan(input_data: ScapyArpScanInput) -> str:
 
         return "\n".join(results)
     except Exception as e:
-        logger.exception(f"scapy_arp_scan failed for range {input_data.target_range}: {e}")
+        logger.exception(
+            f"scapy_arp_scan failed for range {input_data.target_range}: {e}"
+        )
         return f"[ERROR] An error occurred during ARP scan: {e}"
 
 
@@ -271,18 +315,18 @@ def scapy_sniff(input_data: ScapySniffInput) -> str:
         raise ToolExecutionError("The 'scapy' library is not installed.")
 
     logger.info(
-        f"Starting packet sniff for {input_data.packet_count} packets. Filter: '{input_data.filter_bpf or 'None'}'")
+        f"Starting packet sniff for {input_data.packet_count} packets. Filter: '{input_data.filter_bpf or 'None'}'"
+    )
     try:
         packets = sniff(
             count=input_data.packet_count,
             filter=input_data.filter_bpf,
-            timeout=input_data.timeout
+            timeout=input_data.timeout,
         )
 
         if not packets:
             return "No packets captured."
 
-        # Use the built-in summary method from scapy's PacketList
         return packets.nsummary()
 
     except Exception as e:

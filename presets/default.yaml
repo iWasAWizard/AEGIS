@@ -1,35 +1,43 @@
 # presets/default.yaml
-# This file defines the default agent behavior using a LangGraph structure.
-
-# The class path to the main state object for this graph.
+name: "Default Agent Flow (Ollama Backend)"
+description: "A basic agent flow that plans, executes, and then decides to loop or end using Ollama."
 state_type: "aegis.agents.task_state.TaskState"
-
-# The first node to be executed when the graph starts.
 entrypoint: "plan"
 
-# A list of all the nodes (functions) that make up the graph.
-# The `tool` name here refers to the key in `aegis.agents.node_registry.AGENT_NODE_REGISTRY`.
 nodes:
   - id: "plan"
     tool: "reflect_and_plan"
   - id: "execute"
     tool: "execute_tool"
-  - id: "check_termination"
-    tool: "check_termination"
+  # "check_termination" is NO LONGER a node here. Its logic is used by a conditional edge.
   - id: "summarize"
     tool: "summarize_result"
 
-# Defines the unconditional transitions between nodes.
 edges:
   - [ "plan", "execute" ]
-  - [ "execute", "check_termination" ]
-  - [ "summarize", "__end__" ] # After summarizing, the graph always ends.
+  # The edge from "execute" will now be conditional.
+  - [ "summarize", "__end__" ] 
 
-# Defines the node that will make a routing decision.
-condition_node: "check_termination"
-
-# Defines the possible outcomes from the condition_node and where to go next.
-# The `check_termination` function will return either 'continue' or 'end'.
+# The conditional decision is made AFTER the "execute" node completes.
+# The function to make the decision will be the actual check_termination Python function.
+condition_node: "execute" 
 condition_map:
-  continue: "plan"      # If we continue, loop back to the planning step.
-  end: "summarize"  # If we end, go to the summarization step before finishing.
+  continue: "plan"      # If check_termination returns "continue", go to "plan"
+  end: "summarize"      # If check_termination returns "end", go to "summarize"
+
+runtime:
+  llm_backend_type: "ollama" 
+  llm_model_name: "ollama-mistral-default" # Key from models.yaml
+  ollama_api_url: "http://ollama:11434/api/generate" 
+  koboldcpp_api_url: null 
+  llm_planning_timeout: 300
+  temperature: 0.2
+  max_context_length: 8192 # Overriding models.yaml default for mistral if needed for testing
+  max_tokens_to_generate: 1536
+  top_p: 0.9
+  top_k: 40
+  repetition_penalty: 1.1
+  safe_mode: true
+  tool_timeout: 60
+  tool_retries: 0
+  iterations: 10

@@ -10,12 +10,12 @@ import pytest
 
 from aegis.agents.steps.execute_tool import execute_tool
 from aegis.agents.task_state import TaskState
+from aegis.schemas.plan_output import AgentScratchpad
 from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.tools.primitives.primitive_system import (
     RunLocalCommandInput,
     run_local_command,
 )
-from schemas.plan_output import AgentScratchpad
 
 
 def test_run_local_command_success(monkeypatch):

@@ -6,8 +6,8 @@ import pytest
 
 from aegis.agents.steps.check_termination import check_termination
 from aegis.agents.task_state import TaskState, HistoryEntry
+from aegis.schemas.plan_output import AgentScratchpad
 from aegis.schemas.runtime import RuntimeExecutionConfig
-from schemas.plan_output import AgentScratchpad
 
 
 @pytest.fixture

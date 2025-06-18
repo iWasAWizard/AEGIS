@@ -9,8 +9,8 @@ import pytest
 from aegis.agents.steps.reflect_and_plan import reflect_and_plan, construct_planning_prompt
 from aegis.agents.task_state import TaskState, HistoryEntry
 from aegis.exceptions import PlannerError
+from aegis.schemas.plan_output import AgentScratchpad
 from aegis.schemas.runtime import RuntimeExecutionConfig
-from schemas.plan_output import AgentScratchpad
 
 
 @pytest.fixture

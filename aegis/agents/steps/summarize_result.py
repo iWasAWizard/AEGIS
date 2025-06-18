@@ -20,21 +20,18 @@ logger = setup_logger(__name__)
 def summarize_result(state: TaskState) -> dict:
     """Creates a final summary, saves reports, and triggers follow-up actions.
 
-    This function is called as the last step in a graph before ending. It
-    builds a human-readable Markdown report, saves it, and then calls the
-    provenance and memory indexing utilities.
-
     :param state: The final state of the task, containing the complete history.
     :type state: TaskState
     :return: A dictionary containing the final summary text for the API response.
     :rtype: dict
     """
     logger.info("🎬 Step: Summarize Final Result, Save Reports, and Update Memory")
+    logger.debug(f"Entering summarize_result with state: {repr(state)}")
+
     final_summary = "No actions were taken by the agent."
     reports_dir = Path("reports") / state.task_id
     reports_dir.mkdir(parents=True, exist_ok=True)
 
-    # Part 1: Generate the human-readable summary
     if state.history:
         summary_lines = [
             f"# AEGIS Task Report: {state.task_id}",
@@ -42,10 +39,15 @@ def summarize_result(state: TaskState) -> dict:
             "---",
         ]
         for i, entry in enumerate(state.history):
+            tool_args_str = json.dumps(entry.plan.tool_args, default=str)
             summary_lines.append(f"### Step {i + 1}: {entry.plan.tool_name}")
             summary_lines.append(f"**Thought:** {entry.plan.thought}")
-            summary_lines.append(f"**Action:** `{entry.plan.tool_name}` with arguments:")
-            summary_lines.append(f"```json\n{json.dumps(entry.plan.tool_args, indent=2)}\n```")
+            summary_lines.append(
+                f"**Action:** `{entry.plan.tool_name}` with arguments:"
+            )
+            summary_lines.append(
+                f"```json\n{json.dumps(json.loads(tool_args_str), indent=2)}\n```"
+            )
             summary_lines.append("**Observation:**")
             summary_lines.append(f"```\n{str(entry.observation)}\n```\n")
         summary_lines.append("---\n**End of Report.**")
@@ -58,15 +60,13 @@ def summarize_result(state: TaskState) -> dict:
         except IOError as e:
             logger.error(f"Failed to save final report to '{summary_path}': {e}")
 
-    # Part 2: Delegate creation of the machine-readable provenance report
     generate_provenance_report(state)
 
-    # Part 3: Trigger the automatic memory index update
     try:
         logger.info("Triggering automatic memory index update...")
         update_memory_index()
     except Exception as e:
         logger.exception(f"Failed to update memory index. Error: {e}")
 
-    # Part 4: Return the final state for the API response
+    logger.debug(f"Exiting summarize_result with summary: {final_summary[:100]}...")
     return {"final_summary": final_summary}

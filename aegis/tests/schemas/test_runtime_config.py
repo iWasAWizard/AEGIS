@@ -13,7 +13,7 @@ def test_runtime_config_defaults():
     config = RuntimeExecutionConfig()
 
     assert config.model == "llama3"
-    assert config.ollama_url == "http://ollama:11434/api/generate"
+    assert config.koboldcpp_url == "http://koboldcpp:5001/api/generate"
     assert config.safe_mode is True
     assert config.timeout == 30
     assert config.retries == 0
@@ -23,11 +23,7 @@ def test_runtime_config_defaults():
 def test_runtime_config_valid_overrides():
     """Verify that valid values can be used to override the defaults."""
     config = RuntimeExecutionConfig(
-        model="test_model",
-        safe_mode=False,
-        timeout=60,
-        retries=3,
-        iterations=100
+        model="test_model", safe_mode=False, timeout=60, retries=3, iterations=100
     )
 
     assert config.model == "test_model"
@@ -45,7 +41,7 @@ def test_runtime_config_valid_overrides():
         ("retries", -1, "Retries must be a non-negative integer."),
         ("iterations", 0, "Iterations must be a positive integer."),
         ("iterations", -5, "Iterations must be a positive integer."),
-    ]
+    ],
 )
 def test_runtime_config_invalid_values(field, invalid_value, expected_error_msg):
     """Test that field validators raise ValidationErrors for invalid numeric inputs."""

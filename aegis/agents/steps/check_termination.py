@@ -25,6 +25,9 @@ def check_termination(state: TaskState) -> str:
     :rtype: str
     """
     logger.info("✅ Step: Check for Termination")
+    logger.debug(
+        f"Current state: steps_taken={state.steps_taken}, max_iterations={state.runtime.iterations}"
+    )
 
     # Condition 1: Check if the last planned tool was 'finish'.
     if state.history and state.history[-1].plan.tool_name == "finish":

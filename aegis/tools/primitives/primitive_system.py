@@ -158,7 +158,9 @@ def get_local_memory_info(_: GetLocalMemoryInfoInput) -> str:
     try:
         logger.info("Retrieving local memory info via psutil.")
         mem = psutil.virtual_memory()
-        result = f"Total: {_format_bytes_to_gb(mem.total)}\nAvailable: {_format_bytes_to_gb(mem.available)}\nUsed: {_format_bytes_to_gb(mem.used)} (Percent: {mem.percent}%)"
+        result = f"Total: {_format_bytes_to_gb(mem.total)}\n" \
+                 f"Available: {_format_bytes_to_gb(mem.available)}\n" \
+                 f"Used: {_format_bytes_to_gb(mem.used)} (Percent: {mem.percent}%)"
         return result
     except Exception as e:
         logger.warning(f"psutil failed to get memory info: {e}. Is psutil installed?")

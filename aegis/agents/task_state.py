@@ -12,9 +12,9 @@ from typing import List, Any, Optional, Literal
 
 from pydantic import BaseModel, Field
 
+from aegis.schemas.plan_output import AgentScratchpad
 from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.utils.logger import setup_logger
-from schemas.plan_output import AgentScratchpad
 
 logger = setup_logger(__name__)
 
@@ -28,6 +28,8 @@ class HistoryEntry(BaseModel):
     :vartype observation: Any
     :ivar status: The final status of the step, either 'success' or 'failure'.
     :vartype status: Literal["success", "failure"]
+    :ivar verification_status: The outcome of the verification step, if any.
+    :vartype verification_status: Optional[Literal["success", "failure"]]
     :ivar start_time: The Unix timestamp when the step started execution.
     :vartype start_time: float
     :ivar end_time: The Unix timestamp when the step finished execution.
@@ -39,6 +41,7 @@ class HistoryEntry(BaseModel):
     plan: AgentScratchpad
     observation: Any
     status: Literal["success", "failure"]
+    verification_status: Optional[Literal["success", "failure"]] = None
     start_time: float = Field(default_factory=time.time)
     end_time: float = Field(default_factory=time.time)
     duration_ms: float = 0.0

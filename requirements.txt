@@ -20,7 +20,6 @@ selenium
 hypothesis
 python-multipart
 pwntools
-ollama
 python-dotenv
 sentence-transformers
 faiss-cpu

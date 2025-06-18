@@ -9,10 +9,9 @@ immediately available for future tasks via Retrieval-Augmented Generation (RAG).
 import json
 from pathlib import Path
 
+from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
 
-# Attempt to import vector search libraries, but don't fail if they're not installed.
-# The tool that uses this index will handle the case where they are missing.
 try:
     import faiss
     import numpy as np
@@ -22,14 +21,20 @@ try:
 except ImportError:
     VECTOR_SEARCH_ENABLED = False
 
-# --- Configuration ---
-LOGS_DIR = Path("logs")
-INDEX_DIR = Path("index")
-INDEX_PATH = INDEX_DIR / "aegis_memory.faiss"
-MAPPING_PATH = INDEX_DIR / "aegis_memory_mapping.json"
-MODEL_NAME = "all-MiniLM-L6-v2"  # A fast, high-quality model for embeddings
-
 logger = setup_logger(__name__)
+
+# Load paths and model from central config
+config = get_config()
+RAG_CONFIG = config.get("rag", {})
+PATHS_CONFIG = config.get("paths", {})
+
+LOGS_DIR = Path(PATHS_CONFIG.get("logs", "logs"))
+INDEX_DIR = Path(PATHS_CONFIG.get("index", "index"))
+MODEL_NAME = RAG_CONFIG.get("embedding_model", "all-MiniLM-L6-v2")
+INDEX_PATH = INDEX_DIR / RAG_CONFIG.get("index_filename", "aegis_memory.faiss")
+MAPPING_PATH = INDEX_DIR / RAG_CONFIG.get(
+    "mapping_filename", "aegis_memory_mapping.json"
+)
 
 
 def update_memory_index():
@@ -54,7 +59,6 @@ def update_memory_index():
     logger.info("🤖 Starting automatic memory index update...")
     INDEX_DIR.mkdir(exist_ok=True)
 
-    # 1. Gather all processable log entries into chunks
     if not LOGS_DIR.exists():
         logger.warning(f"Log directory not found at '{LOGS_DIR}'. Cannot update index.")
         return
@@ -85,18 +89,18 @@ def update_memory_index():
     logger.info(f"Found {len(chunks)} structured log entries to index.")
 
     try:
-        # 2. Load model and generate embeddings
+        # Load model and generate embeddings
         logger.info(f"Loading embedding model '{MODEL_NAME}'...")
         model = SentenceTransformer(MODEL_NAME)
         embeddings = model.encode(chunks, show_progress_bar=False)
         embedding_dim = embeddings.shape[1]
 
-        # 3. Build and save the FAISS index
+        # Build and save the FAISS index
         index = faiss.IndexFlatL2(embedding_dim)
         index.add(embeddings.astype(np.float32))
         faiss.write_index(index, str(INDEX_PATH))
 
-        # 4. Save the mapping file (from vector index to text chunk)
+        # Save the mapping file (from vector index to text chunk)
         with MAPPING_PATH.open("w", encoding="utf-8") as f:
             json.dump(chunks, f)
 

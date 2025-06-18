@@ -1,33 +1,37 @@
 #!/bin/sh
-set -e
+set -e # Exit immediately if a command exits with a non-zero status.
 
-RETRIES=60
-DELAY=1
+# OLLAMA_API_URL will be like "http://ollama:11434/api/generate"
+# We need the base part for a health check, e.g., "http://ollama:11434"
+if [ -z "${OLLAMA_API_URL}" ]; then
+  echo "❌ ERROR: OLLAMA_API_URL is not set. Cannot check Ollama status."
+  exit 1
+fi
 
-echo "[AGENT] Waiting for Ollama to be available at ${OLLAMA_HOST}..."
+# Derive base URL (e.g., http://ollama:11434)
+# This assumes OLLAMA_API_URL ends with /api/generate
+OLLAMA_BASE_URL=$(echo "$OLLAMA_API_URL" | sed 's|/api/generate$||')
+HEALTH_CHECK_ENDPOINT="${OLLAMA_BASE_URL}/api/tags" # /api/tags is a good simple check
 
-for i in $(seq 1 $RETRIES); do
-  if curl -s "${OLLAMA_HOST}/api/tags" > /dev/null; then
-    echo "[AGENT] Ollama is responding."
-    break
+RETRIES=${WAIT_RETRIES:-60} # Number of retries (default 60)
+DELAY=${WAIT_DELAY:-2}    # Delay between retries in seconds (default 2)
+
+echo "[AEGIS AGENT] Waiting for Ollama to be available at ${HEALTH_CHECK_ENDPOINT}..."
+
+# Loop until Ollama is ready or retries are exhausted
+count=0
+until curl -s -f "${HEALTH_CHECK_ENDPOINT}" > /dev/null 2>&1; do
+  count=$((count + 1))
+  if [ "${count}" -gt "${RETRIES}" ]; then
+    echo "❌ ERROR: Ollama did not become ready at ${HEALTH_CHECK_ENDPOINT} after ${RETRIES} attempts."
+    exit 1
   fi
-  echo "[AGENT] Attempt ${i}/${RETRIES}: Ollama not ready yet..."
-  sleep $DELAY
+  echo "[AEGIS AGENT] Attempt ${count}/${RETRIES}: Ollama not ready yet. Retrying in ${DELAY}s..."
+  sleep "${DELAY}"
 done
 
-if ! curl -s "${OLLAMA_HOST}/api/tags" > /dev/null; then
-  echo >&2 "[FATAL] Ollama did not become ready after ${RETRIES} attempts. Exiting."
-  exit 1
-fi
+echo "[AEGIS AGENT] Ollama is up and responding at ${HEALTH_CHECK_ENDPOINT}!"
 
-MODELS=$(curl -s "${OLLAMA_HOST}/api/tags" | jq '.models | length')
-
-if [ "$MODELS" -eq 0 ]; then
-  echo >&2 "[FATAL] Ollama is running but has no models available."
-  echo >&2 "[FATAL] Use 'ollama pull <model>' to add one before starting the system."
-  exit 1
-fi
-
-echo "[AGENT] Ollama is up!"
-
-exec uvicorn aegis.serve_dashboard:app --reload --reload-dir /app --host 0.0.0.0 --port 8000
+# Execute the main application command passed as arguments to this script
+# (e.g., from Dockerfile CMD: ["./wait-for-ollama.sh", "python", "-m", "aegis.serve_dashboard"])
+exec "$@"

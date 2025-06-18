@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from aegis.utils import memory_indexer
+
 # Mark this module to be skipped if vector dependencies are not installed
 faiss = pytest.importorskip("faiss", reason="faiss-cpu not installed")
 SentenceTransformer = pytest.importorskip("sentence_transformers",
                                           reason="sentence-transformers not installed").SentenceTransformer
-
-from aegis.utils import memory_indexer
 
 
 # --- Fixtures ---

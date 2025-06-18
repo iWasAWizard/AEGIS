@@ -65,18 +65,30 @@ export default function LaunchTab() {
     }
   };
 
+  const selectedPresetInfo = presets.find(p => p.id === selectedPreset);
+
   return (
     <div>
       <h2>🚀 Launch Agent</h2>
+      <p style={{ opacity: 0.8, marginTop: '-0.5rem', marginBottom: '1.5rem' }}>
+        This is the primary control panel for executing agent tasks. Enter a high-level goal, select an agent behavior preset, and click "Launch Task".
+      </p>
 
-      <label htmlFor="preset">Preset:</label>
+      <label htmlFor="preset">Agent Behavior Preset:</label>
       <select id="preset" value={selectedPreset} onChange={e => setSelectedPreset(e.target.value)}
-        style={{ marginBottom: '1rem', display: 'block' }} disabled={isLoading}>
+        style={{ marginBottom: '0.5rem', display: 'block', width: '100%' }} disabled={isLoading}>
         <option value="">-- Use Default --</option>
         {presets.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
       </select>
+      
+      {selectedPresetInfo && (
+        <p style={{ fontSize: '0.9em', opacity: 0.7, margin: '0 0 1rem 0' }}>
+          {selectedPresetInfo.description}
+        </p>
+      )}
 
-      <textarea placeholder="Enter your task prompt here..." rows="4" value={prompt}
+      <label htmlFor="prompt">Task Prompt:</label>
+      <textarea id="prompt" placeholder="Enter your task prompt here..." rows="4" value={prompt}
         onChange={e => setPrompt(e.target.value)} style={{ width: '100%', marginBottom: '1rem' }} disabled={isLoading} />
 
       <button onClick={launch} disabled={isLoading || !prompt}>

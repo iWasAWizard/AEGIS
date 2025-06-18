@@ -16,7 +16,10 @@ from pydantic import BaseModel, Field
 from aegis.executors.ssh import SSHExecutor
 from aegis.registry import register_tool
 from aegis.schemas.common_inputs import MachineFileInput, MachineTargetInput
-from aegis.tools.primitives.primitive_system import run_local_command, RunLocalCommandInput
+from aegis.tools.primitives.primitive_system import (
+    run_local_command,
+    RunLocalCommandInput,
+)
 from aegis.utils.logger import setup_logger
 from aegis.utils.machine_loader import get_machine
 
@@ -35,9 +38,15 @@ class CreateRandomFileInput(BaseModel):
                 Defaults to bytes if no suffix is given.
     :vartype size: str
     """
-    file_path: str = Field(..., description="The full path where the new file will be created.")
-    size: str = Field(...,
-                      description="The desired size of the file. Supports shorthands like '10k', '25M', '1G'. Defaults to bytes if no suffix is given.")
+
+    file_path: str = Field(
+        ..., description="The full path where the new file will be created."
+    )
+    size: str = Field(
+        ...,
+        description="The desired size of the file. Supports shorthands like '10k', '25M', '1G'. "
+                    "Defaults to bytes if no suffix is given.",
+    )
 
 
 class TransferFileToRemoteInput(MachineFileInput):
@@ -48,8 +57,11 @@ class TransferFileToRemoteInput(MachineFileInput):
     :ivar destination_path: Destination path on the remote machine.
     :vartype destination_path: str
     """
+
     source_path: str = Field(..., description="Path to the local file to transfer.")
-    destination_path: str = Field(..., description="Destination path on the remote machine.")
+    destination_path: str = Field(
+        ..., description="Destination path on the remote machine."
+    )
 
 
 class FetchFileFromRemoteInput(MachineFileInput):
@@ -58,6 +70,7 @@ class FetchFileFromRemoteInput(MachineFileInput):
     :ivar local_path: Destination path on the local machine.
     :vartype local_path: str
     """
+
     local_path: str = Field(..., description="Destination path on the local machine.")
 
 
@@ -69,7 +82,10 @@ class RunRemoteScriptInput(MachineFileInput):
     :ivar remote_path: Destination path on the remote machine.
     :vartype remote_path: str
     """
-    script_path: str = Field(..., description="Local path to the shell script to send and execute.")
+
+    script_path: str = Field(
+        ..., description="Local path to the shell script to send and execute."
+    )
     remote_path: str = Field(..., description="Destination path on the remote machine.")
 
 
@@ -79,6 +95,7 @@ class AppendToRemoteFileInput(MachineFileInput):
     :ivar content: Text to append to the file.
     :vartype content: str
     """
+
     content: str = Field(..., description="Text to append to the file.")
 
 
@@ -88,6 +105,7 @@ class GetRemoteDirectoryListingInput(MachineTargetInput):
     :ivar directory_path: Directory path to list.
     :vartype directory_path: str
     """
+
     directory_path: str = Field(..., description="Directory path to list.")
 
 
@@ -99,11 +117,13 @@ class DiffTextBlocksInput(BaseModel):
     :ivar new: New block of text.
     :vartype new: str
     """
+
     old: str = Field(..., description="Original block of text.")
     new: str = Field(..., description="New block of text.")
 
 
 # === Tools ===
+
 
 @register_tool(
     name="create_random_file",
@@ -125,36 +145,37 @@ def create_random_file(input_data: CreateRandomFileInput) -> str:
     :return: The output of the dd command execution.
     :rtype: str
     """
-    logger.info(f"Request to create file '{input_data.file_path}' with size '{input_data.size}'")
+    logger.info(
+        f"Request to create file '{input_data.file_path}' with size '{input_data.size}'"
+    )
 
     size_str = input_data.size.lower().strip()
-    match = re.match(r'^(\d+)([kmgtp]?)b?$', size_str)
+    match = re.match(r"^(\d+)([kmgtp]?)b?$", size_str)
 
     if not match:
-        return f"[ERROR] Invalid size format: '{input_data.size}'. Use a number with an optional suffix (k, M, G, T, P)."
+        return f"[ERROR] Invalid size format: '{input_data.size}'. " \
+               f"Use a number with an optional suffix (k, M, G, T, P)."
 
     value = int(match.group(1))
     suffix = match.group(2)
 
-    # We use bs=1k and adjust the count to be friendlier to most filesystems
     block_size = "1K"
     count = 0
 
-    if not suffix:  # bytes
-        count = (value + 1023) // 1024  # Round up to nearest KB
-    elif suffix == 'k':
+    if not suffix:
+        count = (value + 1023) // 1024
+    elif suffix == "k":
         count = value
-    elif suffix == 'm':
+    elif suffix == "m":
         count = value * 1024
-    elif suffix == 'g':
+    elif suffix == "g":
         count = value * 1024 * 1024
-    elif suffix == 't':
+    elif suffix == "t":
         count = value * 1024 * 1024 * 1024
-    elif suffix == 'p':
+    elif suffix == "p":
         count = value * 1024 * 1024 * 1024 * 1024
 
     if count == 0 and value > 0:
-        # Handle cases for very small byte sizes
         block_size = str(value)
         count = 1
 
@@ -181,7 +202,9 @@ def transfer_file_to_remote(input_data: TransferFileToRemoteInput) -> str:
     :return: The result of the upload operation.
     :rtype: str
     """
-    logger.info(f"Transferring '{input_data.source_path}' to '{input_data.machine_name}:{input_data.destination_path}'")
+    logger.info(
+        f"Transferring '{input_data.source_path}' to '{input_data.machine_name}:{input_data.destination_path}'"
+    )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
     return executor.upload(input_data.source_path, input_data.destination_path)
@@ -204,7 +227,9 @@ def fetch_file_from_remote(input_data: FetchFileFromRemoteInput) -> str:
     :return: The result of the download operation.
     :rtype: str
     """
-    logger.info(f"Fetching '{input_data.machine_name}:{input_data.file_path}' to '{input_data.local_path}'")
+    logger.info(
+        f"Fetching '{input_data.machine_name}:{input_data.file_path}' to '{input_data.local_path}'"
+    )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
     return executor.download(input_data.file_path, input_data.local_path)
@@ -227,10 +252,13 @@ def read_remote_file(input_data: MachineFileInput) -> str:
     :return: The contents of the remote file.
     :rtype: str
     """
-    logger.info(f"Reading remote file '{input_data.file_path}' from machine '{input_data.machine_name}'")
+    logger.info(
+        f"Reading remote file '{input_data.file_path}' from machine '{input_data.machine_name}'"
+    )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
-    return executor.run(f"cat {shlex.quote(input_data.file_path)}")
+    output, _ = executor.run(f"cat {shlex.quote(input_data.file_path)}")
+    return output
 
 
 @register_tool(
@@ -250,7 +278,9 @@ def check_remote_file_exists(input_data: MachineFileInput) -> str:
     :return: "Exists" if the file is found, "Missing" otherwise.
     :rtype: str
     """
-    logger.info(f"Checking for remote file '{input_data.file_path}' on machine '{input_data.machine_name}'")
+    logger.info(
+        f"Checking for remote file '{input_data.file_path}' on machine '{input_data.machine_name}'"
+    )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
     return "Exists" if executor.check_file_exists(input_data.file_path) else "Missing"
@@ -273,13 +303,16 @@ def run_remote_script(input_data: RunRemoteScriptInput) -> str:
     :return: The output of the script execution, or an error if the upload fails.
     :rtype: str
     """
-    logger.info(f"Uploading and running script '{input_data.script_path}' on machine '{input_data.machine_name}'")
+    logger.info(
+        f"Uploading and running script '{input_data.script_path}' on machine '{input_data.machine_name}'"
+    )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
     upload_result = executor.upload(input_data.script_path, input_data.remote_path)
     if "[ERROR]" in upload_result:
         return f"[ERROR] Script upload failed: {upload_result}"
-    return executor.run(f"bash {shlex.quote(input_data.remote_path)}")
+    output, _ = executor.run(f"bash {shlex.quote(input_data.remote_path)}")
+    return output
 
 
 @register_tool(
@@ -299,11 +332,14 @@ def append_to_remote_file(input_data: AppendToRemoteFileInput) -> str:
     :return: The output of the remote command.
     :rtype: str
     """
-    logger.info(f"Appending content to '{input_data.file_path}' on machine '{input_data.machine_name}'")
+    logger.info(
+        f"Appending content to '{input_data.file_path}' on machine '{input_data.machine_name}'"
+    )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
     cmd = f"echo {shlex.quote(input_data.content)} | sudo tee -a {shlex.quote(input_data.file_path)}"
-    return executor.run(cmd)
+    output, _ = executor.run(cmd)
+    return output
 
 
 @register_tool(
@@ -323,10 +359,13 @@ def get_remote_directory_listing(input_data: GetRemoteDirectoryListingInput) -> 
     :return: The formatted directory listing from the remote host.
     :rtype: str
     """
-    logger.info(f"Listing directory '{input_data.directory_path}' on machine '{input_data.machine_name}'")
+    logger.info(
+        f"Listing directory '{input_data.directory_path}' on machine '{input_data.machine_name}'"
+    )
     machine = get_machine(input_data.machine_name)
     executor = SSHExecutor(machine)
-    return executor.run(f"ls -la {shlex.quote(input_data.directory_path)}")
+    output, _ = executor.run(f"ls -la {shlex.quote(input_data.directory_path)}")
+    return output
 
 
 @register_tool(

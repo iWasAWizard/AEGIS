@@ -3,10 +3,12 @@
 The primary API route for launching agent tasks.
 """
 
+import json
 import traceback
 import uuid
 
 from fastapi import APIRouter, HTTPException
+from pydantic import ValidationError
 
 from aegis.agents.agent_graph import AgentGraph
 from aegis.agents.task_state import TaskState
@@ -44,6 +46,7 @@ async def launch_task(payload: LaunchRequest) -> dict:
     task_id = payload.task.task_id or str(uuid.uuid4())
     task_id_context.set(task_id)
     logger.info(f"🚀 Received launch request for task: '{payload.task.prompt[:50]}...'")
+    logger.debug(f"Full launch payload received: {payload.model_dump_json(indent=2)}")
 
     try:
         preset_config: AgentConfig = load_agent_config(
@@ -52,17 +55,49 @@ async def launch_task(payload: LaunchRequest) -> dict:
         )
         runtime_config = preset_config.runtime
         if payload.execution:
-            runtime_config = runtime_config.model_copy(update=payload.execution.model_dump(exclude_unset=True))
+            runtime_config = runtime_config.model_copy(
+                update=payload.execution.model_dump(exclude_unset=True)
+            )
         if payload.iterations is not None:
             runtime_config.iterations = payload.iterations
 
-        initial_state = TaskState(task_id=task_id, task_prompt=payload.task.prompt, runtime=runtime_config)
-        graph_structure = AgentGraphConfig(**preset_config.model_dump())
+        initial_state = TaskState(
+            task_id=task_id, task_prompt=payload.task.prompt, runtime=runtime_config
+        )
+
+        graph_structure = AgentGraphConfig(
+            state_type=preset_config.state_type,
+            entrypoint=preset_config.entrypoint,
+            nodes=preset_config.nodes,
+            edges=preset_config.edges,
+            condition_node=preset_config.condition_node,
+            condition_map=preset_config.condition_map,
+            middleware=preset_config.middleware,
+        )
+
+        # import pdb
+
+        # pdb.set_trace()  # noqa: T201
         agent_graph = AgentGraph(graph_structure).build_graph()
         final_state_dict = await agent_graph.ainvoke(initial_state.model_dump())
         final_state = TaskState(**final_state_dict)
 
         logger.info(f"✅ Task {task_id} completed successfully.")
+
+        logger.info(
+            f"🕵️  Inspecting final agent state for task {task_id} before serialization..."
+        )
+        logger.info(
+            f"Final summary type: {type(final_state.final_summary)}, value: {repr(final_state.final_summary)}"
+        )
+        for i, entry in enumerate(final_state.history):
+            logger.info(f"--- History Entry {i} ---")
+            logger.info(f"Plan: {repr(entry.plan)}")
+            logger.info(
+                f"Observation type: {type(entry.observation)}, value: {repr(entry.observation)}"
+            )
+        logger.info(f"🕵️  State inspection for task {task_id} complete.")
+
         return {
             "task_id": task_id,
             "summary": final_state.final_summary,
@@ -70,13 +105,25 @@ async def launch_task(payload: LaunchRequest) -> dict:
                 {
                     "thought": entry.plan.thought,
                     "tool_name": entry.plan.tool_name,
-                    "tool_args": entry.plan.tool_args,
+                    "tool_args": json.loads(
+                        json.dumps(entry.plan.tool_args, default=str)
+                    ),
                     "tool_output": str(entry.observation),
                 }
                 for entry in final_state.history
             ],
         }
 
+    except ValidationError as e:
+        logger.error(f"Pydantic validation failed during task launch: {e}")
+        error_details = "\n".join(
+            [f"  - {err['loc']}: {err['msg']}" for err in e.errors()]
+        )
+        logger.error(f"Validation error details:\n{error_details}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid Configuration: Pydantic validation failed. Check server logs for details.",
+        )
     except ConfigurationError as e:
         logger.error(f"Configuration error during task launch: {e}")
         raise HTTPException(status_code=400, detail=f"Invalid Configuration: {e}")
@@ -87,4 +134,7 @@ async def launch_task(payload: LaunchRequest) -> dict:
     except Exception as e:
         logger.error(f"An unexpected error occurred during launch: {e}")
         logger.debug(f"Traceback:\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e.__class__.__name__}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred: {e.__class__.__name__}: {e}",
+        )

@@ -9,12 +9,14 @@ directory and a user-extensible top-level `plugins` directory. Calling
 """
 
 import importlib
+import os
 import pathlib
 import sys
 
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+logger.info("Initializing aegis.utils.tool_loader module...")
 
 
 def _import_from_directory(base_dir: pathlib.Path, base_package_name: str):
@@ -33,9 +35,10 @@ def _import_from_directory(base_dir: pathlib.Path, base_package_name: str):
     if not base_dir.is_dir():
         logger.warning(f"Tool directory '{base_dir}' does not exist. Skipping.")
         return
+    elif base_package_name is None:
+        logger.info("No base package name provided!")
 
     logger.info(f"Scanning for tools in directory: {base_dir}")
-    # Add the parent of the package to the system path to allow direct import
     if str(base_dir.parent) not in sys.path:
         sys.path.insert(0, str(base_dir.parent))
 
@@ -43,10 +46,9 @@ def _import_from_directory(base_dir: pathlib.Path, base_package_name: str):
         if "__init__" in path.name:
             continue
 
-        # Convert filesystem path to a Python module path
-        # e.g., /path/to/project/aegis/tools/primitives/chaos.py -> "aegis.tools.primitives.chaos"
         rel_path = path.relative_to(base_dir.parent)
-        module_path = str(rel_path.with_suffix("")).replace(pathlib.os.sep, ".")
+        # Use os.sep for cross-platform compatibility
+        module_path = str(rel_path.with_suffix("")).replace(os.sep, ".")
 
         try:
             importlib.import_module(module_path)
@@ -64,13 +66,14 @@ def import_all_tools():
     """
     logger.info("--- Starting Dynamic Tool Import ---")
 
-    # 1. Import core tools from `aegis/tools`
     core_tools_dir = pathlib.Path(__file__).parent.parent / "tools"
     _import_from_directory(core_tools_dir, "aegis.tools")
 
-    # 2. Import user-defined plugin tools from `plugins/` at the project root
-    project_root = pathlib.Path(__file__).parent.parent.parent
+    project_root = pathlib.Path.cwd()
     plugins_dir = project_root / "plugins"
-    _import_from_directory(plugins_dir, "plugins")
+    if plugins_dir.exists():
+        _import_from_directory(plugins_dir, "plugins")
+    else:
+        logger.info("No 'plugins' directory found. Skipping plugin loading.")
 
     logger.info("--- Dynamic Tool Import Complete ---")

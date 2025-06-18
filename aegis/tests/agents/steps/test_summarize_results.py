@@ -8,21 +8,31 @@ import pytest
 
 from aegis.agents.steps.summarize_result import summarize_result
 from aegis.agents.task_state import TaskState, HistoryEntry
+from aegis.schemas.plan_output import AgentScratchpad
 from aegis.schemas.runtime import RuntimeExecutionConfig
-from schemas.plan_output import AgentScratchpad
 
 
 @pytest.fixture
 def populated_state() -> TaskState:
     """Provides a TaskState with a history of two steps using HistoryEntry."""
     runtime = RuntimeExecutionConfig()
-    state = TaskState(task_id="summary-test-123", task_prompt="Test summarization", runtime=runtime)
+    state = TaskState(
+        task_id="summary-test-123", task_prompt="Test summarization", runtime=runtime
+    )
 
-    plan1 = AgentScratchpad(thought="First step.", tool_name="tool_one", tool_args={"arg": "A"})
-    entry1 = HistoryEntry(plan=plan1, observation="Output of tool one.", status="success")
+    plan1 = AgentScratchpad(
+        thought="First step.", tool_name="tool_one", tool_args={"arg": "A"}
+    )
+    entry1 = HistoryEntry(
+        plan=plan1, observation="Output of tool one.", status="success"
+    )
 
-    plan2 = AgentScratchpad(thought="Second step.", tool_name="tool_two", tool_args={"arg": "B"})
-    entry2 = HistoryEntry(plan=plan2, observation="Output of tool two.", status="success")
+    plan2 = AgentScratchpad(
+        thought="Second step.", tool_name="tool_two", tool_args={"arg": "B"}
+    )
+    entry2 = HistoryEntry(
+        plan=plan2, observation="Output of tool two.", status="success"
+    )
 
     state.history = [entry1, entry2]
     return state
@@ -57,7 +67,9 @@ def test_summarize_empty_history():
 
 @patch("aegis.agents.steps.summarize_result.generate_provenance_report")
 @patch("aegis.agents.steps.summarize_result.update_memory_index")
-def test_summarize_triggers_provenance_and_memory(mock_update_memory, mock_gen_provenance, populated_state):
+def test_summarize_triggers_provenance_and_memory(
+    mock_update_memory, mock_gen_provenance, populated_state
+):
     """Verify that summarize_result calls the provenance and memory indexer utilities."""
     summarize_result(populated_state)
     mock_gen_provenance.assert_called_once_with(populated_state)

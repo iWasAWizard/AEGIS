@@ -4,7 +4,7 @@ import LaunchTab from './LaunchTab';
 import PresetsTab from './PresetsTab';
 import ArtifactsTab from './ArtifactsTab';
 import ReportsTab from './ReportsTab';
-import ToolsTab from './components/ToolsTab';
+import ToolsTab from './ToolsTab'; // Corrected import path
 import LogStreamTab from './LogStreamTab';
 import GraphViewTab from './GraphViewTab';
 import DashboardTab from './DashboardTab';
@@ -28,7 +28,7 @@ export default function App() {
 
   // Effect to update the document title based on the active tab.
   useEffect(() => {
-    const tabName = activeTab.charAt(0).toUpperCase() + active_tab.slice(1);
+    const tabName = activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
     document.title = `AEGIS | ${tabName}`;
   }, [activeTab]);
 

@@ -3,10 +3,7 @@
 Unit tests for the development and testing primitive tools.
 """
 
-from aegis.tools.primitives.develop import (
-    echo_input, EchoInputModel,
-    no_op, NoOpModel
-)
+from aegis.tools.primitives.develop import echo_input, EchoInputModel, no_op, NoOpModel
 
 
 def test_echo_input():
@@ -19,7 +16,6 @@ def test_echo_input():
 
 def test_no_op():
     """Verify that the no_op tool returns the static 'ok' string."""
-    # The NoOpModel has a dummy field that must be provided, even if ignored.
-    input_data = NoOpModel(dummy="placeholder")
+    input_data = NoOpModel()
     result = no_op(input_data)
     assert result == "ok"

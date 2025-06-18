@@ -83,24 +83,27 @@ class SSHExecutor:
             )
             return -1, "", str(e)
 
-    def run(self, command: str, timeout: int = 30) -> str:
+    def run(self, command: str, timeout: int = 30) -> Tuple[str, int]:
         """Executes a shell command on the remote host via SSH.
 
         :param command: The shell command to execute.
         :type command: str
         :param timeout: The timeout in seconds for the command.
         :type timeout: int
-        :return: The combined stdout and stderr from the remote command.
-        :rtype: str
+        :return: A tuple of (combined_output, return_code).
+        :rtype: Tuple[str, int]
         """
         cmd_list = ["ssh", *self.ssh_opts, self.ssh_target, command]
-        _, stdout, stderr = self._run_subprocess(cmd_list, timeout=timeout)
+        returncode, stdout, stderr = self._run_subprocess(cmd_list, timeout=timeout)
+
+        combined_output = stdout
         if stderr:
-            return f"{stdout}\n[STDERR]\n{stderr}".strip()
-        return stdout
+            combined_output = f"{stdout}\n[STDERR]\n{stderr}".strip()
+
+        return combined_output, returncode
 
     def upload(
-            self, local_path: str | Path, remote_path: str | Path, timeout: int = 60
+        self, local_path: str | Path, remote_path: str | Path, timeout: int = 60
     ) -> str:
         """Uploads a local file to the remote host using SCP.
 
@@ -122,7 +125,7 @@ class SSHExecutor:
         return f"[ERROR] SCP upload failed: {stderr or stdout}"
 
     def download(
-            self, remote_path: str | Path, local_path: str | Path, timeout: int = 60
+        self, remote_path: str | Path, local_path: str | Path, timeout: int = 60
     ) -> str:
         """Downloads a remote file to the local machine using SCP.
 
@@ -153,6 +156,6 @@ class SSHExecutor:
         :return: True if the file exists, False otherwise.
         :rtype: bool
         """
-        command = f"test -f {shlex.quote(file_path)} && echo 'AEGIS_FILE_EXISTS'"
-        output = self.run(command, timeout=timeout)
-        return "AEGIS_FILE_EXISTS" in output
+        command = f"test -f {shlex.quote(file_path)}"
+        _output, return_code = self.run(command, timeout=timeout)
+        return return_code == 0

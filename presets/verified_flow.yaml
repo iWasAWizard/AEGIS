@@ -1,6 +1,6 @@
 # presets/verified_flow.yaml
-# This file defines an advanced agent behavior with verification and remediation loops.
-
+name: "Verified Agent Flow (Ollama Backend)"
+description: "An advanced agent that verifies outcomes using Ollama. If verification fails, it remediates."
 state_type: "aegis.agents.task_state.TaskState"
 entrypoint: "plan"
 
@@ -9,55 +9,42 @@ nodes:
     tool: "reflect_and_plan"
   - id: "execute"
     tool: "execute_tool"
-  - id: "verify_outcome"
-    tool: "verify_outcome" # New verification node
-  - id: "remediate_plan"
-    tool: "remediate_plan" # New remediation node
-  - id: "check_termination"
-    tool: "check_termination"
+  - id: "verify" # Node that runs verify_outcome(state) -> returns {"history": ...}
+    tool: "verify_outcome" 
+  # "router" node is REMOVED. route_after_verification is used as a pure conditional function.
+  - id: "remediate"
+    tool: "remediate_plan"
   - id: "summarize"
     tool: "summarize_result"
 
 edges:
-  - [ "plan", "execute" ]
-  - [ "execute", "verify_outcome" ]
-  - [ "remediate_plan", "execute" ] # After remediating, re-execute
-  - [ "check_termination", "summarize" ] # If we can end, summarize
-  - [ "summarize", "__end__" ]
+  - ["plan", "execute"]
+  - ["execute", "verify"] # After execute, go to verify node
+  # Conditional edges will branch from "verify" node, using route_after_verification function
+  - ["remediate", "execute"] 
+  - ["summarize", "__end__"]
 
-# The first conditional branch: verification
-condition_node: "verify_outcome"
+# Conditional decision is made AFTER the "verify" node (which runs verify_outcome).
+# The routing logic itself is the route_after_verification function.
+condition_node: "verify" 
 condition_map:
-  success: "check_termination" # If verification succeeds, check if we're done
-  failure: "remediate_plan"    # If verification fails, go to the remediation step
+  remediate_plan: "remediate" 
+  continue: "plan"            
+  end: "summarize"            
 
-# The second conditional branch: overall termination
-# This is a bit of a trick: we add another conditional edge from the same node.
-# This isn't standard LangGraph, but represents the logic. The real implementation
-# will chain check_termination after a successful verification.
-# For simplicity in this config, we'll let check_termination handle its own routing logic.
-# The `add_conditional_edges` call in the graph builder will handle this.
-# Let's add the edge from `check_termination` to `plan` if we continue.
-# This requires a slight modification to our mental model, LangGraph handles multiple
-# conditional edges from different source nodes gracefully. We will add a second
-# conditional edge definition in the builder if needed, but for now, let's
-# update the existing one to reflect the full flow.
-#
-# A better representation:
-# We need a new conditional node: `route_after_verify`
-# Let's redesign the flow slightly to be more LangGraph-native.
-# The `verify_outcome` node will now just run verification and put the result in state.
-# A new router node will decide where to go.
-# This is getting too complex for a single step. Let's stick to the simpler model
-# and adjust the prompt to be very clear. The original model above is fine.
-# We just need to implement the new nodes. Let's add the loop-back edge.
-#
-# Final edge list for clarity:
-# plan -> execute
-# execute -> verify_outcome (conditional)
-#   - success -> check_termination (conditional)
-#     - continue -> plan
-#     - end -> summarize
-#   - failure -> remediate_plan
-# remediate_plan -> execute
-# summarize -> __end__
+runtime:
+  llm_backend_type: "ollama"
+  llm_model_name: "ollama-mistral-default"
+  ollama_api_url: "http://ollama:11434/api/generate"
+  koboldcpp_api_url: null
+  llm_planning_timeout: 300
+  temperature: 0.2
+  max_context_length: 8192
+  max_tokens_to_generate: 1536
+  top_p: 0.9
+  top_k: 40
+  repetition_penalty: 1.1
+  safe_mode: true
+  tool_timeout: 60
+  tool_retries: 0
+  iterations: 10

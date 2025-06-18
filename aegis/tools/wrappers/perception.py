@@ -37,6 +37,7 @@ logger = setup_logger(__name__)
 
 # --- Input Models ---
 
+
 class CaptureScreenshotInput(BaseModel):
     """Input model for capturing a screenshot.
 
@@ -45,10 +46,15 @@ class CaptureScreenshotInput(BaseModel):
     :ivar machine_name: The machine to capture from. Defaults to 'localhost'.
     :vartype machine_name: str
     """
-    save_path: str = Field(...,
-                           description="The local file path to save the screenshot to (e.g., 'reports/screenshot.png').")
-    machine_name: str = Field("localhost",
-                              description="The machine to capture the screenshot from. Defaults to 'localhost'.")
+
+    save_path: str = Field(
+        ...,
+        description="The local file path to save the screenshot to (e.g., 'reports/screenshot.png').",
+    )
+    machine_name: str = Field(
+        "localhost",
+        description="The machine to capture the screenshot from. Defaults to 'localhost'.",
+    )
 
 
 class OcrReadScreenAreaInput(BaseModel):
@@ -58,8 +64,11 @@ class OcrReadScreenAreaInput(BaseModel):
                   If None, captures the whole screen.
     :vartype region: Optional[Tuple[int, int, int, int]]
     """
-    region: Optional[Tuple[int, int, int, int]] = Field(None,
-                                                        description="Optional bounding box (left, top, width, height) to capture. If None, captures the whole screen.")
+
+    region: Optional[Tuple[int, int, int, int]] = Field(
+        None,
+        description="Optional bounding box (left, top, width, height) to capture. If None, captures the whole screen.",
+    )
 
 
 class GuiFindAndReadInput(BaseModel):
@@ -73,18 +82,27 @@ class GuiFindAndReadInput(BaseModel):
     :ivar timeout_seconds: How long to search for the anchor image.
     :vartype timeout_seconds: int
     """
-    template_image_path: str = Field(..., description="The file path to the image to find on screen (the anchor).")
-    offset_box: Tuple[int, int, int, int] = Field(...,
-                                                  description="The bounding box (left, top, width, height) relative to the anchor image's top-left corner where text should be read.")
-    timeout_seconds: int = Field(10, description="How long to search for the anchor image.")
+
+    template_image_path: str = Field(
+        ..., description="The file path to the image to find on screen (the anchor)."
+    )
+    offset_box: Tuple[int, int, int, int] = Field(
+        ...,
+        description="The bounding box (left, top, width, height) relative to the anchor image's "
+                    "top-left corner where text should be read.",
+    )
+    timeout_seconds: int = Field(
+        10, description="How long to search for the anchor image."
+    )
 
 
 # --- Tools ---
 
+
 @register_tool(
     name="capture_screenshot",
     input_model=CaptureScreenshotInput,
-    description="Captures a screenshot of the entire screen of a target machine (local or remote) and saves it locally.",
+    description="Captures a screenshot of the entire screen of a target machine and saves it locally.",
     tags=["perception", "screenshot", "gui", "remote"],
     category="desktop",
     safe_mode=False,
@@ -103,12 +121,16 @@ def capture_screenshot(input_data: CaptureScreenshotInput) -> str:
     :return: A confirmation message with the path to the saved screenshot.
     :rtype: str
     """
-    logger.info(f"Request to capture screenshot from '{input_data.machine_name}' and save to '{input_data.save_path}'.")
+    logger.info(
+        f"Request to capture screenshot from '{input_data.machine_name}' and save to '{input_data.save_path}'."
+    )
 
     # --- Case 1: Local Screenshot ---
     if input_data.machine_name.lower() == "localhost":
         logger.info("Performing local screenshot.")
-        gui_input = GuiActionInput(action="screenshot", screenshot_path=input_data.save_path)
+        gui_input = GuiActionInput(
+            action="screenshot", screenshot_path=input_data.save_path
+        )
         return gui_action(gui_input)
 
     # --- Case 2: Remote Screenshot ---
@@ -129,9 +151,12 @@ def capture_screenshot(input_data: CaptureScreenshotInput) -> str:
         result = executor.run(capture_command)
 
         if "ERROR" in result or "cannot open display" in result.lower():
-            return f"[ERROR] Failed to capture remote screenshot. The remote machine may not have a running X server or 'scrot' may not be installed. Result: {result}"
+            return f"[ERROR] Failed to capture remote screenshot. The remote machine may not have a " \
+                   f"running X server or 'scrot' may not be installed. Result: {result}"
 
-        logger.info(f"Downloading remote file '{remote_tmp_path}' to '{input_data.save_path}'")
+        logger.info(
+            f"Downloading remote file '{remote_tmp_path}' to '{input_data.save_path}'"
+        )
         download_result = executor.download(remote_tmp_path, input_data.save_path)
         if "[ERROR]" in download_result:
             return f"[ERROR] Failed to download screenshot from remote host: {download_result}"
@@ -141,17 +166,21 @@ def capture_screenshot(input_data: CaptureScreenshotInput) -> str:
         logger.info(f"Cleaning up remote file: {cleanup_command}")
         executor.run(cleanup_command)
 
-        return f"Successfully captured screenshot from '{input_data.machine_name}' and saved to '{input_data.save_path}'."
+        return f"Successfully captured screenshot from '{input_data.machine_name}' " \
+               f"and saved to '{input_data.save_path}'."
 
     except Exception as e:
-        logger.exception(f"An unexpected error occurred during remote screenshot capture.")
+        logger.exception(
+            f"An unexpected error occurred during remote screenshot capture."
+        )
         return f"[ERROR] An unexpected error occurred: {e}"
 
 
 @register_tool(
     name="ocr_read_screen_area",
     input_model=OcrReadScreenAreaInput,
-    description="Captures a specified area of the screen (or the full screen) and returns any text found within it using OCR.",
+    description="Captures either a specified area of the screen, or the full screen,"
+                " and returns any text found within it using OCR.",
     tags=["ocr", "perception", "gui", "vision"],
     category="desktop",
     safe_mode=True,  # Read-only operation
@@ -171,17 +200,27 @@ def ocr_read_screen_area(input_data: OcrReadScreenAreaInput) -> str:
     :raises ToolExecutionError: If dependencies are missing or GUI is inaccessible.
     """
     if not PYAUTOGUI_AVAILABLE or not PYTESSERACT_AVAILABLE:
-        raise ToolExecutionError("OCR functionality requires pyautogui, Pillow, and pytesseract.")
+        raise ToolExecutionError(
+            "OCR functionality requires pyautogui, Pillow, and pytesseract."
+        )
     if pyautogui.size() == (0, 0):
-        raise ToolExecutionError("Could not determine screen size. Ensure you are in a graphical environment.")
+        raise ToolExecutionError(
+            "Could not determine screen size. Ensure you are in a graphical environment."
+        )
 
-    logger.info(f"Performing OCR on screen region: {input_data.region or 'Full Screen'}")
+    logger.info(
+        f"Performing OCR on screen region: {input_data.region or 'Full Screen'}"
+    )
     try:
         screenshot_image = pyautogui.screenshot(region=input_data.region)
         extracted_text = pytesseract.image_to_string(screenshot_image).strip()
 
         logger.info(f"OCR extracted {len(extracted_text)} characters.")
-        return extracted_text if extracted_text else "[INFO] OCR found no text in the specified area."
+        return (
+            extracted_text
+            if extracted_text
+            else "[INFO] OCR found no text in the specified area."
+        )
     except Exception as e:
         logger.exception(f"An error occurred during OCR operation.")
         return f"[ERROR] OCR operation failed: {e}"
@@ -213,14 +252,18 @@ def gui_find_and_read(input_data: GuiFindAndReadInput) -> str:
     if not PYAUTOGUI_AVAILABLE:
         raise ToolExecutionError("This tool requires pyautogui and opencv-python.")
 
-    logger.info(f"Attempting to find anchor image '{input_data.template_image_path}' to read text.")
+    logger.info(
+        f"Attempting to find anchor image '{input_data.template_image_path}' to read text."
+    )
 
     anchor_location = None
     search_start_time = time.time()
     while time.time() - search_start_time < input_data.timeout_seconds:
         try:
             # pyautogui.locateOnScreen returns a Box(left, top, width, height) object
-            anchor_location = pyautogui.locateOnScreen(input_data.template_image_path, confidence=0.9)
+            anchor_location = pyautogui.locateOnScreen(
+                input_data.template_image_path, confidence=0.9
+            )
             if anchor_location:
                 logger.info(f"Found anchor image at: {anchor_location}")
                 break
@@ -239,7 +282,7 @@ def gui_find_and_read(input_data: GuiFindAndReadInput) -> str:
         anchor_left + offset_left,
         anchor_top + offset_top,
         read_width,
-        read_height
+        read_height,
     )
 
     return ocr_read_screen_area(OcrReadScreenAreaInput(region=read_region))

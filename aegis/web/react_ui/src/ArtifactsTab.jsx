@@ -86,6 +86,9 @@ export default function ArtifactsTab() {
         <h2>📦 Task Artifacts</h2>
         <button onClick={fetchArtifacts}>Refresh List</button>
       </div>
+      <p style={{ opacity: 0.8, marginTop: '-0.5rem', marginBottom: '1.5rem' }}>
+        Browse the results of previously completed agent tasks. Each entry represents a single task run. Expand an item to view its final summary report and the detailed, machine-readable provenance log.
+      </p>
 
       {artifacts.length === 0 && <p>No artifacts found. Run an agent task to generate some.</p>}
 

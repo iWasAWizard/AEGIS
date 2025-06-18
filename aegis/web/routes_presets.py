@@ -34,11 +34,15 @@ def list_presets() -> list[dict]:
         try:
             data = yaml.safe_load(file.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                presets.append({
-                    "id": file.stem,
-                    "name": data.get("name", file.stem),
-                    "description": data.get("description", "No description."),
-                })
+                presets.append(
+                    {
+                        "id": file.stem,
+                        "name": data.get("name", file.stem),
+                        "description": data.get(
+                            "description", "No description provided."
+                        ),
+                    }
+                )
         except (yaml.YAMLError, Exception) as e:
             logger.error(f"Failed to load or parse preset '{file.name}': {e}")
             presets.append({"id": file.stem, "name": file.stem, "error": str(e)})
@@ -59,27 +63,32 @@ def save_preset(payload: dict):
     :rtype: dict
     :raises HTTPException: If the payload is invalid or cannot be saved.
     """
-    preset_id = payload.get("id") or payload.get("name", "unnamed").lower().replace(" ", "_")
+    preset_id = payload.get("id") or payload.get("name", "unnamed").lower().replace(
+        " ", "_"
+    )
     logger.info(f"Request to save preset with ID: '{preset_id}'")
 
     if not preset_id:
-        raise HTTPException(status_code=400, detail="Preset must have an 'id' or 'name'.")
+        raise HTTPException(
+            status_code=400, detail="Preset must have an 'id' or 'name'."
+        )
 
     PRESET_DIR.mkdir(exist_ok=True)
     path = PRESET_DIR / f"{preset_id}.yaml"
 
     try:
-        # Re-structure the payload to be saved
         data_to_save = {
             "name": payload.get("name"),
             "description": payload.get("description"),
-            **payload.get("config", {})  # Unpack the config dict
+            **payload.get("config", {}),
         }
         with path.open("w", encoding="utf-8") as f:
             yaml.safe_dump(data_to_save, f, indent=2, default_flow_style=False)
         logger.info(f"Preset '{preset_id}' saved successfully to '{path}'.")
     except Exception as e:
-        logger.exception(f"Failed to serialize or write preset '{preset_id}' to file: {e}")
+        logger.exception(
+            f"Failed to serialize or write preset '{preset_id}' to file: {e}"
+        )
         raise HTTPException(status_code=500, detail=f"Failed to save preset: {e}")
 
     return {"status": "saved", "path": str(path)}

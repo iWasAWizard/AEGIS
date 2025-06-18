@@ -1,0 +1,52 @@
+# aegis/models.yaml
+# Centralized LLM model definitions for AEGIS.
+
+models:
+  - key: "ollama-llama3-default" # User-friendly key for AEGIS's llm_model_name
+    name: "Llama 3 8B Instruct (via Ollama)"
+    # This is the actual model tag that the Ollama API expects for this configuration.
+    backend_model_name: "llama3:8b-instruct-q5_K_M" 
+    # Patterns to match against OLLAMA_MODEL env var if llm_model_name in preset is null
+    filename_pattern: ["llama3:8b-instruct", "llama3:8b-instruct-q5_k_m"] 
+    formatter_hint: "llama3" # Crucial: Tells format_prompt which template to use
+    default_max_context_length: 4096 # Model's typical max context
+    quant_example: "Q5_K_M"
+    use_case: "General-purpose assistant, strong reasoning"
+    # URL is optional for Ollama if using `ollama pull`, but good for future downloader tool
+    url: "https://huggingface.co/QuantFactory/Llama-3-8B-Instruct-GGUF/resolve/main/Llama-3-8B-Instruct-IQ4_XS.gguf"
+    notes: "AEGIS will use 'llama3:8b-instruct-q5_K_M' when querying Ollama for this key."
+
+  - key: "ollama-mistral-default"
+    name: "Mistral 7B Instruct (via Ollama)"
+    backend_model_name: "mistral:7b-instruct-v0.3-q4_K_M"
+    filename_pattern: ["mistral:7b-instruct-v0.3-q4_k_m", "mistral-7b-instruct-v0.3"]
+    formatter_hint: "mistral" 
+    default_max_context_length: 4096 
+    quant_example: "Q4_K_M"
+    use_case: "Fast general chat, good for coding"
+    url: "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/mistral-7b-instruct-v0.3.Q5_K_M.gguf"
+    notes: "AEGIS will use 'mistral:7b-instruct-v0.3-q4_K_M' when querying Ollama."
+
+  - key: "ollama-qwen-default"
+    name: "Qwen 1.5 7B Chat (via Ollama)"
+    backend_model_name: "qwen:7b-chat-v1.5-q5_K_M" # Example actual Ollama tag
+    filename_pattern: ["qwen:7b-chat-v1.5-q5_k_m", "qwen1.5-7b-chat-1.5"]
+    formatter_hint: "chatml" 
+    default_max_context_length: 4096
+    quant_example: "Q5_K_M"
+    use_case: "Multilingual, general chat"
+    url: "https://huggingface.co/Qwen/Qwen1.5-7B-Chat-GGUF/resolve/main/qwen1_5-7b-chat-q5_k_m.gguf"
+    notes: "AEGIS will use 'qwen:7b-chat-v1.5-q5_K_M' when querying Ollama."
+
+  # Example for a KoboldCPP configuration, if user switches backend_type
+  - key: "kobold-llama3-gguf" 
+    name: "Llama 3 8B Instruct (via KoboldCPP)"
+    # backend_model_name is not directly used in KoboldCPP /generate payload if model is pre-loaded.
+    # KOBOLDCPP_MODEL in .env (e.g., "Llama-3-8B-Instruct-IQ4_XS.gguf") dictates what Kobold loads.
+    # This entry is primarily for formatter_hint and default_max_context_length when llm_backend_type="koboldcpp".
+    backend_model_name: null # Or can be the GGUF filename as a convention
+    filename_pattern: ["Llama-3-8B-Instruct-IQ4_XS.gguf", "Llama-3-8B-Instruct"] # To match KOBOLDCPP_MODEL env var
+    formatter_hint: "llama3"
+    default_max_context_length: 4096
+    url: "https://huggingface.co/QuantFactory/Llama-3-8B-Instruct-GGUF/resolve/main/Llama-3-8B-Instruct-IQ4_XS.gguf" # Actual download URL
+    notes: "For KoboldCPP. Assumes KOBOLDCPP_MODEL env var points to a compatible GGUF."

@@ -8,3 +8,10 @@ paths:
   screenshots: "reports/screenshots"
   artifacts: "artifacts"
   logs: "logs"
+  index: "index"
+
+# Configuration for Retrieval-Augmented Generation (RAG) and memory.
+rag:
+  embedding_model: "all-MiniLM-L6-v2"
+  index_filename: "aegis_memory.faiss"
+  mapping_filename: "aegis_memory_mapping.json"

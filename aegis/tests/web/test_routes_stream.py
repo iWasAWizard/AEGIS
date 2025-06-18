@@ -17,9 +17,8 @@ def test_websocket_connection():
     connected_clients.clear()
     assert len(connected_clients) == 0
 
-    with client.websocket_connect("/api/ws/logs") as websocket:
-        # After connecting, the client should be in the list
-        assert len(connected_clients) == 1
+    # After connecting, the client should be in the list
+    assert len(connected_clients) == 1
 
     # After the 'with' block exits, the client should be disconnected and removed
     assert len(connected_clients) == 0

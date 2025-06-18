@@ -15,10 +15,16 @@ from aegis.agents.steps.check_termination import check_termination
 from aegis.agents.steps.execute_tool import execute_tool
 from aegis.agents.steps.reflect_and_plan import reflect_and_plan
 from aegis.agents.steps.summarize_result import summarize_result
-from aegis.agents.steps.verification import remediate_plan, verify_outcome
+from aegis.agents.steps.verification import (
+    remediate_plan,
+    verify_outcome,
+    route_after_verification,
+)
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+logger.info("Initializing aegis.schemas.node_registry module...")
+
 
 # This registry maps the `tool` name specified in a preset's `nodes` list
 # to the actual function that will be executed for that node.
@@ -35,6 +41,8 @@ AGENT_NODE_REGISTRY: Dict[str, Callable[..., Any]] = {
     "verify_outcome": verify_outcome,
     # The step that creates a recovery plan after a failure.
     "remediate_plan": remediate_plan,
+    # The new central router for the verification flow.
+    "route_after_verification": route_after_verification,
 }
 
 logger.info(

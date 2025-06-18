@@ -6,9 +6,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-# Mark this entire module to be skipped if scapy is not installed
-scapy_all = pytest.importorskip("scapy.all", reason="scapy not installed, skipping scapy tests")
-
 from aegis.tools.wrappers.scapy import (
     scapy_ping, ScapyPingInput,
     scapy_tcp_scan, ScapyTcpScanInput,
@@ -16,6 +13,9 @@ from aegis.tools.wrappers.scapy import (
     scapy_sniff, ScapySniffInput,
     scapy_craft_and_send, ScapyCraftSendInput
 )
+
+# Mark this entire module to be skipped if scapy is not installed
+scapy_all = pytest.importorskip("scapy.all", reason="scapy not installed, skipping scapy tests")
 
 
 # --- Fixtures ---

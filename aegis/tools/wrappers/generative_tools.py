@@ -83,7 +83,8 @@ async def summarize_text(input_data: TextContentInput) -> str:
     :rtype: str
     """
     logger.info("Requesting LLM to summarize text.")
-    system_prompt = "You are an expert summarizer. Your task is to read the following text and produce a clear, concise summary that captures the main points."
+    system_prompt = "You are an expert summarizer. Your task is to read the following text and produce a clear, " \
+                    "concise summary that captures the main points."
     return await llm_query(system_prompt=system_prompt, user_prompt=input_data.text)
 
 
@@ -100,7 +101,8 @@ async def rewrite_for_readability(input_data: TextContentInput) -> str:
     :rtype: str
     """
     logger.info("Requesting LLM to rewrite text for readability.")
-    system_prompt = "You are an expert technical writer. Your task is to rewrite the following text to make it clearer, more readable, and easier for a non-expert to understand. Retain the core meaning."
+    system_prompt = "You are an expert technical writer. Your task is to rewrite the following text to make it " \
+                    "clearer, more readable, and easier for a non-expert to understand. Retain the core meaning."
     return await llm_query(system_prompt=system_prompt, user_prompt=f"Please rewrite this:\n\n{input_data.text}")
 
 
@@ -117,7 +119,9 @@ async def extract_action_items(input_data: TextContentInput) -> str:
     :rtype: str
     """
     logger.info("Requesting LLM to extract action items from text.")
-    system_prompt = "You are an expert at identifying action items. Read the following text and extract a numbered list of all tasks, decisions, or follow-up actions mentioned. If no action items are present, respond with 'No action items found.'"
+    system_prompt = "You are an expert at identifying action items. Read the following text and extract a " \
+                    "numbered list of all tasks, decisions, or follow-up actions mentioned. If no action items " \
+                    "are present, respond with 'No action items found.'"
     return await llm_query(system_prompt=system_prompt,
                            user_prompt=f"Extract action items from this:\n\n{input_data.text}")
 
@@ -134,7 +138,8 @@ async def explain_code(input_data: CodeContentInput) -> str:
     :rtype: str
     """
     logger.info("Requesting LLM to explain a code snippet.")
-    system_prompt = "You are an expert code reviewer who excels at explaining complex code in simple terms. Provide a clear, high-level explanation of what the following code does."
+    system_prompt = "You are an expert code reviewer who excels at explaining complex code in simple terms. " \
+                    "Provide a clear, high-level explanation of what the following code does."
     return await llm_query(system_prompt=system_prompt,
                            user_prompt=f"Explain this code:\n\n```\n{input_data.code}\n```")
 
@@ -152,6 +157,8 @@ async def generate_tests_for_code(input_data: CodeContentInput) -> str:
     :rtype: str
     """
     logger.info("Requesting LLM to generate unit tests for code.")
-    system_prompt = "You are a senior software engineer who writes high-quality unit tests. Your task is to write a set of tests for the following Python code using the `pytest` framework. The tests should be complete, runnable, and cover key edge cases."
+    system_prompt = "You are a senior software engineer who writes high-quality unit tests. Your task is " \
+                    "to write a set of tests for the following Python code using the `pytest` framework. " \
+                    "The tests should be complete, runnable, and cover key edge cases."
     return await llm_query(system_prompt=system_prompt,
                            user_prompt=f"Write pytest unit tests for this code:\n\n```python\n{input_data.code}\n```")

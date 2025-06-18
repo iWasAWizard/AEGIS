@@ -3,8 +3,8 @@
 Unit tests for the dynamic type resolver utility.
 """
 import pytest
-from aegis.schemas.task_state import TaskState
 
+from aegis.agents.task_state import TaskState
 from aegis.exceptions import ConfigurationError
 from aegis.utils.type_resolver import resolve_dotted_type
 

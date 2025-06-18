@@ -8,6 +8,7 @@ recording the results in a structured history entry.
 """
 
 import asyncio
+import json  # Added for attempting to serialize complex tool_output
 import time
 from typing import Dict, Any, Callable, Literal
 
@@ -16,8 +17,8 @@ from pydantic import ValidationError
 from aegis.agents.task_state import HistoryEntry, TaskState
 from aegis.exceptions import ToolExecutionError, ToolNotFoundError
 from aegis.registry import get_tool
+from aegis.schemas.plan_output import AgentScratchpad
 from aegis.utils.logger import setup_logger
-from schemas.plan_output import AgentScratchpad
 
 logger = setup_logger(__name__)
 
@@ -47,22 +48,34 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
     :return: A dictionary with the updated history.
     :rtype: Dict[str, Any]
     """
-    logger.info("🛠️ Step: Execute Tool")
+    logger.info("🛠️  Step: Execute Tool")
+    logger.debug(f"Entering execute_tool with state: {repr(state)}")
     start_time = time.time()
     plan = state.latest_plan
 
-    # This should ideally not be hit if the graph is well-formed, but is a safeguard.
     if not plan:
         error_msg = "[ERROR] Execution failed: No plan found in state."
-        logger.error(error_msg, extra={"event_type": "InternalError", "reason": "Missing plan"})
-        plan = AgentScratchpad(
-            thought="No plan was provided to the executor.",
-            tool_name="finish",
-            tool_args={"reason": "Internal error: missing plan.", "status": "failure"},
+        logger.error(
+            error_msg, extra={"event_type": "InternalError", "reason": "Missing plan"}
         )
-        entry = HistoryEntry(plan=plan, observation=error_msg, status="failure", start_time=start_time,
-                             end_time=time.time())
-        return {"history": state.history + [entry]}
+        # Create a plan to finish with failure if no plan exists
+        plan = AgentScratchpad(
+            thought="Critical error: No plan was provided to the executor step. Terminating task.",
+            tool_name="finish",
+            tool_args={
+                "reason": "Internal error: missing plan during tool execution.",
+                "status": "failure",
+            },
+        )
+        entry = HistoryEntry(
+            plan=plan,
+            observation=error_msg,
+            status="failure",
+            start_time=start_time,
+            end_time=time.time(),
+            duration_ms=(time.time() - start_time) * 1000,
+        )
+        return {"history": state.history + [entry], "latest_plan": plan}
 
     tool_name = plan.tool_name
     tool_args = plan.tool_args
@@ -71,54 +84,136 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
 
     logger.info(
         f"Executing tool: `{tool_name}`",
-        extra={"event_type": "ToolStart", "tool_name": tool_name, "tool_args": tool_args},
+        extra={
+            "event_type": "ToolStart",
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+        },
     )
 
     if tool_name == "finish":
-        tool_output = f"Task finished by agent with reason: {tool_args.get('reason', 'No reason given.')}"
+        tool_output = f"Task signaled to finish by agent. Reason: '{tool_args.get('reason', 'No reason given.')}'. Status: '{tool_args.get('status', 'unknown')}'."
+        logger.info(tool_output)
     else:
         try:
-            tool_entry = get_tool(tool_name, safe_mode=state.runtime.safe_mode)
-            input_model = tool_entry.input_model(**tool_args)
-            tool_output = await asyncio.wait_for(
-                _run_tool(tool_entry.run, input_model),
-                timeout=state.runtime.timeout,
+            logger.debug(
+                f"Attempting to get tool: '{tool_name}' with safe_mode: {state.runtime.safe_mode}"
             )
+            tool_entry = get_tool(tool_name, safe_mode=state.runtime.safe_mode)
+            logger.debug(
+                f"Tool entry found for '{tool_name}'. Input model: {tool_entry.input_model.__name__}"
+            )
+
+            logger.debug(
+                f"Attempting to validate input_model for '{tool_name}' with args: {tool_args}"
+            )
+            input_model_instance = tool_entry.input_model(**tool_args)
+            logger.debug(f"Input model for '{tool_name}' validated successfully.")
+
+            timeout_duration = state.runtime.tool_timeout
+            if timeout_duration is None and tool_entry.timeout is not None:
+                timeout_duration = tool_entry.timeout
+
+            logger.debug(
+                f"Preparing to run tool '{tool_name}' via _run_tool. Timeout duration: {timeout_duration}s"
+            )
+            if timeout_duration is not None and timeout_duration <= 0:
+                logger.warning(
+                    f"Timeout for tool '{tool_name}' is non-positive ({timeout_duration}s). Running without asyncio.wait_for timeout."
+                )
+                timeout_duration = None
+
+            if timeout_duration:
+                tool_output = await asyncio.wait_for(
+                    _run_tool(tool_entry.run, input_model_instance),
+                    timeout=timeout_duration,
+                )
+            else:
+                tool_output = await _run_tool(tool_entry.run, input_model_instance)
+            logger.debug(
+                f"Tool '{tool_name}' _run_tool completed. Output type: {type(tool_output)}"
+            )
+
         except ToolNotFoundError as e:
-            tool_output = f"[ERROR] Tool lookup failed: {e}"
+            tool_output = f"[ERROR] Tool lookup failed for '{tool_name}': {e}"
+            status = "failure"
+            logger.error(f"ToolNotFoundError for '{tool_name}': {e}")
         except ValidationError as e:
             tool_output = f"[ERROR] Input validation failed for tool '{tool_name}': {e}"
+            status = "failure"
+            logger.error(
+                f"ValidationError for '{tool_name}' with args {tool_args}: {e}"
+            )
         except asyncio.TimeoutError:
-            tool_output = f"[ERROR] Tool '{tool_name}' timed out after {state.runtime.timeout} seconds."
+            effective_timeout_for_log = (
+                timeout_duration or "N/A (no timeout set for wait_for)"
+            )
+            tool_output = f"[ERROR] Tool '{tool_name}' timed out after {effective_timeout_for_log} seconds."
+            status = "failure"
+            logger.error(tool_output)
         except Exception as e:
-            wrapped_error = ToolExecutionError(f"Tool '{tool_name}' failed during execution: {e}")
+            logger.exception(
+                f"Unexpected generic exception caught in execute_tool for tool '{tool_name}' with args {tool_args}. Original error type: {type(e).__name__}, message: {e}",
+                exc_info=True,
+            )
+            wrapped_error = ToolExecutionError(
+                f"Tool '{tool_name}' failed during execution. ErrorType: {type(e).__name__}, Message: {str(e)}"
+            )
             tool_output = f"[ERROR] {wrapped_error}"
+            status = "failure"
 
-    # Determine status and log accordingly
-    if isinstance(tool_output, str) and tool_output.startswith("[ERROR]"):
-        status = "failure"
+    # Ensure tool_output (which becomes observation) is stringified for consistent history logging
+    if not isinstance(tool_output, str):
+        try:
+            if isinstance(tool_output, (dict, list)):
+                observation_str = json.dumps(tool_output, indent=2, default=str)
+            else:
+                observation_str = str(tool_output)
+        except Exception as serialization_exception:
+            observation_str = f"[OBSERVATION SERIALIZATION ERROR] Could not serialize tool output of type {type(tool_output).__name__}. Error: {serialization_exception}"
+            logger.error(
+                f"Failed to serialize tool_output for {tool_name} of type {type(tool_output)}. Original: {repr(tool_output)[:200]}"
+            )
+    else:
+        observation_str = tool_output
+
+    if status == "failure":
         logger.error(
-            f"Tool `{tool_name}` failed.",
-            extra={"event_type": "ToolEnd", "tool_name": tool_name, "status": "failure", "error_message": tool_output},
+            f"Tool `{tool_name}` failed. Observation/Error: {observation_str}",  # ADDED observation_str HERE
+            extra={
+                "event_type": "ToolEnd",
+                "tool_name": tool_name,
+                "tool_args": tool_args,
+                "status": "failure",
+                "error_message": observation_str,  # This will also contain the detailed error
+            },
         )
     else:
         logger.info(
             f"Tool `{tool_name}` executed successfully.",
-            extra={"event_type": "ToolEnd", "tool_name": tool_name, "status": "success",
-                   "output_preview": str(tool_output)[:200]},
+            extra={
+                "event_type": "ToolEnd",
+                "tool_name": tool_name,
+                "status": "success",
+                "output_preview": observation_str[:200]
+                + ("..." if len(observation_str) > 200 else ""),
+            },
         )
 
     end_time = time.time()
+    duration_ms = (end_time - start_time) * 1000
 
-    # Create the structured history entry
     history_entry = HistoryEntry(
         plan=plan,
-        observation=tool_output,
+        observation=observation_str,
         status=status,
         start_time=start_time,
         end_time=end_time,
-        duration_ms=(end_time - start_time) * 1000,
+        duration_ms=duration_ms,
     )
 
     new_history = state.history + [history_entry]
+    logger.debug(
+        f"Exiting execute_tool. New history length: {len(new_history)}. Last entry status: {status}"
+    )
     return {"history": new_history}

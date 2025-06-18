@@ -17,14 +17,15 @@ client = TestClient(app)
 
 # --- Fixtures ---
 
+
 @pytest.fixture
 def mock_load_agent_config(monkeypatch):
     """Mocks the load_agent_config utility."""
-    mock = MagicMock(return_value=AgentConfig(
-        state_type=MagicMock(),
-        entrypoint="test",
-        runtime=RuntimeExecutionConfig()
-    ))
+    mock = MagicMock(
+        return_value=AgentConfig(
+            state_type=MagicMock(), entrypoint="test", runtime=RuntimeExecutionConfig()
+        )
+    )
     monkeypatch.setattr("aegis.web.routes_launch.load_agent_config", mock)
     return mock
 
@@ -45,15 +46,16 @@ def mock_agent_graph(monkeypatch):
 
 # --- Tests ---
 
+
 def test_launch_task_success(mock_load_agent_config, mock_agent_graph):
     """Test a successful task launch from a valid payload."""
-    final_state_summary = {"final_summary": "Task completed successfully."}
+    final_state_summary = {
+        "final_summary": "Task completed successfully.",
+        "history": [],
+    }
     mock_agent_graph.return_value = final_state_summary
 
-    payload = {
-        "task": {"prompt": "Test a successful launch"},
-        "config": "default"
-    }
+    payload = {"task": {"prompt": "Test a successful launch"}, "config": "default"}
 
     response = client.post("/api/launch", json=payload)
 
@@ -69,10 +71,7 @@ def test_launch_task_config_error(mock_load_agent_config):
     """Test that a ConfigurationError returns a 400 Bad Request."""
     mock_load_agent_config.side_effect = ConfigurationError("Invalid preset name")
 
-    payload = {
-        "task": {"prompt": "This will fail loading"},
-        "config": "bad_preset"
-    }
+    payload = {"task": {"prompt": "This will fail loading"}, "config": "bad_preset"}
 
     response = client.post("/api/launch", json=payload)
 
@@ -87,7 +86,7 @@ def test_launch_task_planner_error(mock_load_agent_config, mock_agent_graph):
 
     payload = {
         "task": {"prompt": "This will fail during planning"},
-        "config": "default"
+        "config": "default",
     }
 
     response = client.post("/api/launch", json=payload)

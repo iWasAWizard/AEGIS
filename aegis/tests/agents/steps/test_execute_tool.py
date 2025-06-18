@@ -10,8 +10,8 @@ from pydantic import BaseModel
 from aegis.agents.steps.execute_tool import execute_tool
 from aegis.agents.task_state import TaskState
 from aegis.exceptions import ToolNotFoundError
+from aegis.schemas.plan_output import AgentScratchpad
 from aegis.schemas.runtime import RuntimeExecutionConfig
-from schemas.plan_output import AgentScratchpad
 
 
 class MockInput(BaseModel):

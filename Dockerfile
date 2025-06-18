@@ -3,8 +3,8 @@ FROM node:23-alpine AS ui-builder
 
 WORKDIR /app
 
-COPY aegis/web/react_ui/package.json aegis/web/react_ui/package-lock.json* ./aegis/web/react_ui/
-RUN cd aegis/web/react_ui && npm install
+COPY aegis/web/react_ui/package.json aegis/web/react_ui/package-lock.json* aegis/web/react_ui/vite.config.js ./aegis/web/react_ui/
+RUN cd aegis/web/react_ui && npm install --legacy-peer-deps
 
 COPY aegis/web/react_ui/ ./aegis/web/react_ui/
 
@@ -31,8 +31,11 @@ RUN wget -q https://github.com/mozilla/geckodriver/releases/download/v0.36.0/gec
 
 COPY . .
 
-RUN chmod +x ./wait-for-ollama.sh
+# Ensure wait-for-ollama.sh is executable, remove kobold one if present
+RUN rm -f ./wait-for-koboldcpp.sh && \
+    chmod +x ./wait-for-ollama.sh
 
 COPY --from=ui-builder /app/aegis/web/react_ui/dist /app/aegis/web/react_ui/dist
 
-CMD ["./wait-for-ollama.sh"]
+# Revert CMD to use wait-for-ollama.sh
+CMD ["./wait-for-ollama.sh", "python", "-m", "aegis.serve_dashboard"]

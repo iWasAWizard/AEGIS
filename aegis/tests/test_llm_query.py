@@ -46,7 +46,7 @@ async def test_llm_query_http_error(mock_post):
     )
     mock_post.return_value.__aenter__.return_value = mock_response
 
-    with pytest.raises(RuntimeError, match="Failed to query Ollama"):
+    with pytest.raises(RuntimeError, match="Failed to query KoboldCPP"):
         await llm_query("system", "user")
 
 
@@ -71,5 +71,5 @@ async def test_llm_query_missing_response_field(mock_post):
     mock_response.json.return_value.set_result({"error": "malformed"})
     mock_post.return_value.__aenter__.return_value = mock_response
 
-    with pytest.raises(RuntimeError, match="Invalid Ollama response format"):
+    with pytest.raises(RuntimeError, match="Invalid KoboldCPP response format"):
         await llm_query("system", "user")

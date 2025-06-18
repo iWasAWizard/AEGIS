@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 
 from aegis.agents.task_state import HistoryEntry, TaskState
+from aegis.schemas.plan_output import AgentScratchpad
 from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.utils.provenance import generate_provenance_report, _get_final_status
-from schemas.plan_output import AgentScratchpad
 
 
 @pytest.fixture

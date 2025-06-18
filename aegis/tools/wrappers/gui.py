@@ -73,7 +73,7 @@ class GuiFindAndClickInput(BaseModel):
     """
     template_image_path: str = Field(..., description="The file path to the small image to find on the screen.")
     action: Literal["click", "double_click", "move_to"] = Field("click",
-                                                                description="The mouse action to perform on the found image.")
+                                                                description="The mouse action to perform on the image.")
     confidence: float = Field(0.9, ge=0.1, le=1.0,
                               description="The confidence level for image matching (e.g., 0.9 for 90%).")
     timeout_seconds: int = Field(10, description="How many seconds to wait for the image to appear on screen.")

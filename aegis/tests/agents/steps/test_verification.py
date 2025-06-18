@@ -2,7 +2,7 @@
 """
 Unit tests for the agent's verification and remediation steps.
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
 from pydantic import BaseModel
@@ -10,8 +10,8 @@ from pydantic import BaseModel
 from aegis.agents.steps.verification import verify_outcome, remediate_plan
 from aegis.agents.task_state import TaskState, HistoryEntry
 from aegis.exceptions import ToolError, PlannerError
+from aegis.schemas.plan_output import AgentScratchpad
 from aegis.schemas.runtime import RuntimeExecutionConfig
-from schemas.plan_output import AgentScratchpad
 
 
 class DummyInput(BaseModel):

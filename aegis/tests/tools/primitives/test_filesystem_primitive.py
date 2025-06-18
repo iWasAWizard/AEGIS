@@ -7,22 +7,29 @@ from unittest.mock import MagicMock
 import pytest
 
 from aegis.tools.primitives.primitive_filesystem import (
-    create_random_file, CreateRandomFileInput,
-    diff_text_blocks, DiffTextBlocksInput
+    create_random_file,
+    CreateRandomFileInput,
+    diff_text_blocks,
+    DiffTextBlocksInput,
 )
+from aegis.tools.primitives.primitive_system import RunLocalCommandInput
 
 
 # --- Fixtures ---
+
 
 @pytest.fixture
 def mock_run_local_command(monkeypatch):
     """Mocks the underlying run_local_command primitive."""
     mock = MagicMock(return_value="dd command output")
-    monkeypatch.setattr("aegis.tools.primitives.primitive_filesystem.run_local_command", mock)
+    monkeypatch.setattr(
+        "aegis.tools.primitives.primitive_filesystem.run_local_command", mock
+    )
     return mock
 
 
 # --- Tests ---
+
 
 @pytest.mark.parametrize(
     "size_input, expected_dd_command",
@@ -33,20 +40,19 @@ def mock_run_local_command(monkeypatch):
         ("512", "dd if=/dev/urandom of='test.dat' bs=1K count=1"),
         ("1024", "dd if=/dev/urandom of='test.dat' bs=1K count=1"),
         ("0", "dd if=/dev/urandom of='test.dat' bs=1K count=0"),
-    ]
+    ],
 )
-def test_create_random_file_command_generation(mock_run_local_command, size_input, expected_dd_command):
+def test_create_random_file_command_generation(
+    mock_run_local_command, size_input, expected_dd_command
+):
     """Verify that create_random_file constructs the correct dd command for various size inputs."""
     input_data = CreateRandomFileInput(file_path="test.dat", size=size_input)
     create_random_file(input_data)
 
-    # Check that the mock was called
     mock_run_local_command.assert_called_once()
 
-    # Get the RunLocalCommandInput object passed to the mock
     call_args = mock_run_local_command.call_args[0][0]
-
-    # Assert the generated command string is correct
+    assert isinstance(call_args, RunLocalCommandInput)
     assert call_args.command == expected_dd_command
 
 
@@ -65,7 +71,6 @@ def test_diff_text_blocks():
     input_data = DiffTextBlocksInput(old=old_text, new=new_text)
     result = diff_text_blocks(input_data)
 
-    # Check for essential components of a unified diff
     assert "--- old" in result
     assert "+++ new" in result
     assert "@@ -1,3 +1,3 @@" in result

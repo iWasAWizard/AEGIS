@@ -35,17 +35,17 @@ def setup_test_logger(tmp_path: Path):
 
 def test_task_id_filter():
     """Verify the TaskIdFilter correctly injects the task_id into a LogRecord."""
-    filter = TaskIdFilter()
+    task_id_filter = TaskIdFilter()
     record = logging.LogRecord(name="test", level=logging.INFO, pathname="", lineno=0, msg="", args=(), exc_info=None)
 
     # Case 1: Context is not set
     task_id_context.set(None)
-    filter.filter(record)
+    task_id_filter.filter(record)
     assert record.task_id is None
 
     # Case 2: Context is set
     task_id_context.set("test-123")
-    filter.filter(record)
+    task_id_filter.filter(record)
     assert record.task_id == "test-123"
 
 

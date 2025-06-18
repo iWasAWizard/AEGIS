@@ -6,9 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Mark this entire module to be skipped if pwntools is not installed
-pwn = pytest.importorskip("pwn", reason="pwntools not installed, skipping pwn tests")
-
 from aegis.tools.wrappers.pwn import (
     pwn_remote_connect, PwnRemoteConnectInput,
     pwn_shellcode_craft, PwnShellcodeCraftInput,
@@ -16,6 +13,9 @@ from aegis.tools.wrappers.pwn import (
     pwn_elf_inspector, PwnElfInspectorInput,
     pwn_process_interaction, PwnProcessInteractionInput,
 )
+
+# Mark this entire module to be skipped if pwntools is not installed
+pwn = pytest.importorskip("pwn", reason="pwntools not installed, skipping pwn tests")
 
 
 # --- Fixtures ---

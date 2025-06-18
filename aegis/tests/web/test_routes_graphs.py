@@ -54,8 +54,8 @@ def test_upload_graph(mock_graphs_dir):
     upload_content = b'{"entrypoint": "new", "nodes": [{"id": "new"}]}'
     file_to_upload = ("new_graph.json", BytesIO(upload_content), "application/json")
 
-    with TestClient(app) as client:
-        response = client.post("/api/graphs/upload", files={"file": file_to_upload})
+    with TestClient(app) as test_client:
+        response = test_client.post("/api/graphs/upload", files={"file": file_to_upload})
 
     assert response.status_code == 200
     assert response.json()["filename"] == "new_graph.json"

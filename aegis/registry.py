@@ -17,6 +17,7 @@ from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 load_dotenv()
+logger.info("Initializing aegis.registry module...")
 
 
 class ToolEntry(BaseModel):
@@ -61,6 +62,7 @@ class ToolEntry(BaseModel):
 
     class Config:
         """Pydantic configuration to allow arbitrary types like callables."""
+
         arbitrary_types_allowed = True
 
 
@@ -97,15 +99,15 @@ def validate_input_model(model: Type[BaseModel]) -> None:
 
 
 def register_tool(
-        name: str,
-        input_model: Type[BaseModel],
-        tags: List[str],
-        description: str,
-        safe_mode: bool = True,
-        purpose: Optional[str] = None,
-        category: Optional[str] = None,
-        timeout: Optional[int] = None,
-        retries: int = 0,
+    name: str,
+    input_model: Type[BaseModel],
+    tags: List[str],
+    description: str,
+    safe_mode: bool = True,
+    purpose: Optional[str] = None,
+    category: Optional[str] = None,
+    timeout: Optional[int] = None,
+    retries: int = 0,
 ) -> Callable[[Callable[[Any], Any]], Callable[[Any], Any]]:
     """A decorator to register a function as a tool for the agent system.
 
@@ -139,7 +141,9 @@ def register_tool(
         if not callable(func):
             raise TypeError(f"Registered tool '{name}' must be a callable function.")
         if name in TOOL_REGISTRY:
-            raise ValueError(f"A tool with the name '{name}' is already registered.")
+            logger.warning(
+                f"A tool with the name '{name}' is already registered. Overwriting."
+            )
 
         validate_input_model(input_model)
         normalized_tags = normalize_tags(tags)
@@ -157,7 +161,7 @@ def register_tool(
             retries=retries,
         )
         TOOL_REGISTRY[name] = entry
-        logger.info(
+        logger.debug(
             f"Registered tool: {name} | "
             f"Category: {category or 'N/A'} | "
             f"Safe: {safe_mode}"
@@ -181,7 +185,9 @@ def get_tool(name: str, safe_mode: bool = True) -> ToolEntry:
     tool = TOOL_REGISTRY.get(name)
     if tool is None:
         logger.warning(f"Requested tool '{name}' not found in registry.")
-        raise ToolNotFoundError(f"Tool '{name}' not found in registry.")
+        raise ToolNotFoundError(
+            f"Tool '{name}' not found in registry. Please ensure it is spelled correctly and registered."
+        )
     if safe_mode and not tool.safe_mode:
         logger.warning(
             f"Tool '{name}' is not available in safe_mode, but safe_mode is active."
@@ -219,4 +225,4 @@ def log_registry_contents() -> None:
             f"  - Input Model: {tool.input_model.__name__}\n"
             f"  - Safe: {tool.safe_mode}"
         )
-    logger.info("--- End of Registry Contents ---")
+    logger.info(f"--- End of Registry Contents ({len(TOOL_REGISTRY)} tools) ---")

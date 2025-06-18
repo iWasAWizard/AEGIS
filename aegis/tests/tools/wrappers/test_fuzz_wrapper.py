@@ -10,7 +10,7 @@ import pytest
 import requests
 from pydantic import BaseModel
 
-from aegis.registry import ToolEntry
+from aegis.registry import ToolEntry, TOOL_REGISTRY
 from aegis.tools.wrappers.fuzz import (
     generate_payload,
     fuzz_external_command, FuzzExternalCommandInput,

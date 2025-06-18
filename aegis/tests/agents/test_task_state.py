@@ -3,8 +3,8 @@
 Unit tests for the TaskState data model.
 """
 from aegis.agents.task_state import TaskState, HistoryEntry
+from aegis.schemas.plan_output import AgentScratchpad
 from aegis.schemas.runtime import RuntimeExecutionConfig
-from schemas.plan_output import AgentScratchpad
 
 
 def test_task_state_initialization():

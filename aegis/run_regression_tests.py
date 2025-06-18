@@ -27,50 +27,53 @@ from aegis.utils.config_loader import load_agent_config
 from aegis.utils.log_sinks import task_id_context
 from aegis.utils.tool_loader import import_all_tools
 
-# Setup
 app = typer.Typer()
 console = Console()
-
-# Ensure all tools are available for the agent
-import_all_tools()
 
 
 async def run_single_test(test_path: Path) -> bool:
     """
     Loads and executes a single regression test file.
 
-    This function orchestrates a full, end-to-end agent run for a single
-    test case defined in a YAML file. It is responsible for loading the
-    test, running the agent, and then verifying the final status from the
-    generated provenance report.
-
     :param test_path: The path to the test case's YAML file.
-    :type test_path: Path
     :return: True if the test passed, False otherwise.
-    :rtype: bool
     """
     console.print(f"▶️  Running test: [cyan]{test_path.name}[/cyan]")
     task_id = f"test-{test_path.stem}-{uuid.uuid4().hex[:6]}"
     task_id_context.set(task_id)
 
     try:
-        # 1. Load the test case from YAML
-        launch_payload = LaunchRequest.model_validate(yaml.safe_load(test_path.read_text()))
-        # Override task_id for this specific run
+        launch_payload = LaunchRequest.model_validate(
+            yaml.safe_load(test_path.read_text())
+        )
         launch_payload.task.task_id = task_id
 
-        # 2. Configure and run the agent graph
         preset_config: AgentConfig = load_agent_config(
-            profile=launch_payload.config if isinstance(launch_payload.config, str) else "default"
+            profile=(
+                launch_payload.config
+                if isinstance(launch_payload.config, str)
+                else "default"
+            )
         )
         runtime_config = preset_config.runtime
         if launch_payload.iterations is not None:
             runtime_config.iterations = launch_payload.iterations
 
         initial_state = TaskState(
-            task_id=task_id, task_prompt=launch_payload.task.prompt, runtime=runtime_config
+            task_id=task_id,
+            task_prompt=launch_payload.task.prompt,
+            runtime=runtime_config,
         )
-        graph_structure = AgentGraphConfig(**preset_config.model_dump())
+
+        graph_structure = AgentGraphConfig(
+            state_type=preset_config.state_type,
+            entrypoint=preset_config.entrypoint,
+            nodes=preset_config.nodes,
+            edges=preset_config.edges,
+            condition_node=preset_config.condition_node,
+            condition_map=preset_config.condition_map,
+            middleware=preset_config.middleware,
+        )
         agent_graph = AgentGraph(graph_structure).build_graph()
         await agent_graph.ainvoke(initial_state.model_dump())
 
@@ -79,12 +82,14 @@ async def run_single_test(test_path: Path) -> bool:
         return False
     except Exception as e:
         console.print(f"  [bold red]UNEXPECTED SCRIPT ERROR:[/bold red] {e}")
+        console.print_exception(show_locals=False)
         return False
 
-    # 3. Verify the outcome from the provenance report
     provenance_path = Path("reports") / task_id / "provenance.json"
     if not provenance_path.exists():
-        console.print(f"  [bold red]FAIL:[/bold red] Provenance report not found at '{provenance_path}'")
+        console.print(
+            f"  [bold red]FAIL:[/bold red] Provenance report not found at '{provenance_path}'"
+        )
         return False
 
     try:
@@ -96,11 +101,15 @@ async def run_single_test(test_path: Path) -> bool:
             console.print(f"  [bold green]PASS:[/bold green] Agent reported success.")
             return True
         else:
-            console.print(f"  [bold red]FAIL:[/bold red] Agent reported status: [yellow]{final_status}[/yellow]")
+            console.print(
+                f"  [bold red]FAIL:[/bold red] Agent reported status: [yellow]{final_status}[/yellow]"
+            )
             return False
 
     except (IOError, json.JSONDecodeError) as e:
-        console.print(f"  [bold red]FAIL:[/bold red] Could not read or parse provenance report: {e}")
+        console.print(
+            f"  [bold red]FAIL:[/bold red] Could not read or parse provenance report: {e}"
+        )
         return False
 
 
@@ -108,23 +117,22 @@ async def run_single_test(test_path: Path) -> bool:
 def main():
     """
     Discovers and runs all regression tests, then reports the results.
-
-    This is the main entry point for the regression test suite. It finds all
-    `test_*.yaml` files in the `tests/regression` directory, executes each one
-    sequentially, and provides a final summary of passed and failed tests.
-    It will exit with a non-zero status code if any test fails, making it
-    suitable for use in CI/CD pipelines.
     """
+    import_all_tools()
+
     console.rule("[bold blue]AEGIS Regression Test Suite[/bold blue]")
     regression_dir = Path("tests/regression")
 
     if not regression_dir.is_dir():
-        console.print(f"[bold red]Error:[/bold red] Regression test directory not found at '{regression_dir}'")
+        console.print(
+            f"[bold red]Error:[/bold red] Regression test directory not found at '{regression_dir}'"
+        )
         raise typer.Exit(1)
 
-    # Set executable permissions for any test scripts
     for script_path in regression_dir.glob("*.py"):
-        console.print(f"Setting executable permissions for [cyan]{script_path.name}[/cyan]...")
+        console.print(
+            f"Setting executable permissions for [cyan]{script_path.name}[/cyan]..."
+        )
         st = os.stat(script_path)
         os.chmod(script_path, st.st_mode | stat.S_IEXEC)
 

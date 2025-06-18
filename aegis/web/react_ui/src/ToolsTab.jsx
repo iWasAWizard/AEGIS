@@ -29,6 +29,9 @@ export default function ToolsTab() {
   return (
     <div>
       <h2 style={{ fontSize: '1.2em', marginBottom: '1rem' }}>🧰 Available Tools</h2>
+      <p style={{ opacity: 0.8, marginTop: '-0.5rem', marginBottom: '1.5rem' }}>
+        This is the inventory of all capabilities available to the agent. Each tool has a specific purpose, a defined input schema, and is categorized for clarity. The agent's planner uses this information to select the right tool for each step of a task.
+      </p>
       {error && <p style={{ color: '#ff6666' }}>Error loading tools: {error}</p>}
       {!error && tools.length === 0 ? (
         <p>No tools are registered or the API is not responding.</p>

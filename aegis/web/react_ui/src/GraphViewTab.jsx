@@ -41,7 +41,13 @@ const GraphViewTab = () => {
     useEffect(() => {
         fetch('/api/graphs/')
             .then((res) => res.json())
-            .then((data) => setPresets(data.map(p => ({ id: p, name: p.replace('.yaml', '') }))))
+            .then((data) => {
+                const presetOptions = data.map(p => ({ id: p, name: p.replace('.yaml', '') }));
+                setPresets(presetOptions);
+                if (presetOptions.length > 0) {
+                    setSelectedPreset(presetOptions[0].id);
+                }
+            })
             .catch(err => console.error("Failed to fetch presets:", err));
     }, []);
 
@@ -113,8 +119,11 @@ const GraphViewTab = () => {
     return (
         <div>
             <h2 style={{ fontSize: '1.2em', marginBottom: '1rem' }}>🗺️ Agent Graph Visualizer</h2>
+            <p style={{ opacity: 0.8, marginTop: '-0.5rem', marginBottom: '1.5rem' }}>
+              This tab renders a visual representation of an agent's behavior preset. Each graph shows the nodes (steps) and edges (transitions) that define how the agent operates. Use the dropdown to explore different agent workflows.
+            </p>
             <div style={{ marginBottom: '1rem' }}>
-                <label htmlFor="preset-selector" style={{ marginRight: '0.5rem' }}>Select a Preset:</label>
+                <label htmlFor="preset-selector" style={{ marginRight: '0.5rem' }}>Select a Preset to View:</label>
                 <select
                     id="preset-selector"
                     value={selectedPreset}
