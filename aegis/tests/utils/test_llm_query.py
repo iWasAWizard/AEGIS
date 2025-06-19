@@ -5,8 +5,8 @@ Unit tests for the core LLM query utility (now targeting KoboldCPP).
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 import aiohttp  # Import aiohttp directly for ClientError
+import pytest
 
 from aegis.exceptions import PlannerError, ConfigurationError
 from aegis.schemas.runtime import RuntimeExecutionConfig

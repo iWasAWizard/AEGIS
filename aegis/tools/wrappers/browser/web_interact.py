@@ -14,18 +14,18 @@ from pydantic import BaseModel, Field
 # Selenium imports no longer needed directly here for Options, By, Select, WebDriverWait, if executor handles more
 from selenium import webdriver  # Still needed for type hint in action func
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
+from selenium.webdriver.support.ui import Select, WebDriverWait
 
-# from selenium.webdriver.firefox.options import Options # Handled by executor
-# from selenium.common.exceptions import TimeoutException, WebDriverException # Handled by executor
-
-from aegis.registry import register_tool
-from aegis.utils.logger import setup_logger
 from aegis.exceptions import ToolExecutionError
 
 # Import SeleniumExecutor
 from aegis.executors.selenium import SeleniumExecutor
+from aegis.registry import register_tool
+from aegis.utils.logger import setup_logger
+
+# from selenium.webdriver.firefox.options import Options # Handled by executor
+# from selenium.common.exceptions import TimeoutException, WebDriverException # Handled by executor
 
 logger = setup_logger(__name__)
 
@@ -87,7 +87,8 @@ def web_interact(input_data: WebInteractionInput) -> str:
     :raises ToolExecutionError: If SeleniumExecutor encounters an error.
     """
     logger.info(
-        f"Performing web action: '{input_data.action}' on selector: '{input_data.selector or input_data.url}' using {input_data.browser or 'firefox'}"
+        f"Performing web action: '{input_data.action}' on selector: "
+        f"'{input_data.selector or input_data.url}' using {input_data.browser or 'firefox'}"
     )
 
     # For navigate, the implicit_wait of the executor handles load timing.

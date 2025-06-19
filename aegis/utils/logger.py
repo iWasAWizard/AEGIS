@@ -7,6 +7,7 @@ provide rich, context-aware logging to both the console and structured files.
 It ensures a consistent logging experience across the entire application.
 """
 import logging
+import os
 import sys
 from typing import Any, MutableMapping
 
@@ -72,9 +73,8 @@ class StructuredLoggerAdapter(logging.LoggerAdapter):
     """Extends the standard logging adapter to support structured logging.
 
     This adapter allows passing a dictionary of structured data via the `extra`
-    parameter in a log call. It nests this data under a specific key to avoid
-
-    conflicts with the standard logging system's own use of `extra`.
+    parameter in a log call. It ensures this data is correctly prepared
+    for the `JsonlFileHandler`.
     """
 
     def process(
@@ -82,8 +82,10 @@ class StructuredLoggerAdapter(logging.LoggerAdapter):
     ) -> tuple[str, MutableMapping[str, Any]]:
         """Processes the log message and keyword arguments.
 
-        If `extra` is found in the kwargs, it is moved to a `extra_data` key
-        to be safely handled by the `JsonlFileHandler`.
+        If an 'extra' dictionary is passed in the logging call, this method
+        wraps it under an 'extra_data' key within the 'extra' argument that
+        the underlying logger will process. This allows the `JsonlFileHandler`
+        to find the custom structured data at `record.extra_data`.
 
         :param msg: The original log message.
         :type msg: str
@@ -92,8 +94,16 @@ class StructuredLoggerAdapter(logging.LoggerAdapter):
         :return: The processed message and keyword arguments.
         :rtype: tuple[str, MutableMapping[str, Any]]
         """
-        if "extra" in kwargs:
-            kwargs["extra_data"] = kwargs.pop("extra")
+        original_extra_content = kwargs.get("extra")
+        if original_extra_content is not None:
+            # The underlying logger expects 'extra' to be a dict whose items
+            # become attributes of the LogRecord. We want our custom data
+            # to be accessible as record.extra_data by the JsonlFileHandler.
+            # So, we tell the logger: "create an attribute named 'extra_data'
+            # on the LogRecord, and its value should be the dictionary that
+            # was originally passed as 'extra' to the adapter's log call."
+            kwargs["extra"] = {"extra_data": original_extra_content}
+        # If no 'extra' was in the original call, kwargs is passed as is.
         return msg, kwargs
 
 
@@ -115,7 +125,10 @@ def setup_logger(
 
     if not _LOGGING_CONFIGURED:
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
+        # Set level from env or default to INFO
+        log_level_str = os.getenv("AEGIS_LOG_LEVEL", "info").upper()
+        level = getattr(logging, log_level_str, logging.INFO)
+        root_logger.setLevel(level)
 
         if root_logger.hasHandlers():
             root_logger.handlers.clear()
@@ -130,8 +143,14 @@ def setup_logger(
         jsonl_handler = JsonlFileHandler()
         root_logger.addHandler(jsonl_handler)
 
-        root_logger.info("Root logger configured with Console and JSONL handlers.")
+        root_logger.info(
+            f"Root logger configured with Console and JSONL handlers. Level: {log_level_str}"
+        )
         _LOGGING_CONFIGURED = True
 
-    logger = logging.getLogger(name)
-    return StructuredLoggerAdapter(logger, {})
+    logger_instance = logging.getLogger(name)
+    # Ensure child loggers also respect the root logger's level setting by default
+    # unless explicitly set otherwise. If root is DEBUG, child will pass DEBUG.
+    # If root is INFO, child will pass INFO but not DEBUG unless child.setLevel(DEBUG) is called.
+    # This is standard logging behavior. Here, we ensure our adapter doesn't change it.
+    return StructuredLoggerAdapter(logger_instance, {})

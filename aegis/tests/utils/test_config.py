@@ -22,12 +22,7 @@ def clean_config_cache():
 @pytest.fixture
 def mock_config_file(tmp_path: Path, monkeypatch):
     """Creates a temporary config.yaml file for testing."""
-    config_content = {
-        "paths": {
-            "reports": "test_reports/",
-            "logs": "test_logs/"
-        }
-    }
+    config_content = {"paths": {"reports": "test_reports/", "logs": "test_logs/"}}
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.dump(config_content))
 

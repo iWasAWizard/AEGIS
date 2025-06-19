@@ -2,7 +2,7 @@
 """
 Unit tests for the external, third-party LLM wrapper tools (OpenAI).
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

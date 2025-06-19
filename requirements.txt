@@ -4,7 +4,7 @@ langgraph
 typer
 uvicorn
 fastapi
-requests
+requests==2.32.4
 pydantic
 pyyaml
 matplotlib

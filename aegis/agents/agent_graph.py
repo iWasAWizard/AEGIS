@@ -80,12 +80,14 @@ class AgentGraph:
                 if source_node_id_for_conditional == "execute":
                     decision_function_for_routing = check_termination
                     logger.debug(
-                        f"Using 'check_termination' as decision function for conditional edge from '{source_node_id_for_conditional}'."
+                        f"Using 'check_termination' as decision function for conditional edge from "
+                        f"'{source_node_id_for_conditional}'."
                     )
                 elif source_node_id_for_conditional == "verify":
                     decision_function_for_routing = route_after_verification
                     logger.debug(
-                        f"Using 'route_after_verification' as decision function for conditional edge from '{source_node_id_for_conditional}'."
+                        f"Using 'route_after_verification' as decision function for conditional edge from "
+                        f"'{source_node_id_for_conditional}'."
                     )
                 else:
                     # This generic fallback might be hit if you create new presets
@@ -106,11 +108,13 @@ class AgentGraph:
                             cond_node_config.tool
                         ]
                         logger.debug(
-                            f"Using tool '{cond_node_config.tool}' from node '{source_node_id_for_conditional}' as decision function."
+                            f"Using tool '{cond_node_config.tool}' from node '{source_node_id_for_conditional}' "
+                            f"as decision function."
                         )
                     else:
                         raise ConfigurationError(
-                            f"Could not determine decision function for conditional node '{source_node_id_for_conditional}'. "
+                            f"Could not determine decision function for conditional node "
+                            f"'{source_node_id_for_conditional}'. "
                             f"Ensure it's correctly defined in preset or handled explicitly here."
                         )
 
@@ -120,7 +124,8 @@ class AgentGraph:
                     self.config.condition_map,
                 )
                 logger.debug(
-                    f"Added conditional edge from '{source_node_id_for_conditional}' with map: {self.config.condition_map} using function "
+                    f"Added conditional edge from '{source_node_id_for_conditional}' "
+                    f"with map: {self.config.condition_map} using function "
                     f"'{decision_function_for_routing.__name__}'"
                 )
 

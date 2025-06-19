@@ -6,24 +6,16 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from selenium import webdriver
 
 from pydantic import BaseModel, Field
+from selenium import webdriver
+from selenium.webdriver.common.by import By
 
-# Selenium imports no longer needed directly here
-# from selenium import webdriver
-# from selenium.common.exceptions import WebDriverException
-# from selenium.webdriver.common.by import By
-# from selenium.webdriver.firefox.options import Options
-
+from aegis.exceptions import ToolExecutionError
+from aegis.executors.selenium import SeleniumExecutor
 from aegis.registry import register_tool
 from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
-from aegis.exceptions import ToolExecutionError
-
-# Import SeleniumExecutor
-from aegis.executors.selenium import SeleniumExecutor
-
 
 logger = setup_logger(__name__)
 
@@ -96,7 +88,7 @@ def capture_web_state(input_data: CaptureWebStateInput) -> str:
         # Let's use option 2 for now for simplicity, then consider enhancing executor.
 
         def _capture_action(
-            driver: webdriver.remote.webdriver.WebDriver,
+            driver: webdriver,
         ) -> tuple[dict, str]:
             driver.get(input_data.url)  # Navigate first
             title = driver.title

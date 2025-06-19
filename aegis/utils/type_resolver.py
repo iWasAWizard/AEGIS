@@ -42,4 +42,6 @@ def resolve_dotted_type(dotted_path: str):
         return resolved_type
     except (ImportError, AttributeError) as e:
         logger.exception(f"Unable to resolve type from '{dotted_path}': {e}")
-        raise ConfigurationError(f"Unable to resolve type from '{dotted_path}': {e}") from e
+        raise ConfigurationError(
+            f"Unable to resolve type from '{dotted_path}': {e}"
+        ) from e

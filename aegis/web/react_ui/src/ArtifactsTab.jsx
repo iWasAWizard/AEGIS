@@ -1,5 +1,5 @@
 // aegis/web/react_ui/src/ArtifactsTab.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Accordion, AccordionItem } from '@szhsin/react-accordion';
 import ReactMarkdown from 'react-markdown';
 
@@ -40,7 +40,7 @@ const ArtifactViewer = ({ task }) => {
     if (isLoading) return <p>Loading artifacts...</p>;
 
     return (
-        <div>
+        <div style={{ padding: '1rem' }}>
             <div style={{ marginBottom: '1rem', borderBottom: '1px solid var(--border)' }}>
                 <button onClick={() => setActiveTab('summary')} style={{ background: activeTab === 'summary' ? 'var(--accent)' : 'none', border: 'none', padding: '0.5rem 1rem' }}>Summary</button>
                 <button onClick={() => setActiveTab('provenance')} style={{ background: activeTab === 'provenance' ? 'var(--accent)' : 'none', border: 'none', padding: '0.5rem 1rem' }}>Provenance</button>
@@ -64,10 +64,14 @@ const ArtifactViewer = ({ task }) => {
  * It fetches and displays a list of all completed tasks that have generated artifacts.
  * Each task is rendered as a collapsible accordion item, which reveals the
  * `ArtifactViewer` component when clicked.
+ * @param {object} props - The component props.
+ * @param {string|null} props.targetArtifactId - The ID of the artifact to initially open.
+ * @param {function} props.clearTargetArtifactId - Function to clear the target artifact ID.
  * @returns {React.Component} The artifacts tab component.
  */
-export default function ArtifactsTab() {
+export default function ArtifactsTab({ targetArtifactId, clearTargetArtifactId }) {
   const [artifacts, setArtifacts] = useState([]);
+  const accordionRef = useRef(null); // Ref for the accordion container for scrolling
 
   const fetchArtifacts = () => {
     fetch('/api/artifacts')
@@ -79,6 +83,25 @@ export default function ArtifactsTab() {
   useEffect(() => {
     fetchArtifacts();
   }, []);
+
+  // Effect to handle scrolling to and clearing the target artifact ID
+  useEffect(() => {
+    if (targetArtifactId && artifacts.length > 0) {
+      const itemElement = document.getElementById(`accordion-item-${targetArtifactId}`);
+      if (itemElement) {
+        // Slight delay to ensure the item is rendered and accordion can process initialEntered
+        setTimeout(() => {
+            itemElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      }
+      // Clear the target ID after attempting to scroll and expand,
+      // so it doesn't re-trigger on subsequent renders without new navigation.
+      const clearTimer = setTimeout(() => {
+        clearTargetArtifactId();
+      }, 500); // Longer delay to ensure animation completes if any
+      return () => clearTimeout(clearTimer);
+    }
+  }, [targetArtifactId, clearTargetArtifactId, artifacts]);
 
   return (
     <div>
@@ -92,19 +115,30 @@ export default function ArtifactsTab() {
 
       {artifacts.length === 0 && <p>No artifacts found. Run an agent task to generate some.</p>}
 
-      <Accordion transition timeout={200}>
+      <Accordion
+        transition
+        timeout={200}
+        ref={accordionRef}
+        // By using targetArtifactId in the key, we can force Accordion to re-evaluate initialEntered states
+        // when navigating to this tab with a specific target.
+        key={targetArtifactId || 'accordion-default'}
+      >
         {artifacts.map((task, idx) => (
           <AccordionItem
-            key={idx}
+            key={task.task_id} // Use task_id as the key for the item itself for stability
+            itemKey={task.task_id} // This key is used by Accordion for managing state
+            initialEntered={task.task_id === targetArtifactId} // Set initialEntered based on target
             header={
               <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <code style={{ fontFamily: 'var(--font-mono)' }}>{task.task_id}</code>
                 <span>{new Date(task.timestamp * 1000).toLocaleString()}</span>
               </div>
             }
+            // Add an id to the wrapper div of AccordionItem for scrolling
             style={{ border: '1px solid var(--border)', borderRadius: '6px', marginBottom: '0.5rem' }}
+            id={`accordion-item-${task.task_id}`} // ID for scrolling
             buttonProps={{ style: { width: '100%', textAlign: 'left', padding: '0.75rem', background: 'var(--input-bg)', color: 'var(--fg)', cursor: 'pointer', border: 'none' } }}
-            contentProps={{ style: { padding: '1rem', background: '#111' } }}
+            contentProps={{ style: { background: '#111' } }}
           >
             <ArtifactViewer task={task} />
           </AccordionItem>

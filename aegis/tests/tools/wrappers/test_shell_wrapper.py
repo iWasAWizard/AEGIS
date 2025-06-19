@@ -2,11 +2,12 @@
 """
 Unit tests for the high-level shell wrapper tools.
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from aegis.exceptions import ToolExecutionError
+from aegis.tools.primitives.primitive_system import RunLocalCommandInput
 from aegis.tools.wrappers.shell import (
     run_remote_background_command,
     RunRemoteBackgroundCommandInput,
@@ -17,7 +18,6 @@ from aegis.tools.wrappers.shell import (
     safe_shell_execute,
     SafeShellInput,
 )
-from aegis.tools.primitives.primitive_system import RunLocalCommandInput
 
 
 @pytest.fixture

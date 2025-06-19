@@ -13,6 +13,7 @@ from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
 
 try:
+    # noinspection PyUnresolvedReferences
     import faiss
     import numpy as np
     from sentence_transformers import SentenceTransformer

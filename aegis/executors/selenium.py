@@ -2,14 +2,14 @@
 """
 Provides a client for performing Selenium-based browser operations.
 """
-from typing import Callable, Any, Optional, Dict
 from pathlib import Path
+from typing import Callable, Any, Optional, Dict
 
 from selenium import webdriver
-from selenium.webdriver.firefox.options import Options as FirefoxOptions
 
 # from selenium.webdriver.chrome.options import Options as ChromeOptions # If Chrome support is added
 from selenium.common.exceptions import WebDriverException, TimeoutException
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.remote.webdriver import WebDriver  # For type hinting
 
 from aegis.exceptions import ToolExecutionError

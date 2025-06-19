@@ -75,7 +75,7 @@ def test_load_core_and_plugin_tools(plugin_setup, monkeypatch):
     TOOL_REGISTRY.clear()
 
     # Mock the project root to point to our temp path
-    monkeypatch.setattr(Path, 'cwd', lambda: Path.cwd())  # Ensure cwd is correct
+    monkeypatch.setattr(Path, "cwd", lambda: Path.cwd())  # Ensure cwd is correct
 
     import_all_tools()
 

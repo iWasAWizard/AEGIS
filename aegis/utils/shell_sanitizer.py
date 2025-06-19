@@ -13,8 +13,13 @@ logger = setup_logger(__name__)
 # --- Prompt Safety ---
 
 BLOCKED_PROMPT_PHRASES = {
-    "ignore previous", "shut down", "delete all", "format disk", "rm -rf",
-    ":(){", "fork bomb",
+    "ignore previous",
+    "shut down",
+    "delete all",
+    "format disk",
+    "rm -rf",
+    ":(){",
+    "fork bomb",
 }
 
 
@@ -29,7 +34,9 @@ def is_prompt_safe(text: str) -> bool:
     lowered = text.lower()
     for phrase in BLOCKED_PROMPT_PHRASES:
         if phrase in lowered:
-            logger.warning(f"Potentially unsafe prompt blocked. Triggered by phrase: '{phrase}'")
+            logger.warning(
+                f"Potentially unsafe prompt blocked. Triggered by phrase: '{phrase}'"
+            )
             return False
     logger.debug("Prompt passed safety check.")
     return True
@@ -51,7 +58,9 @@ def count_tokens(text: str, model: str = "gpt-4") -> int:
     try:
         enc = tiktoken.encoding_for_model(model)
     except KeyError:
-        logger.warning(f"No tiktoken encoding found for model '{model}'. Using 'cl100k_base' as fallback.")
+        logger.warning(
+            f"No tiktoken encoding found for model '{model}'. Using 'cl100k_base' as fallback."
+        )
         enc = tiktoken.get_encoding("cl100k_base")
     return len(enc.encode(text))
 
@@ -85,7 +94,9 @@ def validate_shell_command(command: str) -> tuple[bool, str]:
     for pattern, reason in FORBIDDEN_SHELL_PATTERNS:
         if pattern in command:
             error_reason = f"Unsafe pattern detected: '{pattern}' ({reason})"
-            logger.warning(f"Shell command validation failed. {error_reason}. Command: '{command}'")
+            logger.warning(
+                f"Shell command validation failed. {error_reason}. Command: '{command}'"
+            )
             return False, error_reason
     logger.debug(f"Shell command validation passed: '{command}'")
     return True, "Command is safe."

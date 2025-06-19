@@ -2,8 +2,8 @@
 """
 Unit tests for the high-level filesystem wrapper tools.
 """
-from unittest.mock import MagicMock, patch
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 

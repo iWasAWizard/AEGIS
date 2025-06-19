@@ -63,13 +63,17 @@ def get_machine(machine_name: str) -> MachineManifest:
     machine_config = manifest_data.get(machine_name)
 
     if not machine_config:
-        raise ConfigurationError(f"Machine '{machine_name}' not found in machines.yaml.")
+        raise ConfigurationError(
+            f"Machine '{machine_name}' not found in machines.yaml."
+        )
 
     # Resolve secret placeholders (e.g., ${ADMIN_PASSWORD})
     for key, value in machine_config.items():
         if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
             secret_key = value[2:-1]  # Get the key name, e.g., ADMIN_PASSWORD
-            secret_value = getattr(settings, secret_key.lower(), None)  # Use lower() for case-insensitivity
+            secret_value = getattr(
+                settings, secret_key.lower(), None
+            )  # Use lower() for case-insensitivity
             if secret_value is None:
                 raise ConfigurationError(
                     f"Secret '{secret_key}' for machine '{machine_name}' not found in environment or .env file."
@@ -80,4 +84,6 @@ def get_machine(machine_name: str) -> MachineManifest:
         return MachineManifest(**machine_config)
     except ValidationError as e:
         logger.error(f"Validation error for machine '{machine_name}': {e}")
-        raise ConfigurationError(f"Invalid configuration for machine '{machine_name}': {e}") from e
+        raise ConfigurationError(
+            f"Invalid configuration for machine '{machine_name}': {e}"
+        ) from e

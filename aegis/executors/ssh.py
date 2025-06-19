@@ -111,7 +111,8 @@ class SSHExecutor:
 
         if returncode != 0:
             logger.error(
-                f"Remote command '{command}' failed on '{self.ssh_target}' with RC {returncode}. Output:\n{combined_output}"
+                f"Remote command '{command}' failed on '{self.ssh_target}' with RC {returncode}. "
+                f"Output:\n{combined_output}"
             )
             raise ToolExecutionError(
                 f"Remote command failed with exit code {returncode}. Output: {combined_output}"
@@ -173,7 +174,8 @@ class SSHExecutor:
 
         if returncode != 0:
             logger.error(
-                f"SCP download from '{source}' to '{destination}' failed with RC {returncode}. Error: {stderr or stdout}"
+                f"SCP download from '{source}' to '{destination}' failed with RC {returncode}. "
+                f"Error: {stderr or stdout}"
             )
             raise ToolExecutionError(
                 f"SCP download failed. RC: {returncode}. Error: {stderr or stdout}"

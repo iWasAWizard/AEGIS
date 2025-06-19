@@ -115,7 +115,7 @@ async def test_execute_tool_timeout(monkeypatch):
         task_id="test-timeout",
         task_prompt="test",
         # Set a very short timeout
-        runtime=RuntimeExecutionConfig(timeout=1),
+        runtime=RuntimeExecutionConfig(tool_timeout=1),
         latest_plan=plan,
     )
 

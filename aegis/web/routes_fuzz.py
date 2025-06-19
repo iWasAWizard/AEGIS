@@ -74,5 +74,9 @@ def run_fuzz_tool(req: FuzzToolRequest) -> dict:
         logger.exception(f"Execution error in fuzz tool '{req.tool_name}'")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.exception(f"Unexpected error during fuzz tool execution: '{req.tool_name}'")
-        raise HTTPException(status_code=500, detail=f"An unexpected internal error occurred: {e}")
+        logger.exception(
+            f"Unexpected error during fuzz tool execution: '{req.tool_name}'"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected internal error occurred: {e}"
+        )

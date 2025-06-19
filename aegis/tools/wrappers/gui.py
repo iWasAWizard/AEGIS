@@ -110,7 +110,7 @@ def gui_action(input_data: GuiActionInput) -> str:
     :type input_data: GuiActionInput
     :return: A string confirming the action's success or an error message.
     :rtype: str
-    :raises ToolExecutionError: If pyautogui is unavailable or a GUI cannot be accessed, or if required arguments are missing.
+    :raises ToolExecutionError: If pyautogui is unavailable, a GUI cannot be accessed, or required args are missing.
     """
     if not PYAUTOGUI_AVAILABLE:
         raise ToolExecutionError("PyAutoGUI is not installed or GUI is not accessible.")
@@ -225,10 +225,12 @@ def gui_find_and_click_image(input_data: GuiFindAndClickInput) -> str:
             # Continue trying if within timeout
         except Exception as e:  # Catch other errors, e.g. if opencv-python is missing
             logger.error(
-                f"Error during locateCenterOnScreen for '{input_data.template_image_path}'. Is opencv-python installed? Error: {e}"
+                f"Error during locateCenterOnScreen for '{input_data.template_image_path}'. "
+                f"Is opencv-python installed? Error: {e}"
             )
             raise ToolExecutionError(
-                f"Image searching failed for '{input_data.template_image_path}'. Is 'opencv-python' installed? Error: {e}"
+                f"Image searching failed for '{input_data.template_image_path}'. "
+                f"Is 'opencv-python' installed? Error: {e}"
             )
 
         time.sleep(1)

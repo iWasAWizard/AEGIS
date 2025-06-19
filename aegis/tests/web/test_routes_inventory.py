@@ -28,12 +28,19 @@ def mock_tool_registry(monkeypatch):
     """Mocks the TOOL_REGISTRY with a set of test tools."""
     mock_registry = {
         "tool_a": ToolEntry(
-            name="tool_a", run=MagicMock(), input_model=GoodInput,
-            tags=["a"], description="Good tool A", category="cat1"
+            name="tool_a",
+            run=MagicMock(),
+            input_model=GoodInput,
+            tags=["a"],
+            description="Good tool A",
+            category="cat1",
         ),
         "tool_b_bad_schema": ToolEntry(
-            name="tool_b_bad_schema", run=MagicMock(), input_model=BadInput,
-            tags=["b"], description="Tool with bad schema"
+            name="tool_b_bad_schema",
+            run=MagicMock(),
+            input_model=BadInput,
+            tags=["b"],
+            description="Tool with bad schema",
         ),
     }
     monkeypatch.setattr("aegis.web.routes_inventory.TOOL_REGISTRY", mock_registry)

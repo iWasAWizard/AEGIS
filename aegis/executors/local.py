@@ -63,7 +63,8 @@ class LocalExecutor:
             return result.returncode, result.stdout.strip(), result.stderr.strip()
         except FileNotFoundError as e:
             logger.error(
-                f"Local command executable not found (shell={shell}): {command_str.split()[0] if not shell else command_str}. Error: {e}"
+                f"Local command executable not found "
+                f"(shell={shell}): {command_str.split()[0] if not shell else command_str}. Error: {e}"
             )
             raise ToolExecutionError(
                 f"Local command executable not found: {command_str.split()[0] if not shell else command_str}"

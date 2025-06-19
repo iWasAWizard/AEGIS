@@ -2,7 +2,7 @@
 """
 Tests for the nmap_port_scan wrapper tool.
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

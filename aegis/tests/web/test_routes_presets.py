@@ -20,7 +20,11 @@ def mock_presets_dir(tmp_path: Path, monkeypatch):
     presets_dir.mkdir()
 
     # Valid preset
-    valid_preset = {"name": "Test Preset", "description": "A valid test preset.", "config": {"entrypoint": "start"}}
+    valid_preset = {
+        "name": "Test Preset",
+        "description": "A valid test preset.",
+        "config": {"entrypoint": "start"},
+    }
     (presets_dir / "valid_test.yaml").write_text(yaml.dump(valid_preset))
 
     # Preset without a name field
@@ -80,7 +84,7 @@ def test_save_preset(mock_presets_dir):
         "id": "new_preset",
         "name": "My New Preset",
         "description": "A dynamically saved preset.",
-        "config": {"entrypoint": "new_start", "nodes": []}
+        "config": {"entrypoint": "new_start", "nodes": []},
     }
 
     response = client.post("/api/presets", json=new_preset_data)
@@ -99,9 +103,7 @@ def test_save_preset(mock_presets_dir):
 
 def test_save_preset_no_id(mock_presets_dir):
     """Test that saving a preset without an ID or name fails with a 400 error."""
-    bad_preset_data = {
-        "description": "This preset is missing a name/id."
-    }
+    bad_preset_data = {"description": "This preset is missing a name/id."}
     response = client.post("/api/presets", json=bad_preset_data)
     assert response.status_code == 400
     assert "must have an 'id' or 'name'" in response.json()["detail"]

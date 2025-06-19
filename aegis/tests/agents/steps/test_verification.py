@@ -22,14 +22,18 @@ class DummyInput(BaseModel):
 def mock_state_factory():
     """Factory to create TaskState objects for tests."""
 
-    def _factory(last_plan: AgentScratchpad, last_observation: str, status: str = "success") -> TaskState:
-        entry = HistoryEntry(plan=last_plan, observation=last_observation, status=status)
+    def _factory(
+        last_plan: AgentScratchpad, last_observation: str, status: str = "success"
+    ) -> TaskState:
+        entry = HistoryEntry(
+            plan=last_plan, observation=last_observation, status=status
+        )
         return TaskState(
             task_id="test",
             task_prompt="test",
             runtime=RuntimeExecutionConfig(),
             latest_plan=last_plan,
-            history=[entry]
+            history=[entry],
         )
 
     return _factory
@@ -56,7 +60,9 @@ async def test_verify_outcome_main_tool_failed(mock_state_factory):
 @pytest.mark.asyncio
 @patch("aegis.agents.steps.verification._run_tool")
 @patch("aegis.agents.steps.verification.get_tool")
-async def test_verify_outcome_verification_succeeds(mock_get_tool, mock_run_tool, mock_state_factory):
+async def test_verify_outcome_verification_succeeds(
+    mock_get_tool, mock_run_tool, mock_state_factory
+):
     """Test successful verification when the output contains a success keyword."""
     mock_get_tool.return_value = MagicMock(run=MagicMock(), input_model=DummyInput)
     mock_run_tool.return_value = "Service is active and running."
@@ -72,7 +78,9 @@ async def test_verify_outcome_verification_succeeds(mock_get_tool, mock_run_tool
 @pytest.mark.asyncio
 @patch("aegis.agents.steps.verification._run_tool")
 @patch("aegis.agents.steps.verification.get_tool")
-async def test_verify_outcome_verification_fails(mock_get_tool, mock_run_tool, mock_state_factory):
+async def test_verify_outcome_verification_fails(
+    mock_get_tool, mock_run_tool, mock_state_factory
+):
     """Test failed verification when the output lacks success keywords."""
     mock_get_tool.return_value = MagicMock(run=MagicMock(), input_model=DummyInput)
     mock_run_tool.return_value = "Service is stopped."
@@ -101,7 +109,9 @@ async def test_verify_outcome_tool_error(mock_get_tool, mock_state_factory):
 async def test_remediate_plan_success(mock_state_factory):
     """Test that a remediation plan is generated correctly."""
     mock_llm_query = AsyncMock()
-    new_plan_json = '{"thought": "remediation thought", "tool_name": "fix_tool", "tool_args": {}}'
+    new_plan_json = (
+        '{"thought": "remediation thought", "tool_name": "fix_tool", "tool_args": {}}'
+    )
     mock_llm_query.return_value = new_plan_json
 
     plan = AgentScratchpad(thought="original plan", tool_name="failing_tool")
@@ -111,7 +121,10 @@ async def test_remediate_plan_success(mock_state_factory):
 
     mock_llm_query.assert_awaited_once()
     # Check that the remediation context was included in the prompt
-    assert "Your previous attempt to achieve the goal failed" in mock_llm_query.call_args[0][1]
+    assert (
+        "Your previous attempt to achieve the goal failed"
+        in mock_llm_query.call_args[0][1]
+    )
     assert "remediation thought" in result_dict["latest_plan"].thought
 
 

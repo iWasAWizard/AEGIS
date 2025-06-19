@@ -22,7 +22,13 @@ from aegis.tools.wrappers.pwn import (
 
 # Import pwntools for the non-executor tools if available
 try:
-    from pwn import context as pwn_context, shellcraft as pwn_shellcraft, ELF as pwn_ELF, cyclic as pwn_cyclic, cyclic_find as pwn_cyclic_find  # type: ignore
+    from pwn import (
+        context as pwn_context,
+        shellcraft as pwn_shellcraft,
+        ELF as pwn_ELF,
+        cyclic as pwn_cyclic,
+        cyclic_find as pwn_cyclic_find,
+    )  # type: ignore
 
     PWNTOOLS_AVAILABLE_FOR_NON_EXECUTOR_TOOLS = True
 except ImportError:

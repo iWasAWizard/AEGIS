@@ -23,7 +23,11 @@ def test_runtime_config_defaults():
 def test_runtime_config_valid_overrides():
     """Verify that valid values can be used to override the defaults."""
     config = RuntimeExecutionConfig(
-        model="test_model", safe_mode=False, timeout=60, retries=3, iterations=100
+        llm_model_name="test_model",
+        safe_mode=False,
+        tool_timeout=60,
+        tool_retries=3,
+        iterations=100,
     )
 
     assert config.model == "test_model"

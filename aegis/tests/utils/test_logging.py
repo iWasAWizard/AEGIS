@@ -36,7 +36,15 @@ def setup_test_logger(tmp_path: Path):
 def test_task_id_filter():
     """Verify the TaskIdFilter correctly injects the task_id into a LogRecord."""
     task_id_filter = TaskIdFilter()
-    record = logging.LogRecord(name="test", level=logging.INFO, pathname="", lineno=0, msg="", args=(), exc_info=None)
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="",
+        args=(),
+        exc_info=None,
+    )
 
     # Case 1: Context is not set
     task_id_context.set(None)
@@ -83,4 +91,6 @@ def test_jsonl_file_handler_no_task_id(setup_test_logger, tmp_path: Path):
 
     # Check that NO files were created in the log directory
     log_files = list(tmp_path.glob("*.jsonl"))
-    assert len(log_files) == 0, "Log file should not have been created without a task_id."
+    assert (
+        len(log_files) == 0
+    ), "Log file should not have been created without a task_id."

@@ -3,12 +3,11 @@
 Unit tests for the perception wrapper tools.
 """
 from unittest.mock import MagicMock, patch
-import uuid
-from pathlib import Path
 
 import pytest
 
 from aegis.exceptions import ToolExecutionError
+from aegis.tools.wrappers.gui import GuiActionInput
 from aegis.tools.wrappers.perception import (
     capture_screenshot,
     CaptureScreenshotInput,
@@ -17,7 +16,6 @@ from aegis.tools.wrappers.perception import (
     gui_find_and_read,
     GuiFindAndReadInput,
 )
-from aegis.tools.wrappers.gui import GuiActionInput
 
 pytest.importorskip("pyautogui", reason="pyautogui not available for testing.")
 pytest.importorskip("pytesseract", reason="pytesseract not available for testing.")
@@ -285,6 +283,7 @@ def test_gui_find_and_read_opencv_error(mock_pyautogui_and_ocr_primitives):
     )
     with pytest.raises(
         ToolExecutionError,
-        match="Could not search for template image. Is 'opencv-python' installed? Error: OpenCV error during image search",
+        match="Could not search for template image. Is 'opencv-python' installed? "
+        "Error: OpenCV error during image search",
     ):
         gui_find_and_read(input_data)

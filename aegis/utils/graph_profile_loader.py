@@ -31,7 +31,9 @@ def load_agent_graph_config(profile_name: str) -> dict:
     presets_dir = Path("presets")
     profile_path = presets_dir / f"{profile_name}.yaml"
     if not profile_path.exists():
-        raise FileNotFoundError(f"Preset profile '{profile_name}' does not exist at '{profile_path}'.")
+        raise FileNotFoundError(
+            f"Preset profile '{profile_name}' does not exist at '{profile_path}'."
+        )
 
     config = yaml.safe_load(profile_path.read_text())
     return config

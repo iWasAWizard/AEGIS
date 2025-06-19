@@ -34,8 +34,15 @@ async def test_execute_tool_success(mock_tool_registry):
     mock_tool_entry = MagicMock(run=mock_run, input_model=MockInput)
     mock_tool_registry.return_value = mock_tool_entry
 
-    plan = AgentScratchpad(thought="run tool", tool_name="mock_tool", tool_args={"arg": "test"})
-    state = TaskState(task_id="t1", task_prompt="p", runtime=RuntimeExecutionConfig(), latest_plan=plan)
+    plan = AgentScratchpad(
+        thought="run tool", tool_name="mock_tool", tool_args={"arg": "test"}
+    )
+    state = TaskState(
+        task_id="t1",
+        task_prompt="p",
+        runtime=RuntimeExecutionConfig(),
+        latest_plan=plan,
+    )
 
     result_dict = await execute_tool(state)
 
@@ -56,7 +63,12 @@ async def test_execute_tool_failure(mock_tool_registry):
     mock_tool_registry.side_effect = ToolNotFoundError("Tool does not exist")
 
     plan = AgentScratchpad(thought="run bad tool", tool_name="bad_tool", tool_args={})
-    state = TaskState(task_id="t2", task_prompt="p", runtime=RuntimeExecutionConfig(), latest_plan=plan)
+    state = TaskState(
+        task_id="t2",
+        task_prompt="p",
+        runtime=RuntimeExecutionConfig(),
+        latest_plan=plan,
+    )
 
     result_dict = await execute_tool(state)
 
@@ -69,7 +81,12 @@ async def test_execute_tool_failure(mock_tool_registry):
 @pytest.mark.asyncio
 async def test_execute_tool_no_plan():
     """Verify that a HistoryEntry is still created even if the state has no plan."""
-    state = TaskState(task_id="t3", task_prompt="p", runtime=RuntimeExecutionConfig(), latest_plan=None)
+    state = TaskState(
+        task_id="t3",
+        task_prompt="p",
+        runtime=RuntimeExecutionConfig(),
+        latest_plan=None,
+    )
     result_dict = await execute_tool(state)
 
     entry = result_dict["history"][0]

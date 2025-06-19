@@ -31,8 +31,12 @@ async def compare_task_summaries(task_ids: List[str] = Body(...)) -> dict:
     :raises HTTPException: If inputs are invalid or files cannot be processed.
     """
     if len(task_ids) != 2:
-        logger.warning(f"Compare request failed: expected 2 task IDs, got {len(task_ids)}.")
-        raise HTTPException(status_code=400, detail="Please provide exactly two task IDs to compare.")
+        logger.warning(
+            f"Compare request failed: expected 2 task IDs, got {len(task_ids)}."
+        )
+        raise HTTPException(
+            status_code=400, detail="Please provide exactly two task IDs to compare."
+        )
 
     task1_id, task2_id = task_ids[0], task_ids[1]
     logger.info(f"Compare request received for tasks: {task1_id} vs {task2_id}")
@@ -41,11 +45,19 @@ async def compare_task_summaries(task_ids: List[str] = Body(...)) -> dict:
     summary2_path = REPORTS_DIR / task2_id / "summary.md"
 
     if not summary1_path.is_file():
-        logger.error(f"Comparison failed: summary for task '{task1_id}' not found at {summary1_path}")
-        raise HTTPException(status_code=404, detail=f"Summary for task '{task1_id}' not found.")
+        logger.error(
+            f"Comparison failed: summary for task '{task1_id}' not found at {summary1_path}"
+        )
+        raise HTTPException(
+            status_code=404, detail=f"Summary for task '{task1_id}' not found."
+        )
     if not summary2_path.is_file():
-        logger.error(f"Comparison failed: summary for task '{task2_id}' not found at {summary2_path}")
-        raise HTTPException(status_code=404, detail=f"Summary for task '{task2_id}' not found.")
+        logger.error(
+            f"Comparison failed: summary for task '{task2_id}' not found at {summary2_path}"
+        )
+        raise HTTPException(
+            status_code=404, detail=f"Summary for task '{task2_id}' not found."
+        )
 
     try:
         lines1 = summary1_path.read_text(encoding="utf-8").splitlines()
@@ -55,7 +67,11 @@ async def compare_task_summaries(task_ids: List[str] = Body(...)) -> dict:
         raise HTTPException(status_code=500, detail=f"Error reading summary files: {e}")
 
     diff_generator = difflib.unified_diff(
-        lines1, lines2, fromfile=f"{task1_id}/summary.md", tofile=f"{task2_id}/summary.md", lineterm=""
+        lines1,
+        lines2,
+        fromfile=f"{task1_id}/summary.md",
+        tofile=f"{task2_id}/summary.md",
+        lineterm="",
     )
     diff = list(diff_generator)
     logger.info(f"Comparison successful, diff generated with {len(diff)} lines.")

@@ -12,18 +12,17 @@ import random
 import string
 import subprocess
 import tempfile
-from typing import Dict, Any, List, Optional
 from pathlib import Path
+from typing import Dict, Any, List
 
 import requests
 from pydantic import BaseModel, Field, ValidationError
 
-from aegis.registry import TOOL_REGISTRY, ToolEntry, register_tool, get_tool
-from aegis.schemas.emoji import EMOJI_SET
-from aegis.utils.logger import setup_logger
-
 # Import ToolExecutionError
 from aegis.exceptions import ToolExecutionError, ToolNotFoundError
+from aegis.registry import ToolEntry, register_tool, get_tool
+from aegis.schemas.emoji import EMOJI_SET
+from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -516,7 +515,8 @@ def fuzz_tool_via_registry(input_data: FuzzToolRegistryInput) -> Dict[str, Any]:
             ValidationError
         ) as ve:  # If default construction fails due to required fields
             logger.warning(
-                f"Internal tool fuzzing (default construction) iteration {i + 1} failed for {input_data.tool_name}: {ve}"
+                f"Internal tool fuzzing (default construction) iteration {i + 1} "
+                f"failed for {input_data.tool_name}: {ve}"
             )
             results.append(
                 {
@@ -529,7 +529,8 @@ def fuzz_tool_via_registry(input_data: FuzzToolRegistryInput) -> Dict[str, Any]:
             # The summary will show it as a "failure" for this specific test type.
         except Exception as e:  # Other unexpected errors during model instantiation
             logger.exception(
-                f"Internal tool fuzzing (default model instantiation) iteration {i + 1} failed for {input_data.tool_name} with unexpected error."
+                f"Internal tool fuzzing (default model instantiation) iteration {i + 1} "
+                f"failed for {input_data.tool_name} with unexpected error."
             )
             results.append(
                 {

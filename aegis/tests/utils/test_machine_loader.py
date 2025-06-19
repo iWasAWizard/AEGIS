@@ -34,7 +34,7 @@ def mock_manifest_file(tmp_path: Path) -> Path:
             "type": "vm",
             "shell": "bash",
             "username": "testuser",
-            "password": "testpassword"
+            "password": "testpassword",
         },
         "test-with-secret": {
             "name": "test-with-secret",
@@ -44,7 +44,7 @@ def mock_manifest_file(tmp_path: Path) -> Path:
             "type": "vm",
             "shell": "bash",
             "username": "root",
-            "password": "${ROOT_PASSWORD}"
+            "password": "${ROOT_PASSWORD}",
         },
         "test-missing-field": {
             "name": "test-missing-field",
@@ -53,8 +53,8 @@ def mock_manifest_file(tmp_path: Path) -> Path:
             "provider": "test",
             "type": "vm",
             "shell": "powershell",
-            "username": "admin"
-        }
+            "username": "admin",
+        },
     }
     manifest_path = tmp_path / "machines.yaml"
     manifest_path.write_text(yaml.dump(manifest_content))
@@ -83,6 +83,7 @@ def test_get_machine_with_secret_substitution(mock_manifest_file, monkeypatch):
     # Reload settings within the context of the test
     from aegis.schemas import settings
     import importlib
+
     importlib.reload(settings)
 
     machine = get_machine("test-with-secret")
@@ -91,7 +92,9 @@ def test_get_machine_with_secret_substitution(mock_manifest_file, monkeypatch):
 
 def test_get_machine_not_found(mock_manifest_file):
     """Verify that a ConfigurationError is raised for a non-existent machine."""
-    with pytest.raises(ConfigurationError, match="Machine 'non-existent-machine' not found"):
+    with pytest.raises(
+        ConfigurationError, match="Machine 'non-existent-machine' not found"
+    ):
         get_machine("non-existent-machine")
 
 
@@ -103,13 +106,20 @@ def test_get_machine_missing_secret(mock_manifest_file, monkeypatch):
     # Reload settings to reflect the change
     from aegis.schemas import settings
     import importlib
+
     importlib.reload(settings)
 
-    with pytest.raises(ConfigurationError, match="Secret 'ROOT_PASSWORD' for machine 'test-with-secret' not found"):
+    with pytest.raises(
+        ConfigurationError,
+        match="Secret 'ROOT_PASSWORD' for machine 'test-with-secret' not found",
+    ):
         get_machine("test-with-secret")
 
 
 def test_get_machine_invalid_config(mock_manifest_file):
     """Verify a ConfigurationError is raised if a machine config is missing a required field."""
-    with pytest.raises(ConfigurationError, match="Invalid configuration for machine 'test-missing-field'"):
+    with pytest.raises(
+        ConfigurationError,
+        match="Invalid configuration for machine 'test-missing-field'",
+    ):
         get_machine("test-missing-field")

@@ -11,11 +11,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from aegis.registry import register_tool
-from aegis.utils.logger import setup_logger
-
 # Import ToolExecutionError
 from aegis.exceptions import ToolExecutionError
+from aegis.registry import register_tool
+from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 

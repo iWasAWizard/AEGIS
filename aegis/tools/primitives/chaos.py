@@ -253,14 +253,14 @@ def corrupt_json(input_data: CorruptJSONInput) -> str:
     if length == 0:
         return ""
 
-    if input_data.severity == 'low':
+    if input_data.severity == "low":
         # Flip a single random bit in a random character
         idx = random.randint(0, length - 1)
         corrupted[idx] = chr(ord(corrupted[idx]) ^ (1 << random.randint(0, 6)))
 
-    elif input_data.severity == 'medium':
+    elif input_data.severity == "medium":
         # Replace a structural character
-        replacements = {'{': '[', '}': ']', '"': "'", ':': '=', ',': ';'}
+        replacements = {"{": "[", "}": "]", '"': "'", ":": "=", ",": ";"}
         char_to_replace = random.choice(list(replacements.keys()))
         if char_to_replace in corrupted:
             idx = corrupted.index(char_to_replace)
@@ -268,9 +268,9 @@ def corrupt_json(input_data: CorruptJSONInput) -> str:
         else:
             # Fallback: insert a junk character
             idx = random.randint(0, length - 1)
-            corrupted.insert(idx, random.choice(['#', '@', '!']))
+            corrupted.insert(idx, random.choice(["#", "@", "!"]))
 
-    elif input_data.severity == 'high':
+    elif input_data.severity == "high":
         # Truncate the string and add junk
         trunc_point = random.randint(0, length // 2)
         corrupted = corrupted[:trunc_point]

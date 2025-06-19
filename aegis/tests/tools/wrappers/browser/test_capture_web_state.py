@@ -4,7 +4,6 @@ Unit tests for the capture_web_state tool.
 """
 import uuid
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,6 +14,7 @@ from aegis.tools.wrappers.browser.capture_web_state import (
     CaptureWebStateInput,
     SCREENSHOT_DIR,  # For verifying path
 )
+
 
 # SeleniumExecutor will be mocked, so selenium import isn't strictly needed here for tests
 # but good for indicating context.

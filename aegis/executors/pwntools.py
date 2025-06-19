@@ -20,7 +20,7 @@ except ImportError:
     PWNTOOLS_AVAILABLE_FOR_EXECUTOR = False
 
     # Define dummy types if pwntools is not available, for type hinting
-    class tube:
+    class Tube:
         pass  # type: ignore
 
     class PwnlibException(Exception):

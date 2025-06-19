@@ -66,7 +66,9 @@ def generate_provenance_report(state: TaskState):
     for i, entry in enumerate(state.history):
         event_data = {
             "step": i + 1,
-            "start_time_utc": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(entry.start_time)),
+            "start_time_utc": time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(entry.start_time)
+            ),
             "duration_ms": round(entry.duration_ms, 2),
             "status": entry.status,
             "thought": entry.plan.thought,

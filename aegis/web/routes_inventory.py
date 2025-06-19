@@ -40,14 +40,16 @@ async def get_inventory() -> list[dict]:
             logger.error(f"Could not generate JSON schema for tool '{tool.name}': {e}")
             input_schema = {"error": f"Could not generate schema: {e}"}
 
-        inventory_list.append({
-            "name": tool.name,
-            "description": tool.description,
-            "category": tool.category or "uncategorized",
-            "tags": tool.tags,
-            "safe_mode": tool.safe_mode,
-            "input_schema": input_schema,
-        })
+        inventory_list.append(
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "category": tool.category or "uncategorized",
+                "tags": tool.tags,
+                "safe_mode": tool.safe_mode,
+                "input_schema": input_schema,
+            }
+        )
 
     logger.info(f"Successfully built inventory with {len(inventory_list)} tools.")
     return inventory_list

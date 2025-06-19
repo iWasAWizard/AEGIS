@@ -9,15 +9,14 @@ requests, and checking TCP port status.
 
 import socket
 import subprocess
-from typing import Optional, Dict, Any
+from typing import Dict, Any, Optional
 
-from pydantic import BaseModel, Field, Optional
+from pydantic import BaseModel, Field
 
 from aegis.exceptions import ToolExecutionError
+from aegis.executors.http import HttpExecutor
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
-from aegis.executors.http import HttpExecutor
-
 
 logger = setup_logger(__name__)
 
@@ -133,14 +132,16 @@ def send_wake_on_lan(input_data: WakeOnLANInput) -> str:
 
         if result.returncode != 0:
             logger.error(
-                f"'wakeonlan' command failed for MAC {input_data.mac_address} with RC {result.returncode}. Output: {output}"
+                f"'wakeonlan' command failed for MAC {input_data.mac_address} with RC {result.returncode}. "
+                f"Output: {output}"
             )
             raise ToolExecutionError(
                 f"'wakeonlan' command failed with RC {result.returncode}. Output: {output}"
             )
 
         logger.info(
-            f"'wakeonlan' command successful for MAC {input_data.mac_address}. Output: {output if output else 'No output.'}"
+            f"'wakeonlan' command successful for MAC {input_data.mac_address}. "
+            f"Output: {output if output else 'No output.'}"
         )
         return (
             output

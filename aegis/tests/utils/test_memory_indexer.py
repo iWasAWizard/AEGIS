@@ -11,11 +11,13 @@ from aegis.utils import memory_indexer
 
 # Mark this module to be skipped if vector dependencies are not installed
 faiss = pytest.importorskip("faiss", reason="faiss-cpu not installed")
-SentenceTransformer = pytest.importorskip("sentence_transformers",
-                                          reason="sentence-transformers not installed").SentenceTransformer
+SentenceTransformer = pytest.importorskip(
+    "sentence_transformers", reason="sentence-transformers not installed"
+).SentenceTransformer
 
 
 # --- Fixtures ---
+
 
 @pytest.fixture
 def mock_log_dir(tmp_path: Path, monkeypatch):
@@ -39,7 +41,9 @@ def mock_log_dir(tmp_path: Path, monkeypatch):
     log_file_2 = logs_dir / "task-002.jsonl"
     with log_file_2.open("w") as f:
         # A valid entry
-        f.write(json.dumps({"event_type": "PlannerError", "message": "LLM failed"}) + "\n")
+        f.write(
+            json.dumps({"event_type": "PlannerError", "message": "LLM failed"}) + "\n"
+        )
         # An entry without an event_type (should be skipped)
         f.write(json.dumps({"message": "Just a random log"}) + "\n")
         # A line that is not JSON (should be skipped)
@@ -82,4 +86,6 @@ def test_update_memory_index_success(mock_log_dir):
 
     # 3. Check the FAISS index itself
     index = faiss.read_index(str(index_path))
-    assert index.ntotal == 3  # The number of vectors should match the number of valid entries
+    assert (
+        index.ntotal == 3
+    )  # The number of vectors should match the number of valid entries

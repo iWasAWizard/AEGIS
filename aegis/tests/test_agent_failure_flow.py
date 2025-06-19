@@ -17,10 +17,16 @@ from aegis.schemas.runtime import RuntimeExecutionConfig
 @pytest.fixture
 def mock_llm_for_failure(monkeypatch):
     """Mocks the LLM to first try a failing command, then finish."""
-    plan_fail = {"thought": "I will try a command that I know will fail.", "tool_name": "run_local_command",
-                 "tool_args": {"command": "command_that_will_fail"}}
-    plan_recover = {"thought": "The previous command failed as expected. I will now finish the task.",
-                    "tool_name": "finish", "tool_args": {"reason": "Recovered from tool failure.", "status": "partial"}}
+    plan_fail = {
+        "thought": "I will try a command that I know will fail.",
+        "tool_name": "run_local_command",
+        "tool_args": {"command": "command_that_will_fail"},
+    }
+    plan_recover = {
+        "thought": "The previous command failed as expected. I will now finish the task.",
+        "tool_name": "finish",
+        "tool_args": {"reason": "Recovered from tool failure.", "status": "partial"},
+    }
     mock = MagicMock(side_effect=[json.dumps(plan_fail), json.dumps(plan_recover)])
 
     async def async_mock(*_args, **_kwargs):
@@ -39,7 +45,9 @@ def mock_failing_command(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_agent_recovers_from_tool_failure(mock_llm_for_failure, mock_failing_command):
+async def test_agent_recovers_from_tool_failure(
+    mock_llm_for_failure, mock_failing_command
+):
     """
     Tests that the agent can:
     1. Attempt to run a tool that fails.
@@ -48,10 +56,16 @@ async def test_agent_recovers_from_tool_failure(mock_llm_for_failure, mock_faili
     4. See the failure in its prompt and make a new plan to recover.
     """
     from aegis.utils.config_loader import load_agent_config
-    config: AgentConfig = load_agent_config(profile="verified_flow")  # Use the flow that can remediate
+
+    config: AgentConfig = load_agent_config(
+        profile="verified_flow"
+    )  # Use the flow that can remediate
     agent_graph = AgentGraph(AgentGraphConfig(**config.model_dump())).build_graph()
-    initial_state = TaskState(task_id="test-fail-flow-123", task_prompt="Run a command that fails, then finish.",
-                              runtime=RuntimeExecutionConfig(iterations=5))
+    initial_state = TaskState(
+        task_id="test-fail-flow-123",
+        task_prompt="Run a command that fails, then finish.",
+        runtime=RuntimeExecutionConfig(iterations=5),
+    )
 
     final_state_dict = await agent_graph.ainvoke(initial_state.model_dump())
     final_state = TaskState(**final_state_dict)

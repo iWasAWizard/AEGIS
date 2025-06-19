@@ -186,7 +186,7 @@ def format_prompt(formatter_hint: str, messages: List[Dict[str, Any]]) -> str:
     The selection is case-insensitive.
     If no specific format is found, it defaults to ChatML.
 
-    :param formatter_hint: The hint for which formatter to use (e.g., 'llama3', 'mistral', 'chatml', 'alpaca', 'phi3', 'codellama-instruct').
+    :param formatter_hint: The hint for which formatter to use (e.g., 'llama3', 'mistral', 'chatml', 'alpaca', 'phi3').
     :type formatter_hint: str
     :param messages: A list of message dictionaries, each with a 'role' and 'content'.
     :type messages: List[Dict[str, Any]]

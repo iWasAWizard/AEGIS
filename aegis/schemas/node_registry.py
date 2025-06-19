@@ -25,7 +25,6 @@ from aegis.utils.logger import setup_logger
 logger = setup_logger(__name__)
 logger.info("Initializing aegis.schemas.node_registry module...")
 
-
 # This registry maps the `tool` name specified in a preset's `nodes` list
 # to the actual function that will be executed for that node.
 AGENT_NODE_REGISTRY: Dict[str, Callable[..., Any]] = {

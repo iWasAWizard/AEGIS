@@ -2,7 +2,7 @@
 """
 Unit tests for the high-level system wrapper tools.
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

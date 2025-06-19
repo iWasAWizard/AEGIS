@@ -92,7 +92,10 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
     )
 
     if tool_name == "finish":
-        tool_output = f"Task signaled to finish by agent. Reason: '{tool_args.get('reason', 'No reason given.')}'. Status: '{tool_args.get('status', 'unknown')}'."
+        tool_output = (
+            f"Task signaled to finish by agent. Reason: '{tool_args.get('reason', 'No reason given.')}'"
+            f". Status: '{tool_args.get('status', 'unknown')}'."
+        )
         logger.info(tool_output)
     else:
         try:
@@ -119,7 +122,8 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
             )
             if timeout_duration is not None and timeout_duration <= 0:
                 logger.warning(
-                    f"Timeout for tool '{tool_name}' is non-positive ({timeout_duration}s). Running without asyncio.wait_for timeout."
+                    f"Timeout for tool '{tool_name}' is non-positive ({timeout_duration}s). "
+                    f"Running without asyncio.wait_for timeout."
                 )
                 timeout_duration = None
 
@@ -153,7 +157,8 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
             logger.error(tool_output)
         except Exception as e:
             logger.exception(
-                f"Unexpected generic exception caught in execute_tool for tool '{tool_name}' with args {tool_args}. Original error type: {type(e).__name__}, message: {e}",
+                f"Unexpected generic exception caught in execute_tool for tool '{tool_name}' with args {tool_args}. "
+                f"Original error type: {type(e).__name__}, message: {e}",
                 exc_info=True,
             )
             wrapped_error = ToolExecutionError(
@@ -170,9 +175,13 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
             else:
                 observation_str = str(tool_output)
         except Exception as serialization_exception:
-            observation_str = f"[OBSERVATION SERIALIZATION ERROR] Could not serialize tool output of type {type(tool_output).__name__}. Error: {serialization_exception}"
+            observation_str = (
+                f"[OBSERVATION SERIALIZATION ERROR] Could not serialize tool output of type "
+                f"{type(tool_output).__name__}. Error: {serialization_exception}"
+            )
             logger.error(
-                f"Failed to serialize tool_output for {tool_name} of type {type(tool_output)}. Original: {repr(tool_output)[:200]}"
+                f"Failed to serialize tool_output for {tool_name} of type {type(tool_output)}. "
+                f"Original: {repr(tool_output)[:200]}"
             )
     else:
         observation_str = tool_output

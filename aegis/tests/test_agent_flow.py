@@ -17,16 +17,20 @@ from aegis.schemas.runtime import RuntimeExecutionConfig
 @pytest.fixture
 def mock_llm_query(monkeypatch):
     """Mocks the llm_query function to return a predictable tool plan."""
-    plan1_str = json.dumps({
-        "thought": "I need to find the current user. I will use `run_local_command` with `whoami`.",
-        "tool_name": "run_local_command",
-        "tool_args": {"command": "whoami"},
-    })
-    plan2_str = json.dumps({
-        "thought": "I have successfully found the user. The task is complete.",
-        "tool_name": "finish",
-        "tool_args": {"reason": "User found.", "status": "success"},
-    })
+    plan1_str = json.dumps(
+        {
+            "thought": "I need to find the current user. I will use `run_local_command` with `whoami`.",
+            "tool_name": "run_local_command",
+            "tool_args": {"command": "whoami"},
+        }
+    )
+    plan2_str = json.dumps(
+        {
+            "thought": "I have successfully found the user. The task is complete.",
+            "tool_name": "finish",
+            "tool_args": {"reason": "User found.", "status": "success"},
+        }
+    )
 
     mock = MagicMock(side_effect=[plan1_str, plan2_str])
 
@@ -41,7 +45,9 @@ def mock_llm_query(monkeypatch):
 def mock_local_command(monkeypatch):
     """Mocks the run_local_command tool to return a predictable username."""
     mock = MagicMock(return_value="test_user")
-    monkeypatch.setattr("aegis.tools.primitives.primitive_system.run_local_command", mock)
+    monkeypatch.setattr(
+        "aegis.tools.primitives.primitive_system.run_local_command", mock
+    )
     return mock
 
 
@@ -51,6 +57,7 @@ async def test_full_agent_run(mock_llm_query, mock_local_command):
     Tests the full agent loop from prompt to final summary on a successful run.
     """
     from aegis.utils.config_loader import load_agent_config
+
     config: AgentConfig = load_agent_config(profile="default")
     agent_graph = AgentGraph(AgentGraphConfig(**config.model_dump())).build_graph()
     initial_state = TaskState(
@@ -91,6 +98,7 @@ async def test_full_agent_run_with_planner_error(monkeypatch):
     monkeypatch.setattr("aegis.utils.llm_query.llm_query", async_mock_bad_llm_query)
 
     from aegis.utils.config_loader import load_agent_config
+
     config: AgentConfig = load_agent_config(profile="default")
     agent_graph = AgentGraph(AgentGraphConfig(**config.model_dump())).build_graph()
     initial_state = TaskState(

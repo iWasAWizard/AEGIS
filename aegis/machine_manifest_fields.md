@@ -1,6 +1,8 @@
 # Machine Manifest Field Reference
 
-This document describes all available fields in the `machines.yaml` manifest used by the Agentic LLM system. Each VM or host entry should include a combination of required and optional keys depending on its platform, provider, and control mode.
+This document describes all available fields in the `machines.yaml` manifest used by the Agentic LLM system. Each VM or
+host entry should include a combination of required and optional keys depending on its platform, provider, and control
+mode.
 
 ## 🧾 Field Summary
 

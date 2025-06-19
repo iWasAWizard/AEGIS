@@ -6,7 +6,6 @@ This module provides tools that wrap network primitives to perform common,
 multi-step tasks such as formatted Nmap scans or posting structured JSON data
 to specific endpoints like Grafana.
 """
-import json
 from typing import List, Dict, Any, Optional
 
 from pydantic import BaseModel, Field

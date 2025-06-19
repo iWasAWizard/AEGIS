@@ -38,22 +38,28 @@ async def list_artifacts() -> List[Dict[str, Any]]:
         return []
 
     results: List[Dict[str, Any]] = []
-    task_dirs = sorted(REPORTS_DIR.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
+    task_dirs = sorted(
+        REPORTS_DIR.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True
+    )
 
     for task_dir in task_dirs:
         if task_dir.is_dir():
-            results.append({
-                "task_id": task_dir.name,
-                "has_summary": (task_dir / "summary.md").exists(),
-                "has_provenance": (task_dir / "provenance.json").exists(),
-                "timestamp": task_dir.stat().st_mtime,
-            })
+            results.append(
+                {
+                    "task_id": task_dir.name,
+                    "has_summary": (task_dir / "summary.md").exists(),
+                    "has_provenance": (task_dir / "provenance.json").exists(),
+                    "timestamp": task_dir.stat().st_mtime,
+                }
+            )
 
     logger.info(f"Found {len(results)} tasks with artifacts.")
     return results
 
 
-@router.get("/artifacts/{task_id}/summary", tags=["Artifacts"], response_class=PlainTextResponse)
+@router.get(
+    "/artifacts/{task_id}/summary", tags=["Artifacts"], response_class=PlainTextResponse
+)
 async def get_summary_artifact(task_id: str):
     """Retrieves the content of a task's summary.md file.
 
@@ -88,11 +94,17 @@ async def get_provenance_artifact(task_id: str):
     logger.info(f"Request for provenance artifact for task: {task_id}")
     provenance_path = REPORTS_DIR / task_id / "provenance.json"
     if not provenance_path.is_file():
-        logger.error(f"Provenance file not found for task '{task_id}' at {provenance_path}")
+        logger.error(
+            f"Provenance file not found for task '{task_id}' at {provenance_path}"
+        )
         raise HTTPException(status_code=404, detail="Provenance artifact not found.")
     try:
         with provenance_path.open("r", encoding="utf-8") as f:
             return json.load(f)
     except (IOError, json.JSONDecodeError) as e:
-        logger.exception(f"Could not read or parse provenance file for task '{task_id}'")
-        raise HTTPException(status_code=500, detail=f"Error reading or parsing provenance file: {e}")
+        logger.exception(
+            f"Could not read or parse provenance file for task '{task_id}'"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error reading or parsing provenance file: {e}"
+        )

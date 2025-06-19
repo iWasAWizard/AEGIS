@@ -51,11 +51,14 @@ def test_compare_reports_success(mock_compare_reports):
     assert " line 2 common" in diff_str
 
 
-@pytest.mark.parametrize("payload", [
-    ["task-comp-001"],  # Too few IDs
-    ["t1", "t2", "t3"],  # Too many IDs
-    [],  # Empty list
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        ["task-comp-001"],  # Too few IDs
+        ["t1", "t2", "t3"],  # Too many IDs
+        [],  # Empty list
+    ],
+)
 def test_compare_reports_invalid_input(mock_compare_reports, payload):
     """Test that the endpoint rejects requests with incorrect numbers of task IDs."""
     response = client.post("/api/compare_reports", json=payload)

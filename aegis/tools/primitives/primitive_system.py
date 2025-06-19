@@ -8,15 +8,15 @@ basic hardware and system statistics.
 """
 
 import subprocess
+from typing import Optional
 
 import psutil
-from pydantic import BaseModel, Field, Optional
+from pydantic import BaseModel, Field
 
 from aegis.exceptions import ToolExecutionError
+from aegis.executors.local import LocalExecutor
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
-from aegis.executors.local import LocalExecutor
-
 
 logger = setup_logger(__name__)
 

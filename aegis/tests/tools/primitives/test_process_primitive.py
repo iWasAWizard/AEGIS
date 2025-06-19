@@ -10,8 +10,10 @@ import pytest
 
 from aegis.exceptions import ToolExecutionError
 from aegis.tools.primitives.process import (
-    list_processes, ListProcessesInput,
-    get_disk_usage, GetDiskUsageInput
+    list_processes,
+    ListProcessesInput,
+    get_disk_usage,
+    GetDiskUsageInput,
 )
 
 
@@ -58,12 +60,12 @@ def test_list_processes_failure(mock_psutil):
 def test_get_disk_usage(mock_psutil):
     """Verify get_disk_usage correctly formats data from psutil.disk_usage."""
     # psutil.disk_usage returns a named tuple, so we simulate that
-    sdiskusage = namedtuple('sdiskusage', ['total', 'used', 'free', 'percent'])
+    sdiskusage = namedtuple("sdiskusage", ["total", "used", "free", "percent"])
     mock_usage = sdiskusage(
-        total=100 * 1024 ** 3,  # 100 GB
-        used=25 * 1024 ** 3,  # 25 GB
-        free=75 * 1024 ** 3,  # 75 GB
-        percent=25.0
+        total=100 * 1024**3,  # 100 GB
+        used=25 * 1024**3,  # 25 GB
+        free=75 * 1024**3,  # 75 GB
+        percent=25.0,
     )
     mock_psutil.disk_usage.return_value = mock_usage
 

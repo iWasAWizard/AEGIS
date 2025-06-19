@@ -9,6 +9,7 @@ limits like timeouts and retries.
 """
 
 from typing import Optional, Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -58,7 +59,8 @@ class RuntimeExecutionConfig(BaseModel):
     )
     llm_model_name: Optional[str] = Field(
         default=None,
-        description="Name/identifier of the LLM model. If None, uses OLLAMA_MODEL or KOBOLDCPP_MODEL (based on backend_type) env var.",
+        description="Name/identifier of the LLM model. If None, uses OLLAMA_MODEL or KOBOLDCPP_MODEL "
+        "(based on backend_type) env var.",
     )
     ollama_api_url: str = Field(
         default="http://ollama:11434/api/generate",
@@ -66,7 +68,8 @@ class RuntimeExecutionConfig(BaseModel):
     )
     koboldcpp_api_url: Optional[str] = Field(
         default=None,
-        description="URL of the KoboldCPP inference endpoint (e.g., 'http://koboldcpp:5001/api/v1/generate'). Set if using 'koboldcpp' backend.",
+        description="URL of the KoboldCPP inference endpoint (e.g., 'http://koboldcpp:5001/api/v1/generate'). "
+        "Set if using 'koboldcpp' backend.",
     )
     llm_planning_timeout: int = Field(
         default=300,

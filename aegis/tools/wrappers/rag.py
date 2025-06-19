@@ -29,7 +29,6 @@ except ImportError:
         "Tool will fallback to keyword search or fail if logs are also unavailable."
     )
 
-
 logger = setup_logger(__name__)
 
 # Load paths and model from central config
@@ -168,7 +167,8 @@ def _semantic_search(query: str, top_k: int) -> str:
             and all(isinstance(k, str) and k.isdigit() for k in text_mapping.keys())
         ):
             logger.error(
-                f"Mapping file {MAPPING_PATH} is not a list or a dict with stringified integer keys. Type: {type(text_mapping)}"
+                f"Mapping file {MAPPING_PATH} is not a list or a dict with stringified integer keys. "
+                f"Type: {type(text_mapping)}"
             )
             raise ToolExecutionError(
                 f"Invalid format in mapping file {MAPPING_PATH}. Expected list or dict of int-keyed strings."
@@ -201,11 +201,13 @@ def _semantic_search(query: str, top_k: int) -> str:
                         results.append(f"[Relevance: {1 - dist:.2f}] {text_content}")
                     else:
                         logger.warning(
-                            f"Index {idx} found in FAISS but missing in mapping file. This might indicate an outdated mapping file."
+                            f"Index {idx} found in FAISS but missing in mapping file. "
+                            f"This might indicate an outdated mapping file."
                         )
                 except IndexError:
                     logger.warning(
-                        f"Index {idx} out of bounds for text_mapping list (size {len(text_mapping)}). Possible index/mapping mismatch."
+                        f"Index {idx} out of bounds for text_mapping list (size {len(text_mapping)}). "
+                        f"Possible index/mapping mismatch."
                     )
                 except KeyError:
                     logger.warning(
@@ -296,7 +298,8 @@ def query_knowledge_base(input_data: KnowledgeQueryInput) -> str:
     else:  # Conditions for semantic search not met
         if not VECTOR_SEARCH_ENABLED:
             logger.warning(
-                "Dependencies for vector search not installed (faiss-cpu, sentence-transformers). Cannot perform semantic search."
+                "Dependencies for vector search not installed (faiss-cpu, sentence-transformers). "
+                "Cannot perform semantic search."
             )
         if not INDEX_PATH.exists():
             logger.warning(

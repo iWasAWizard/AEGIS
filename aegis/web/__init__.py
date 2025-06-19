@@ -19,7 +19,6 @@ from aegis.web.routes_inventory import router as inventory_router
 from aegis.web.routes_launch import router as launch_router
 from aegis.web.routes_logs import router as logs_router
 from aegis.web.routes_presets import router as presets_router
-from aegis.web.routes_reports import router as reports_router
 from aegis.web.routes_stream import router as log_streamer_router
 
 logger = setup_logger(__name__)
@@ -36,5 +35,4 @@ router.include_router(launch_router)
 router.include_router(fuzz_router)
 router.include_router(logs_router)
 router.include_router(graphs_router)
-router.include_router(reports_router)
 router.include_router(log_streamer_router, prefix="/ws")

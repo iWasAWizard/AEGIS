@@ -3,7 +3,7 @@
 Unit tests for the local system primitive tools.
 """
 import subprocess
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, mock_open
 
 import psutil  # type: ignore
 import pytest

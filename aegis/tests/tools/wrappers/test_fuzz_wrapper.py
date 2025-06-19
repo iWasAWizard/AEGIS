@@ -13,21 +13,29 @@ from pydantic import BaseModel
 from aegis.registry import ToolEntry, TOOL_REGISTRY
 from aegis.tools.wrappers.fuzz import (
     generate_payload,
-    fuzz_external_command, FuzzExternalCommandInput,
-    fuzz_file_input, FuzzFileInputInput,
-    fuzz_api_request, FuzzAPIRequestInput,
-    fuzz_tool_via_registry, FuzzToolRegistryInput,
+    fuzz_external_command,
+    FuzzExternalCommandInput,
+    fuzz_file_input,
+    FuzzFileInputInput,
+    fuzz_api_request,
+    FuzzAPIRequestInput,
+    fuzz_tool_via_registry,
+    FuzzToolRegistryInput,
 )
 
 
 # --- Tests for Helper ---
 
-@pytest.mark.parametrize("mode, validator", [
-    ("ascii", lambda p: p.isalnum()),
-    ("json", lambda p: isinstance(json.loads(p), dict)),
-    ("emoji", lambda p: True),  # Hard to validate charset easily
-    ("bytes", lambda p: True),
-])
+
+@pytest.mark.parametrize(
+    "mode, validator",
+    [
+        ("ascii", lambda p: p.isalnum()),
+        ("json", lambda p: isinstance(json.loads(p), dict)),
+        ("emoji", lambda p: True),  # Hard to validate charset easily
+        ("bytes", lambda p: True),
+    ],
+)
 def test_generate_payload(mode, validator):
     """Verify the payload generator creates valid payloads for each mode."""
     payload = generate_payload(mode, 50)
@@ -38,13 +46,16 @@ def test_generate_payload(mode, validator):
 
 # --- Tests for Tools ---
 
+
 def test_fuzz_external_command(monkeypatch):
     """Verify fuzz_external_command loops correctly and summarizes failures."""
-    mock_run = MagicMock(side_effect=[
-        subprocess.CompletedProcess(args=[], returncode=0),  # Success
-        subprocess.CompletedProcess(args=[], returncode=1),  # Failure
-        subprocess.CompletedProcess(args=[], returncode=0),  # Success
-    ])
+    mock_run = MagicMock(
+        side_effect=[
+            subprocess.CompletedProcess(args=[], returncode=0),  # Success
+            subprocess.CompletedProcess(args=[], returncode=1),  # Failure
+            subprocess.CompletedProcess(args=[], returncode=0),  # Success
+        ]
+    )
     monkeypatch.setattr(subprocess, "run", mock_run)
 
     input_data = FuzzExternalCommandInput(command="test_cmd {}", iterations=3)
@@ -58,7 +69,9 @@ def test_fuzz_external_command(monkeypatch):
 @patch("tempfile.NamedTemporaryFile")
 def test_fuzz_file_input(mock_temp_file, monkeypatch):
     """Verify fuzz_file_input creates and uses a temporary file."""
-    mock_run = MagicMock(return_value=subprocess.CompletedProcess(args=[], returncode=0))
+    mock_run = MagicMock(
+        return_value=subprocess.CompletedProcess(args=[], returncode=0)
+    )
     monkeypatch.setattr(subprocess, "run", mock_run)
 
     # Mock the file context manager
@@ -97,17 +110,14 @@ def test_fuzz_tool_via_registry(monkeypatch):
         pass
 
     # Mock a tool that succeeds once, then fails
-    mock_run_func = MagicMock(side_effect=[
-        "success",
-        Exception("tool failed")
-    ])
+    mock_run_func = MagicMock(side_effect=["success", Exception("tool failed")])
 
     mock_entry = ToolEntry(
         name="test_tool",
         run=mock_run_func,
         input_model=MockToolInput,
         tags=[],
-        description=""
+        description="",
     )
     monkeypatch.setitem(TOOL_REGISTRY, "test_tool", mock_entry)
 

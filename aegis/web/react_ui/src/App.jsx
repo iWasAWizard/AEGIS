@@ -3,9 +3,9 @@ import React, { useState, useEffect } from 'react';
 import LaunchTab from './LaunchTab';
 import PresetsTab from './PresetsTab';
 import ArtifactsTab from './ArtifactsTab';
-import ReportsTab from './ReportsTab';
+import ReportsTab from './ReportsTab'; // ReportsTab is legacy, ArtifactsTab is preferred
 import ToolsTab from './ToolsTab';
-// LogStreamTab is no longer imported as a top-level tab
+import LogStreamTab from './LogStreamTab';
 import GraphViewTab from './GraphViewTab';
 import DashboardTab from './DashboardTab';
 
@@ -19,6 +19,7 @@ import DashboardTab from './DashboardTab';
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [theme, setTheme] = useState(() => localStorage.getItem('aegis-theme') || 'oled');
+  const [targetArtifactId, setTargetArtifactId] = useState(null); // New state for targeted artifact
 
   // Effect to apply the selected theme to the body and persist it.
   useEffect(() => {
@@ -32,6 +33,17 @@ export default function App() {
     document.title = `AEGIS | ${tabName}`;
   }, [activeTab]);
 
+  // Function to navigate to Artifacts tab and set the target artifact ID
+  const navigateAndOpenArtifact = (taskId) => {
+    setTargetArtifactId(taskId);
+    setActiveTab('artifacts');
+  };
+
+  // Function to clear the target artifact ID, to be called by ArtifactsTab
+  const clearTargetArtifactId = () => {
+    setTargetArtifactId(null);
+  };
+
   /**
    * Renders the component for the currently active tab.
    * @returns {React.Component} The component for the active tab.
@@ -39,22 +51,23 @@ export default function App() {
   const renderTab = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardTab />;
+        return <DashboardTab navigateAndOpenArtifact={navigateAndOpenArtifact} />;
       case 'launch':
         return <LaunchTab />;
       case 'presets':
         return <PresetsTab />;
       case 'artifacts':
-        return <ArtifactsTab />;
+        return <ArtifactsTab targetArtifactId={targetArtifactId} clearTargetArtifactId={clearTargetArtifactId} />;
       case 'reports':
         return <ReportsTab />;
       case 'tools':
         return <ToolsTab />;
-      // 'logs' case removed
+      case 'logs':
+        return <LogStreamTab />;
       case 'graph':
         return <GraphViewTab />;
       default:
-        return <DashboardTab />;
+        return <DashboardTab navigateAndOpenArtifact={navigateAndOpenArtifact} />;
     }
   };
 
@@ -90,7 +103,7 @@ export default function App() {
         <nav style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <NavButton tabId="dashboard">🏠 Dashboard</NavButton>
           <NavButton tabId="launch">🚀 Launch</NavButton>
-          {/* "Live Logs" NavButton removed */}
+          <NavButton tabId="logs">📡 Live Logs</NavButton>
           <NavButton tabId="graph">🗺️ Graph</NavButton>
           <NavButton tabId="tools">🧰 Tools</NavButton>
           <NavButton tabId="presets">🧠 Presets</NavButton>

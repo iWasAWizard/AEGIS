@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from aegis.agents.steps.reflect_and_plan import reflect_and_plan, construct_planning_prompt
+from aegis.agents.steps.reflect_and_plan import (
+    reflect_and_plan,
+    construct_planning_prompt,
+)
 from aegis.agents.task_state import TaskState, HistoryEntry
 from aegis.exceptions import PlannerError
 from aegis.schemas.plan_output import AgentScratchpad
@@ -16,13 +19,15 @@ from aegis.schemas.runtime import RuntimeExecutionConfig
 @pytest.fixture
 def populated_state() -> TaskState:
     """Provides a TaskState with a history of one step."""
-    plan = AgentScratchpad(thought="Initial thought", tool_name="initial_tool", tool_args={})
+    plan = AgentScratchpad(
+        thought="Initial thought", tool_name="initial_tool", tool_args={}
+    )
     entry = HistoryEntry(plan=plan, observation="Initial observation", status="success")
     return TaskState(
         task_id="plan-test",
         task_prompt="This is the main goal.",
         runtime=RuntimeExecutionConfig(),
-        history=[entry]
+        history=[entry],
     )
 
 
@@ -33,7 +38,9 @@ def test_construct_planning_prompt(populated_state):
     # Test system prompt
     assert "You are AEGIS, an autonomous agent." in system_prompt
     assert "## Available Tools" in system_prompt
-    assert "finish(reason: string, status: string)" in system_prompt  # Check for a known tool
+    assert (
+        "finish(reason: string, status: string)" in system_prompt
+    )  # Check for a known tool
 
     # Test user prompt
     assert "## Main Goal" in user_prompt
@@ -47,7 +54,9 @@ def test_construct_planning_prompt(populated_state):
 async def test_reflect_and_plan_success():
     """Verify the step correctly parses a valid LLM response."""
     mock_llm_query = AsyncMock()
-    valid_plan_json = '{"thought": "test thought", "tool_name": "test_tool", "tool_args": {"a": 1}}'
+    valid_plan_json = (
+        '{"thought": "test thought", "tool_name": "test_tool", "tool_args": {"a": 1}}'
+    )
     mock_llm_query.return_value = valid_plan_json
 
     state = TaskState(task_id="t1", task_prompt="p", runtime=RuntimeExecutionConfig())

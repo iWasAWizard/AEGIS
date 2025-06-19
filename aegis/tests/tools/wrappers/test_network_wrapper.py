@@ -2,8 +2,7 @@
 """
 Unit tests for the high-level network wrapper tools.
 """
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

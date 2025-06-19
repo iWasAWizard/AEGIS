@@ -31,7 +31,9 @@ def mock_reports_dir(tmp_path: Path, monkeypatch):
     # Task 2: Only has a provenance file
     task2_dir = reports_dir / "task-002"
     task2_dir.mkdir()
-    (task2_dir / "provenance.json").write_text(json.dumps({"task_id": "task-002", "final_status": "FAILURE"}))
+    (task2_dir / "provenance.json").write_text(
+        json.dumps({"task_id": "task-002", "final_status": "FAILURE"})
+    )
 
     # Task 3: Has a malformed provenance file
     task3_dir = reports_dir / "task-003"

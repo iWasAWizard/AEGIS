@@ -33,15 +33,15 @@ def mock_fuzz_tool_in_registry(monkeypatch):
             run=fuzz_tool_run_mock,
             input_model=MockFuzzInput,
             tags=["fuzz", "test"],
-            description="A test fuzz tool."
+            description="A test fuzz tool.",
         ),
         "not_a_fuzz_tool": ToolEntry(
             name="not_a_fuzz_tool",
             run=MagicMock(),
             input_model=MockOtherInput,
             tags=["other"],
-            description="A regular tool."
-        )
+            description="A regular tool.",
+        ),
     }
 
     # Temporarily replace the real registry with our mock
@@ -62,10 +62,7 @@ def test_list_fuzz_tools():
 
 def test_run_fuzz_tool_success(mock_fuzz_tool_in_registry):
     """Verify a successful request to run a valid fuzz tool."""
-    payload = {
-        "tool_name": "test_fuzz_tool",
-        "payload": {"iterations": 10}
-    }
+    payload = {"tool_name": "test_fuzz_tool", "payload": {"iterations": 10}}
     response = client.post("/api/fuzz/run", json=payload)
 
     assert response.status_code == 200
@@ -75,20 +72,14 @@ def test_run_fuzz_tool_success(mock_fuzz_tool_in_registry):
 
 def test_run_fuzz_tool_not_found():
     """Test 404 error when the requested tool does not exist."""
-    payload = {
-        "tool_name": "non_existent_tool",
-        "payload": {}
-    }
+    payload = {"tool_name": "non_existent_tool", "payload": {}}
     response = client.post("/api/fuzz/run", json=payload)
     assert response.status_code == 404
 
 
 def test_run_fuzz_tool_not_a_fuzz_tool():
     """Test 403 error when trying to run a tool not tagged with 'fuzz'."""
-    payload = {
-        "tool_name": "not_a_fuzz_tool",
-        "payload": {}
-    }
+    payload = {"tool_name": "not_a_fuzz_tool", "payload": {}}
     response = client.post("/api/fuzz/run", json=payload)
     assert response.status_code == 403
 
@@ -107,7 +98,7 @@ def test_run_fuzz_tool_validation_error(monkeypatch):
 
     payload = {
         "tool_name": "test_fuzz_tool",
-        "payload": {"wrong_arg": 10}  # This payload will cause the validation error
+        "payload": {"wrong_arg": 10},  # This payload will cause the validation error
     }
     response = client.post("/api/fuzz/run", json=payload)
     assert response.status_code == 400

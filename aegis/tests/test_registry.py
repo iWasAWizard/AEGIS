@@ -2,9 +2,10 @@
 """
 Tests for the tool registration and lookup system.
 """
+import logging
+
 import pytest
 from pydantic import BaseModel
-import logging
 
 from aegis.exceptions import ToolNotFoundError, ToolValidationError
 from aegis.registry import TOOL_REGISTRY

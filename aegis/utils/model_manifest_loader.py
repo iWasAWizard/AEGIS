@@ -8,7 +8,6 @@ from typing import List, Optional, Dict, Any
 import yaml
 from pydantic import BaseModel, Field
 
-from aegis.exceptions import ConfigurationError
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -30,11 +29,13 @@ class ModelEntry(BaseModel):
 
     backend_model_name: Optional[str] = Field(
         None,
-        description="The actual model name/tag the backend API expects (e.g., 'llama3:latest' for Ollama). If None, other logic determines the API model name.",
+        description="The actual model name/tag the backend API expects (e.g., 'llama3:latest' for Ollama). "
+        "If None, other logic determines the API model name.",
     )
     filename_pattern: Optional[List[str]] = Field(
         default_factory=list,
-        description="List of case-insensitive patterns to match against backend default identifiers (like OLLAMA_MODEL or KOBOLDCPP_MODEL from .env) for inferring entry if 'key' isn't matched directly.",
+        description="List of case-insensitive patterns to match against backend default identifiers "
+        "(like OLLAMA_MODEL or KOBOLDCPP_MODEL from .env) for inferring entry if 'key' isn't matched.",
     )
     formatter_hint: str = Field(
         ...,
@@ -148,7 +149,8 @@ def get_model_entry(key_or_name_part: str) -> Optional[ModelEntry]:
             for pattern in entry.filename_pattern:
                 if pattern.lower() in search_term_lower:
                     logger.debug(
-                        f"Found model entry by filename pattern: '{entry.key}' (pattern: '{pattern}') for search term '{key_or_name_part}'"
+                        f"Found model entry by filename pattern: "
+                        f"'{entry.key}' (pattern: '{pattern}') for search term '{key_or_name_part}'"
                     )
                     return entry
 

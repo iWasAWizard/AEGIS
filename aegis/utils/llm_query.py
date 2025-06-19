@@ -16,10 +16,10 @@ import aiohttp
 from aegis.exceptions import PlannerError, ConfigurationError
 from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.utils.logger import setup_logger
-from aegis.utils.prompt_formatter import format_prompt
 from aegis.utils.model_manifest_loader import (
     get_model_details_from_manifest,
 )
+from aegis.utils.prompt_formatter import format_prompt
 
 logger = setup_logger(__name__)
 

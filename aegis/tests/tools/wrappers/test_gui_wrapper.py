@@ -45,15 +45,15 @@ def mock_pyautogui(monkeypatch):
         ("double_click", {}, "doubleClick", ()),
         ("type", {"text_to_type": "hello world!"}, "typewrite", ("hello world!",)),
         (
-                "screenshot",
-                {"screenshot_path": "/tmp/test.png"},
-                "screenshot",
-                ("/tmp/test.png",),
+            "screenshot",
+            {"screenshot_path": "/tmp/test.png"},
+            "screenshot",
+            ("/tmp/test.png",),
         ),
     ],
 )
 def test_gui_action(
-        mock_pyautogui, action_name, action_input, expected_call_name, expected_args
+    mock_pyautogui, action_name, action_input, expected_call_name, expected_args
 ):
     """Verify that each sub-action calls the correct pyautogui function."""
     base_input = {"action": action_name, "duration_seconds": 0.5}

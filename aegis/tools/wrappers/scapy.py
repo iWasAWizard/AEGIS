@@ -198,7 +198,10 @@ def scapy_tcp_scan(input_data: ScapyTcpScanInput) -> str:
             elif response.getlayer(TCP).flags == 0x14:  # RST/ACK # type: ignore
                 return f"Port {input_data.port} on {input_data.target} is closed."
             else:  # Other flags
-                return f"Port {input_data.port} on {input_data.target} received an unexpected TCP response (flags={response.getlayer(TCP).flags})."  # type: ignore
+                return (
+                    f"Port {input_data.port} on {input_data.target} received an unexpected TCP response"
+                    f" (flags={response.getlayer(TCP).flags})."
+                )  # type: ignore
 
         return f"Port {input_data.port} on {input_data.target} state is unknown (unexpected response type)."
     except Exception as e:  # Catch any scapy-related or other runtime errors

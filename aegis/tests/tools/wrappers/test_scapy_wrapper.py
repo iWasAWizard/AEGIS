@@ -7,18 +7,26 @@ from unittest.mock import MagicMock
 import pytest
 
 from aegis.tools.wrappers.scapy import (
-    scapy_ping, ScapyPingInput,
-    scapy_tcp_scan, ScapyTcpScanInput,
-    scapy_arp_scan, ScapyArpScanInput,
-    scapy_sniff, ScapySniffInput,
-    scapy_craft_and_send, ScapyCraftSendInput
+    scapy_ping,
+    ScapyPingInput,
+    scapy_tcp_scan,
+    ScapyTcpScanInput,
+    scapy_arp_scan,
+    ScapyArpScanInput,
+    scapy_sniff,
+    ScapySniffInput,
+    scapy_craft_and_send,
+    ScapyCraftSendInput,
 )
 
 # Mark this entire module to be skipped if scapy is not installed
-scapy_all = pytest.importorskip("scapy.all", reason="scapy not installed, skipping scapy tests")
+scapy_all = pytest.importorskip(
+    "scapy.all", reason="scapy not installed, skipping scapy tests"
+)
 
 
 # --- Fixtures ---
+
 
 @pytest.fixture
 def mock_scapy_sr1(monkeypatch):
@@ -54,6 +62,7 @@ def mock_scapy_send(monkeypatch):
 
 # --- Tests ---
 
+
 def test_scapy_ping_host_up(mock_scapy_sr1):
     """Verify ping reports host is up when a reply is received."""
     mock_scapy_sr1.return_value = MagicMock()  # Any non-None object signifies a reply
@@ -68,10 +77,13 @@ def test_scapy_ping_host_down(mock_scapy_sr1):
     assert "is down" in result
 
 
-@pytest.mark.parametrize("tcp_flags, expected_status", [
-    (0x12, "is open"),  # SYN/ACK
-    (0x14, "is closed"),  # RST/ACK
-])
+@pytest.mark.parametrize(
+    "tcp_flags, expected_status",
+    [
+        (0x12, "is open"),  # SYN/ACK
+        (0x14, "is closed"),  # RST/ACK
+    ],
+)
 def test_scapy_tcp_scan_open_closed(mock_scapy_sr1, tcp_flags, expected_status):
     """Verify TCP scan correctly identifies open and closed ports."""
     mock_response = MagicMock()
@@ -95,8 +107,14 @@ def test_scapy_tcp_scan_filtered(mock_scapy_sr1):
 def test_scapy_arp_scan(mock_scapy_srp):
     """Verify ARP scan correctly parses and displays discovered hosts."""
     # Mock two answered packets
-    answered_packet_1 = (MagicMock(), MagicMock(psrc="192.168.1.1", hwsrc="00:11:22:aa:bb:cc"))
-    answered_packet_2 = (MagicMock(), MagicMock(psrc="192.168.1.10", hwsrc="00:11:22:dd:ee:ff"))
+    answered_packet_1 = (
+        MagicMock(),
+        MagicMock(psrc="192.168.1.1", hwsrc="00:11:22:aa:bb:cc"),
+    )
+    answered_packet_2 = (
+        MagicMock(),
+        MagicMock(psrc="192.168.1.10", hwsrc="00:11:22:dd:ee:ff"),
+    )
     mock_scapy_srp.return_value = ([answered_packet_1, answered_packet_2], [])
 
     result = scapy_arp_scan(ScapyArpScanInput(target_range="192.168.1.0/24"))

@@ -2,18 +2,20 @@
 """
 Unit tests for the web_interact tool.
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
-# Import WebDriver for type hint in the mocked action_func if needed, though not strictly necessary for these tests
-# from selenium.webdriver.remote.webdriver import WebDriver
 
 from aegis.exceptions import ToolExecutionError
 from aegis.tools.wrappers.browser.web_interact import (
     web_interact,
     WebInteractionInput,
 )
+
+
+# Import WebDriver for type hint in the mocked action_func if needed, though not strictly necessary for these tests
+# from selenium.webdriver.remote.webdriver import WebDriver
+
 
 # No direct selenium imports needed if we mock the executor
 

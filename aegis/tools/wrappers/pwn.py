@@ -12,11 +12,11 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from aegis.exceptions import ToolExecutionError
-from aegis.registry import register_tool
-from aegis.utils.logger import setup_logger
 
 # Import PwntoolsExecutor
 from aegis.executors.pwntools import PwntoolsExecutor
+from aegis.registry import register_tool
+from aegis.utils.logger import setup_logger
 
 # pwntools import for non-executor tools
 try:
@@ -30,10 +30,10 @@ except ImportError:
     PWNTOOLS_AVAILABLE = False
 
     # Define dummy types for non-executor tools if pwntools is not available for type hinting
-    class shellcraft:
+    class ShellCraft:
         pass  # type: ignore
 
-    class context:
+    class Context:
         pass  # type: ignore
 
     def cyclic(n, length=None):
@@ -111,7 +111,7 @@ class PwnProcessInteractionInput(BaseModel):
 @register_tool(
     name="pwn_remote_connect",
     input_model=PwnRemoteConnectInput,
-    description="Connects to a remote TCP service, sends an optional payload, and receives data. Uses PwntoolsExecutor.",
+    description="Connects to a remote TCP service, sends an optional payload, and receives data. Uses PwntoolsExecutor",
     tags=["pwn", "network", "exploit", "security", "wrapper"],
     category="security",
     safe_mode=False,

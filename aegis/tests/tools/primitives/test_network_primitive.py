@@ -4,7 +4,7 @@ Unit tests for the network primitive tools.
 """
 import socket
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import requests

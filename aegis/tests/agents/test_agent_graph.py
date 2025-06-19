@@ -26,7 +26,7 @@ def valid_graph_config() -> AgentGraphConfig:
         ],
         edges=[("plan", "execute")],
         condition_node="check_termination",
-        condition_map={"continue": "plan", "end": "__end__"}
+        condition_map={"continue": "plan", "end": "__end__"},
     )
 
 
@@ -43,7 +43,7 @@ def test_build_graph_success(valid_graph_config):
     assert "check_termination" in compiled_graph.nodes
 
     # Check that edges were added
-    assert compiled_graph.edges == {('plan', 'execute')}
+    assert compiled_graph.edges == {("plan", "execute")}
 
     # Check that conditional branches were added
     assert "check_termination" in compiled_graph.branches
@@ -53,12 +53,21 @@ def test_build_graph_success(valid_graph_config):
     assert branch.ends["end"] == "__end__"
 
 
-@pytest.mark.parametrize("invalid_field, invalid_value, error_msg", [
-    ("entrypoint", "non_existent_node", "Invalid graph configuration"),
-    ("edges", [("plan", "non_existent_node")], "Invalid graph configuration"),
-    ("condition_node", "non_existent_node", "Conditional node 'non_existent_node' is not defined"),
-])
-def test_build_graph_invalid_config(valid_graph_config, invalid_field, invalid_value, error_msg):
+@pytest.mark.parametrize(
+    "invalid_field, invalid_value, error_msg",
+    [
+        ("entrypoint", "non_existent_node", "Invalid graph configuration"),
+        ("edges", [("plan", "non_existent_node")], "Invalid graph configuration"),
+        (
+            "condition_node",
+            "non_existent_node",
+            "Conditional node 'non_existent_node' is not defined",
+        ),
+    ],
+)
+def test_build_graph_invalid_config(
+    valid_graph_config, invalid_field, invalid_value, error_msg
+):
     """Verify that an invalid configuration raises a ConfigurationError."""
     # Create a mutable copy of the config to modify
     invalid_config_dict = valid_graph_config.model_dump()
