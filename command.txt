@@ -1,0 +1,14 @@
+cd ..; cd AEGIS; rm -rf ./aegis_repo.zip; zipar ./aegis_repo.zip .; docker compose down; docker image rm aegis-agent; docker compose build --no-cache; docker compose up
+
+curl -X POST http://localhost:8000/api/launch \
+-H "Content-Type: application/json" \
+-d '{
+    "task": {
+        "prompt": "Create a file named test.txt, write 'hello' into it, then read the file and report its content."
+    },
+    "config": "default",
+    "execution": {
+        "llm_model_name": "mistral:7b-instruct-v0.3-q4_K_M",
+        "iterations": 3
+    }
+}'

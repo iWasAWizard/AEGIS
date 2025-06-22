@@ -1,6 +1,6 @@
 # presets/verified_flow.yaml
-name: "Verified Agent Flow (Ollama Backend)"
-description: "An advanced agent that verifies outcomes using Ollama. If verification fails, it remediates."
+name: "Verified Agent Flow (KoboldCPP Backend)"
+description: "An advanced agent that verifies outcomes. If verification fails, it remediates. Uses BEND's KoboldCPP backend."
 state_type: "aegis.agents.task_state.TaskState"
 entrypoint: "plan"
 
@@ -9,9 +9,8 @@ nodes:
     tool: "reflect_and_plan"
   - id: "execute"
     tool: "execute_tool"
-  - id: "verify" # Node that runs verify_outcome(state) -> returns {"history": ...}
-    tool: "verify_outcome" 
-  # "router" node is REMOVED. route_after_verification is used as a pure conditional function.
+  - id: "verify"
+    tool: "verify_outcome"
   - id: "remediate"
     tool: "remediate_plan"
   - id: "summarize"
@@ -19,24 +18,21 @@ nodes:
 
 edges:
   - ["plan", "execute"]
-  - ["execute", "verify"] # After execute, go to verify node
-  # Conditional edges will branch from "verify" node, using route_after_verification function
-  - ["remediate", "execute"] 
+  - ["execute", "verify"]
+  - ["remediate", "execute"]
   - ["summarize", "__end__"]
 
-# Conditional decision is made AFTER the "verify" node (which runs verify_outcome).
-# The routing logic itself is the route_after_verification function.
-condition_node: "verify" 
+condition_node: "verify"
 condition_map:
-  remediate_plan: "remediate" 
-  continue: "plan"            
-  end: "summarize"            
+  remediate_plan: "remediate"
+  continue: "plan"
+  end: "summarize"
 
 runtime:
-  llm_backend_type: "ollama"
-  llm_model_name: "ollama-mistral-default"
-  ollama_api_url: "http://ollama:11434/api/generate"
-  koboldcpp_api_url: null
+  llm_backend_type: "koboldcpp"
+  llm_model_name: "hermes" # Key from BEND's models.yaml
+  koboldcpp_api_url: "http://koboldcpp:12009/api/v1/generate"
+  ollama_api_url: null
   llm_planning_timeout: 300
   temperature: 0.2
   max_context_length: 8192

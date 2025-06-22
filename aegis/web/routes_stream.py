@@ -54,11 +54,12 @@ class WebSocketLogHandler(logging.Handler):
     """A custom logging handler that broadcasts log records to WebSocket clients."""
 
     def __init__(self):
-        """Initializes the handler and sets a color formatter."""
+        """Initializes the handler and sets a standard formatter."""
         super().__init__()
-        from aegis.utils.logger import ColorFormatter
-
-        self.setFormatter(ColorFormatter())
+        # Use a standard formatter. The UI will receive plain text logs.
+        self.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+        )
 
     def emit(self, record: logging.LogRecord):
         """Formats the log record and broadcasts it via the WebSocket."""

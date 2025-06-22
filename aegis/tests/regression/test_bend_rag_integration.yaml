@@ -1,0 +1,13 @@
+# tests/regression/test_bend_rag_integration.yaml
+task:
+  prompt: >
+    Here is a multi-step task demonstrating integration with the BEND stack:
+    1. Use the 'bend_ingest_document' tool to upload the document located at './tests/regression/sample_doc_for_bend.txt'.
+    2. After ingestion, use the 'bend_retrieve_knowledge' tool to ask the question: "What is the secret code for Project Chimera?".
+    3. For verification, check that the output from the retrieval tool contains the string 'Crimson-Echo'.
+    4. If verification is successful, finish the task with a status of 'success', reporting the found code in the reason.
+
+config: "verified_flow"
+
+execution:
+  iterations: 6

@@ -1,6 +1,6 @@
 # presets/default.yaml
-name: "Default Agent Flow (Ollama Backend)"
-description: "A basic agent flow that plans, executes, and then decides to loop or end using Ollama."
+name: "Default Agent Flow (KoboldCPP Backend)"
+description: "A basic agent flow that plans, executes, and then decides to loop or end, using the BEND KoboldCPP backend."
 state_type: "aegis.agents.task_state.TaskState"
 entrypoint: "plan"
 
@@ -9,30 +9,26 @@ nodes:
     tool: "reflect_and_plan"
   - id: "execute"
     tool: "execute_tool"
-  # "check_termination" is NO LONGER a node here. Its logic is used by a conditional edge.
   - id: "summarize"
     tool: "summarize_result"
 
 edges:
   - [ "plan", "execute" ]
-  # The edge from "execute" will now be conditional.
-  - [ "summarize", "__end__" ] 
+  - [ "summarize", "__end__" ]
 
-# The conditional decision is made AFTER the "execute" node completes.
-# The function to make the decision will be the actual check_termination Python function.
-condition_node: "execute" 
+condition_node: "execute"
 condition_map:
-  continue: "plan"      # If check_termination returns "continue", go to "plan"
-  end: "summarize"      # If check_termination returns "end", go to "summarize"
+  continue: "plan"
+  end: "summarize"
 
 runtime:
-  llm_backend_type: "ollama" 
-  llm_model_name: "ollama-mistral-default" # Key from models.yaml
-  ollama_api_url: "http://ollama:11434/api/generate" 
-  koboldcpp_api_url: null 
+  llm_backend_type: "koboldcpp"
+  llm_model_name: "hermes" # Key from BEND's models.yaml
+  koboldcpp_api_url: "http://koboldcpp:12009/api/v1/generate"
+  ollama_api_url: null
   llm_planning_timeout: 300
   temperature: 0.2
-  max_context_length: 8192 # Overriding models.yaml default for mistral if needed for testing
+  max_context_length: 4096
   max_tokens_to_generate: 1536
   top_p: 0.9
   top_k: 40

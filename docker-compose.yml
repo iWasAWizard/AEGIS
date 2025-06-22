@@ -1,78 +1,34 @@
 version: "3.9"
 services:
-  ollama: # Restored Ollama service
-    env_file:
-      - .env 
-    image: ollama/ollama
-    volumes:
-      - ollama-data:/root/.ollama
-      - ./ollama_entrypoint.sh:/app/ollama_entrypoint.sh 
-    environment:
-      - OLLAMA_HOST=0.0.0.0 
-    ports:
-      - "11434:11434"
-    entrypoint: ["bash", "/app/ollama_entrypoint.sh"]
-    restart: unless-stopped
-
-  # KoboldCPP Service Definition (Optional, comment out if not used)
-  # To use, uncomment this section, ensure ./koboldcpp-models and Dockerfile.koboldcpp exist,
-  # and set KOBOLDCPP_MODEL in .env. Also change llm_backend_type in presets.
-  # koboldcpp:
-  #   build:
-  #     context: . 
-  #     dockerfile: Dockerfile.koboldcpp
-  #   container_name: koboldcpp
-  #   env_file:
-  #     - .env 
-  #   ports:
-  #     - "5001:5001" 
-  #   volumes:
-  #     - ./koboldcpp-models:/models 
-  #   command: >
-  #     sh -c '
-  #       echo "--- Starting Custom Built KoboldCPP ---"
-  #       echo "Model file from KOBOLDCPP_MODEL: ${KOBOLDCPP_MODEL}"
-  #       _ADDITIONAL_FLAGS=""
-  #       if [ -n "${LAYERS}" ] && [ "${LAYERS}" -gt 0 ]; then _ADDITIONAL_FLAGS="$${_ADDITIONAL_FLAGS} --gpulayers ${LAYERS}"; fi
-  #       if [ -n "${THREADS}" ]; then _ADDITIONAL_FLAGS="$${_ADDITIONAL_FLAGS} --threads ${THREADS}"; fi
-  #       if [ -z "${KOBOLDCPP_MODEL}" ]; then echo "Error: KOBOLDCPP_MODEL not set."; exit 1; fi
-  #       exec python3 /app/koboldcpp.py "/models/${KOBOLDCPP_MODEL}" \
-  #         --host 0.0.0.0 --port 5001 --contextsize "${CONTEXT_SIZE:-4096}" \
-  #         --usemirostat 2 0.1 0.15 $${_ADDITIONAL_FLAGS}
-  #     '
-  #   deploy: 
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all 
-  #             capabilities: [gpu]
-  #   restart: unless-stopped
+  # The Ollama service has been removed from this file.
+  # AEGIS now relies on the BEND stack for its LLM backend.
 
   agent:
     env_file:
-      - .env 
+      - .env
     build: .
     ports:
-      - "${AEGIS_PORT:-8000}:8000" 
+      - "${AEGIS_PORT:-8000}:8000"
     environment:
-      # Ollama is default again
+      # Environment variables are still passed for flexibility and tool use,
+      # but the agent service itself no longer depends on an Ollama container.
       - OLLAMA_MODEL
       - OLLAMA_API_URL
-      - OLLAMA_DIRECT_API_URL # For the direct tool
-      # Kobold vars are for optional use if llm_backend_type is switched
-      - KOBOLDCPP_MODEL 
-      - KOBOLDCPP_API_URL 
+      - OLLAMA_DIRECT_API_URL
+      - KOBOLDCPP_MODEL
+      - KOBOLDCPP_API_URL
       - ADMIN_PASSWORD
       - ROOT_PASSWORD
       - DEPLOY_PASSWORD
       - ESXI_PASSWORD
       - LANGCHAIN_DEBUG=true
-    depends_on:
-      ollama: # Depends on Ollama by default
-        condition: service_started 
-      # koboldcpp: # Uncomment if koboldcpp service is active and agent might use it
-      #   condition: service_started
+      - OTEL_SERVICE_NAME=aegis-agent
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
+      - BEND_API_KEY=${BEND_API_KEY}
+      - BEND_VOICE_PROXY_URL=http://voiceproxy:8001
+      - BEND_RETRIEVER_URL=http://retriever:8000
+    # depends_on is removed as the backend is now external in the BEND stack.
+    # The wait-for-koboldcpp.sh script now handles startup dependency.
     restart: unless-stopped
     volumes:
       - ./reports:/app/reports
@@ -82,9 +38,13 @@ services:
       - ./presets:/app/presets
       - ./machines.yaml:/app/machines.yaml
       - ./config.yaml:/app/config.yaml
-      - ./plugins:/app/plugins 
-      - ./models.yaml:/app/models.yaml 
+      - ./plugins:/app/plugins
+      - ./models.yaml:/app/models.yaml
+    networks:
+      - default
 
-volumes:
-  ollama-data:
-  # koboldcpp-data: 
+# Define the shared external network for communication with BEND
+networks:
+  default:
+    name: aegis_bend_net
+    external: true

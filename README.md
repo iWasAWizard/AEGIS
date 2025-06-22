@@ -1,3 +1,4 @@
+```markdown
 # 🛡️ AEGIS: Autonomous Agentic Framework
 
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
@@ -6,9 +7,7 @@
 [![Built with LangGraph](https://img.shields.io/badge/built%20with-LangGraph-orange)](https://github.com/langchain-ai/langgraph)
 
 **AEGIS** is a modular, offline-capable, and "air-gapped friendly" autonomous agent framework built on Python and
-LangGraph. It leverages local LLMs via **KoboldCPP** to plan and execute complex, multi-step tasks. Designed as a **Test
-Engineer's Swiss Army Knife**, AEGIS acts as a reliable proxy, translating high-level human intent into safe,
-repeatable, and auditable technical operations.
+LangGraph. It is designed to be the "Cerebral Cortex" in a larger system of systems, using backend intelligence stacks like **BEND** to plan and execute complex, multi-step tasks.
 
 The core philosophy is to provide an **idiot-friendly surface** for simple tasks while exposing a **powerful,
 configurable engine** for experts.
@@ -17,8 +16,7 @@ configurable engine** for experts.
 
 ## ✨ Core Features
 
-*   **🧠 Autonomous Planning:** Uses a local LLM to reason about problems, form multi-step plans, and select the
-    appropriate tools for the job.
+*   **🧠 Autonomous Planning:** Uses a local LLM (provided by the **BEND** stack) to reason about problems, form multi-step plans, and select the appropriate tools for the job.
 *   **🔧 Rich, Modular Toolset:** A comprehensive library of tools for system administration, network
     diagnostics (`nmap`, `scapy`), security testing (`pwntools`), file operations, web automation (`selenium`), and even
     fuzzing.
@@ -29,8 +27,6 @@ configurable engine** for experts.
     *   **Centralized Executors:** Standardized and reliable execution logic for remote (SSH) and local commands.
 *   **⚙️ Graph-Based Workflows:** Agent behaviors are defined as graphs using simple YAML presets. This allows for
     creating complex, conditional logic (e.g., "try this, if it fails, do that") without changing Python code.
-*   **📦 Air-Gapped & Self-Contained:** Designed to run entirely within a Docker environment with no external internet
-    dependencies post-setup. All models and dependencies are local.
 *   **🔌 Dual Interfaces:** Interact via a clean **React-based web UI** or a powerful **Typer-based command-line
     interface (CLI)**.
 
@@ -41,8 +37,7 @@ configurable engine** for experts.
 Beyond basic tool execution, AEGIS incorporates several advanced systems for enhanced intelligence and usability:
 
 *   **✍️ RAG-Powered Memory:** The agent automatically indexes the logs of every completed task. It can then query this
-    memory using the `query_knowledge_base` tool to learn from past successes and failures, improving its problem-solving
-    ability over time.
+    memory using the `query_knowledge_base` tool to learn from its own past successes and failures.
 *   **✅ Execute-and-Verify Flow:** AEGIS supports advanced workflows (e.g., `verified_flow.yaml`) where the agent not only
     *executes* an action but also runs a follow-up *verification* step. If verification fails, it enters a remediation
     loop to correct the problem autonomously.
@@ -56,116 +51,109 @@ Beyond basic tool execution, AEGIS incorporates several advanced systems for enh
 
 ## 🏗️ Architecture
 
+AEGIS is designed to be a consumer of a backend intelligence stack like **BEND**.
+
 ```
 +---------------------------------+
-|          User Interface         |
-|      (FastAPI Web UI / CLI)     |
+|       BEND Backend Stack        |
+| (LLM, STT, TTS, Document RAG)   |
 +---------------------------------+
-               |
+               ^
+               | (API Calls)
                v
 +---------------------------------+
-|      AEGIS Launch Endpoint      |
-| (Parses Request & Loads Config) |
+|          User Interface         |
+|      (AEGIS Web UI / CLI)       |
 +---------------------------------+
                |
                v
 +---------------------------------+      +--------------------------------+
 |       Agent Execution Graph     |----->|     Agent State (TaskState)    |
-| (LangGraph: Plan -> Execute ->) |      | (Prompt, Config, History, etc) |
-+---------------------------------+      +--------------------------------+
-               |                                        ^
-               v                                        |
-+---------------------------------+      +--------------------------------+
-|        Tool Execution Step      |----->|         Tool Registry          |
-|  (Resolves & Validates Tools)   |      |   (Provides Tool Functions)    |
+| (LangGraph: Plan -> Execute ->) |<-----| (Prompt, Config, History, etc) |
 +---------------------------------+      +--------------------------------+
                |
                v
 +---------------------------------+
-|         Execution Layer         |
-| (SSH, Local Shell, Browser, etc)|
+|        Tool Execution Step      |
+|  (Resolves & Validates Tools)   |
 +---------------------------------+
 ```
 
-1.  **User Interface:** The user submits a high-level task through the Web UI or the CLI.
-2.  **Launch Endpoint:** The request is received, a configuration preset (e.g., `default.yaml`) is loaded, and the
-    initial `TaskState` is created.
-3.  **Agent Execution Graph:** The state is passed to a `LangGraph` instance, which controls the agent's main loop (
-    e.g., `Plan -> Execute -> Verify -> Loop`). The planning steps involve LLM calls to **KoboldCPP**.
-4.  **Tool Execution:** When the agent decides to use a tool, it calls the `Tool Registry`, which provides the validated
-    tool function and its input schema.
-5.  **Execution Layer:** The tool's logic is executed through a standardized primitive, such as the `SSHExecutor` or a
-    local `subprocess` call.
-6.  **State Update:** The result of the tool's execution is recorded in the `TaskState` history, and the loop continues
-    until a termination condition is met.
+1.  **Backend Services (BEND):** The BEND stack runs independently, providing LLM inference, voice services, and document storage.
+2.  **User Interface (AEGIS):** The user submits a high-level task through the AEGIS Web UI or CLI.
+3.  **Agent Execution Graph (AEGIS):** The agent's control loop, powered by LangGraph, uses the LLM from BEND to create a plan.
+4.  **Tool Execution (AEGIS):** The agent executes its rich, internal toolset. Some of these tools will make API calls back to BEND to use its services.
 
 ---
 
 ## 🚀 Quick Start with Docker (Recommended)
 
-This is the easiest and most reliable way to get AEGIS running with all its dependencies.
+AEGIS now requires the **BEND** stack to be running as its backend.
 
 ### Prerequisites
 
 1.  **Docker and Docker Compose installed.**
-2.  **LLM Model File (GGUF or EXL2 format):**
-    *   AEGIS uses **KoboldCPP** as its local LLM backend. You need to download a compatible model file.
-    *   **Recommended Source:** [Hugging Face Hub](https://huggingface.co/models). Search for GGUF models from creators like "TheBloke".
-    *   **Example (Llama 3 8B Instruct):**
-        *   Search for "TheBloke Llama-3-8B-Instruct-GGUF".
-        *   Download a specific quantization, for example: `Llama-3-8B-Instruct.Q5_K_M.gguf`
-    *   **Example (Mistral 7B Instruct):**
-        *   Search for "TheBloke Mistral-7B-Instruct-v0.2-GGUF".
-        *   Download: `mistral-7b-instruct-v0.2.Q4_K_M.gguf`
-    *   Ensure the model you choose is compatible with the version of KoboldCPP used in the Docker image.
+2.  **You have successfully cloned and set up the BEND repository.**
 
 ### Steps
 
-1.  **Clone the Repository:**
+1.  **Start the BEND Stack:**
+    In a separate terminal, navigate to your BEND repository directory and start its services.
+    ```bash
+    # In your /path/to/bend/
+    ./scripts/switch-model.sh hermes # Select a model for BEND
+    docker compose up -d --build
+    ```
+
+2.  **Create a Shared Docker Network:**
+    This allows the AEGIS and BEND containers to communicate. You only need to do this once.
+    ```bash
+    docker network create aegis_bend_net
+    ```
+
+3.  **Configure BEND to Use the Shared Network:**
+    Add the following lines to the end of your `bend/docker-compose.yml` file:
+    ```yaml
+    networks:
+      default:
+        name: aegis_bend_net
+        external: true
+    ```
+    Then, restart BEND to apply the network change: `cd bend && docker compose up -d --force-recreate`
+
+4.  **Clone and Configure AEGIS:**
+    In another terminal, clone the AEGIS repository.
     ```bash
     git clone https://your-repo-url/aegis.git # Replace with your actual repo URL
     cd aegis
+    cp .env.example .env
+    ```
+    Open `.env` and set any required secrets like `BEND_API_KEY` if you have one configured in BEND.
+
+    **.env.example**
+    ```env
+    # For AEGIS to communicate with a secured BEND stack
+    BEND_API_KEY=your-bend-api-key-if-you-set-one
+
+    # For optional tools that use external APIs (not needed for core AEGIS+BEND)
+    # OPENAI_API_KEY=
+
+    # Machine secrets for SSH tools
+    ADMIN_PASSWORD=supersecret
+    ROOT_PASSWORD=toor
+    DEPLOY_PASSWORD=changeme
+    ESXI_PASSWORD=vmware123
     ```
 
-2.  **Prepare Model Directory and `.env` File:**
-    *   Create a directory to store your downloaded LLM files. This directory will be mounted into the KoboldCPP Docker container.
-        ```bash
-        mkdir koboldcpp-models
-        ```
-    *   Move your downloaded `.gguf` (or `.exl2`) model file(s) into this `koboldcpp-models` directory. For example:
-        ```bash
-        mv ~/Downloads/Llama-3-8B-Instruct.Q5_K_M.gguf ./koboldcpp-models/
-        ```
-    *   Copy the example environment file:
-        ```bash
-        cp .env.example .env
-        ```
-    *   Open the newly created `.env` file and **set `KOBOLDCPP_MODEL` to the exact filename of the model you placed in `koboldcpp-models`**. For example:
-        ```dotenv
-        # .env (snippet)
-        KOBOLDCPP_MODEL=Llama-3-8B-Instruct.Q5_K_M.gguf
-        KOBOLDCPP_API_URL="http://koboldcpp:5001/api/v1/generate"
-
-        # Optional: Adjust KoboldCPP startup parameters (used by docker-compose.yml)
-        CONTEXT_SIZE=4096
-        # LAYERS=33 # Number of layers to offload to GPU (0 for CPU only)
-        # THREADS=8 # Number of CPU threads for KoboldCPP
-        ```
-        You can also configure machine passwords and other settings in this `.env` file.
-
-3.  **Build and Run with Docker Compose:**
-    From the project root, launch the Docker Compose stack:
+5.  **Build and Run AEGIS:**
+    From the `aegis` project root, launch the Docker Compose stack.
     ```bash
-    docker-compose up --build
+    docker compose up --build
     ```
-    This command will:
-    *   Build the AEGIS Docker image, installing all Python and system dependencies.
-    *   Start the KoboldCPP container. The `command` in `docker-compose.yml` will use the `KOBOLDCPP_MODEL` environment variable to load your specified model from the mounted `/models` volume (which corresponds to your local `koboldcpp-models` directory).
-    *   Start the AEGIS container, which runs the FastAPI server.
-    *   **Note:** The first time KoboldCPP loads a large model, it might take a few minutes. Monitor the logs using `docker-compose logs -f koboldcpp`.
+    The `wait-for-koboldcpp.sh` script will ensure the AEGIS container waits until BEND's LLM service is ready before starting the API server.
 
-4.  **Access the UI:**
-    Once KoboldCPP has loaded the model and AEGIS has started (see `docker-compose logs -f agent`), open your web browser and navigate to **`http://localhost:8000`** (or your `AEGIS_HOST`:`AEGIS_PORT` if changed). You should see the AEGIS web dashboard.
+6.  **Access the UI:**
+    Open your web browser and navigate to **`http://localhost:8000`**. You should see the AEGIS web dashboard, now powered by the BEND backend.
 
 ---
 
@@ -173,67 +161,29 @@ This is the easiest and most reliable way to get AEGIS running with all its depe
 
 The CLI is perfect for scripted automation and quick, targeted tasks.
 
-### 1. Run a Task from a YAML File
+### Run a Task from a YAML File
 
-This is the most powerful way to use the CLI. Create a task file, for example `my-task.yaml`:
+Create a task file, for example `my-task.yaml`:
 
 ```yaml
 # my-task.yaml
 task:
-  prompt: "Scan localhost for open ports 80, 443, and 8000. Use a TCP Connect scan. Verify the result by checking if the output contains '8000/tcp open', then finish with a status of success."
-# Use the advanced verification and remediation graph
-config: "verified_flow" # This preset is now configured to use KoboldCPP
-execution:
-  iterations: 5 # Set a max of 5 steps for this task
+  prompt: "Scan localhost for open ports 80, 443, and 8000. Use a TCP Connect scan."
+config: "default" # This preset now uses the KoboldCPP backend from BEND
 ```
 
-Then, run it with the `run-task` command:
+Then, run it:
 
 ```bash
 python -m aegis.cli run-task my-task.yaml
 ```
 
-### 2. List Available Tools
-
-To see all the tools the agent can use, run:
+### Other Commands
 
 ```bash
+# List all available tools
 python -m aegis.cli list-tools
-```
 
-### 3. Create and Validate a New Tool
-
-Use the built-in scaffolder and validator to extend the agent's capabilities:
-
-```bash
-# Interactively create a new tool boilerplate in the plugins/ directory
+# Scaffold a new tool in the plugins/ directory
 python -m aegis.cli new-tool
-
-# Validate your new tool file for syntax and metadata errors
-python -m aegis.cli validate-tool plugins/my_new_tool.py
-```
-
----
-
-## 🔧 Extending AEGIS
-
-AEGIS is built to be extended.
-
-### Adding a New Tool
-
-1.  Use the `new-tool` CLI command to generate a complete boilerplate file in the `plugins/` directory.
-    ```bash
-    python -m aegis.cli new-tool
-    ```
-2.  Open the newly generated file (e.g., `plugins/my_new_tool.py`) and implement your logic in the function body. The
-    Pydantic input model and decorator are already set up for you.
-3.  Restart the AEGIS application. The tool loader will automatically discover and register your new tool.
-
-### Creating a New Agent Behavior (Graph)
-
-1.  Create a new YAML file in the `presets/` directory (e.g., `my-behavior.yaml`).
-2.  Define the `state_type`, `entrypoint`, `nodes`, and `edges` for your new graph. You can use `default.yaml`
-    and `verified_flow.yaml` (which are now KoboldCPP-centric) as templates.
-3.  You can now launch tasks using this new behavior by specifying its name in an API call or task
-    file (`config: "my-behavior"`).
 ```

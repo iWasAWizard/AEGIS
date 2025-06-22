@@ -31,11 +31,11 @@ RUN wget -q https://github.com/mozilla/geckodriver/releases/download/v0.36.0/gec
 
 COPY . .
 
-# Ensure wait-for-ollama.sh is executable, remove kobold one if present
-RUN rm -f ./wait-for-koboldcpp.sh && \
-    chmod +x ./wait-for-ollama.sh
+# Ensure wait-for-koboldcpp.sh is executable
+RUN rm -f ./wait-for-ollama.sh && \
+    chmod +x ./wait-for-koboldcpp.sh
 
 COPY --from=ui-builder /app/aegis/web/react_ui/dist /app/aegis/web/react_ui/dist
 
-# Revert CMD to use wait-for-ollama.sh
-CMD ["./wait-for-ollama.sh", "python", "-m", "aegis.serve_dashboard"]
+# Use the new wait script
+CMD ["./wait-for-koboldcpp.sh", "python", "-m", "aegis.serve_dashboard"]

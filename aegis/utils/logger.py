@@ -11,62 +11,11 @@ import os
 import sys
 from typing import Any, MutableMapping
 
-from aegis.utils.log_sinks import JsonlFileHandler, TaskIdFilter
+from pythonjsonlogger import jsonlogger
+
+from aegis.utils.log_sinks import TaskIdFilter
 
 _LOGGING_CONFIGURED = False
-
-
-class LogColors:
-    """A container for ANSI escape codes to colorize log output."""
-
-    HEADER = "\x1b[95m"
-    OKBLUE = "\x1b[94m"
-    OKCYAN = "\x1b[96m"
-    OKGREEN = "\x1b[92m"
-    WARNING = "\x1b[93m"
-    FAIL = "\x1b[91m"
-    ENDC = "\x1b[0m"
-    BOLD = "\x1b[1m"
-    UNDERLINE = "\x1b[4m"
-
-
-class ColorFormatter(logging.Formatter):
-    """Custom log formatter that applies color coding and includes the task_id."""
-
-    _format_task = (
-        "%(asctime)s - [%(task_id)s] - %(levelname)-8s - %(name)-25s - %(message)s"
-    )
-    _format_system = (
-        "%(asctime)s - [SYSTEM]   - %(levelname)-8s - %(name)-25s - %(message)s"
-    )
-
-    def format(self, record: logging.LogRecord) -> str:
-        """Formats the log record with color and task ID context.
-
-        :param record: The log record to format.
-        :type record: logging.LogRecord
-        :return: The formatted, colorized log string.
-        :rtype: str
-        """
-        level_color = {
-            "DEBUG": LogColors.OKBLUE,
-            "INFO": LogColors.OKGREEN,
-            "WARNING": LogColors.WARNING,
-            "ERROR": LogColors.FAIL,
-            "CRITICAL": LogColors.FAIL,
-        }.get(record.levelname, LogColors.ENDC)
-
-        # Safely get the task_id attribute set by the TaskIdFilter.
-        task_id = getattr(record, "task_id", None)
-        if task_id:
-            log_fmt = self._format_task
-        else:
-            record.task_id = "SYSTEM"  # Default value for display
-            log_fmt = self._format_system
-
-        formatter = logging.Formatter(log_fmt, "%Y-%m-%d %H:%M:%S")
-        formatted_msg = formatter.format(record)
-        return f"{level_color}{formatted_msg}{LogColors.ENDC}"
 
 
 class StructuredLoggerAdapter(logging.LoggerAdapter):
@@ -96,14 +45,7 @@ class StructuredLoggerAdapter(logging.LoggerAdapter):
         """
         original_extra_content = kwargs.get("extra")
         if original_extra_content is not None:
-            # The underlying logger expects 'extra' to be a dict whose items
-            # become attributes of the LogRecord. We want our custom data
-            # to be accessible as record.extra_data by the JsonlFileHandler.
-            # So, we tell the logger: "create an attribute named 'extra_data'
-            # on the LogRecord, and its value should be the dictionary that
-            # was originally passed as 'extra' to the adapter's log call."
             kwargs["extra"] = {"extra_data": original_extra_content}
-        # If no 'extra' was in the original call, kwargs is passed as is.
         return msg, kwargs
 
 
@@ -125,7 +67,6 @@ def setup_logger(
 
     if not _LOGGING_CONFIGURED:
         root_logger = logging.getLogger()
-        # Set level from env or default to INFO
         log_level_str = os.getenv("AEGIS_LOG_LEVEL", "info").upper()
         level = getattr(logging, log_level_str, logging.INFO)
         root_logger.setLevel(level)
@@ -133,24 +74,20 @@ def setup_logger(
         if root_logger.hasHandlers():
             root_logger.handlers.clear()
 
-        # 1. Console Handler (for human-readable output)
+        # Configure console handler to output structured JSON logs to stdout
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(ColorFormatter())
+        # The format string includes standard fields plus our custom task_id
+        formatter = jsonlogger.JsonFormatter(
+            "%(asctime)s %(name)s %(levelname)s %(task_id)s %(message)s"
+        )
+        console_handler.setFormatter(formatter)
         console_handler.addFilter(TaskIdFilter())
         root_logger.addHandler(console_handler)
 
-        # 2. JSONL File Handler (for machine-readable audit trails)
-        jsonl_handler = JsonlFileHandler()
-        root_logger.addHandler(jsonl_handler)
-
         root_logger.info(
-            f"Root logger configured with Console and JSONL handlers. Level: {log_level_str}"
+            f"Root logger configured with JSON stdout handler. Level: {log_level_str}"
         )
         _LOGGING_CONFIGURED = True
 
     logger_instance = logging.getLogger(name)
-    # Ensure child loggers also respect the root logger's level setting by default
-    # unless explicitly set otherwise. If root is DEBUG, child will pass DEBUG.
-    # If root is INFO, child will pass INFO but not DEBUG unless child.setLevel(DEBUG) is called.
-    # This is standard logging behavior. Here, we ensure our adapter doesn't change it.
     return StructuredLoggerAdapter(logger_instance, {})

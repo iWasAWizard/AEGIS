@@ -20,15 +20,15 @@ class RuntimeExecutionConfig(BaseModel):
     iteration limits, and safety constraints. It can be defined in a preset
     or overridden at launch time.
 
-    :ivar llm_backend_type: Specifies which LLM backend to use ('ollama' or 'koboldcpp'). Defaults to 'ollama'.
+    :ivar llm_backend_type: Specifies which LLM backend to use ('ollama' or 'koboldcpp'). Defaults to 'koboldcpp'.
     :vartype llm_backend_type: Literal["ollama", "koboldcpp"]
-    :ivar llm_model_name: The name/identifier of the LLM model to use (e.g., 'llama3' for Ollama).
-                         If None, uses OLLAMA_MODEL or KOBOLDCPP_MODEL env var based on backend_type.
+    :ivar llm_model_name: The name/identifier of the LLM model to use (e.g., 'hermes' from BEND).
+                         If None, uses KOBOLDCPP_MODEL or OLLAMA_MODEL env var based on backend_type.
     :vartype llm_model_name: Optional[str]
     :ivar ollama_api_url: The URL of the Ollama inference endpoint.
-    :vartype ollama_api_url: str
-    :ivar koboldcpp_api_url: The URL of the KoboldCPP inference endpoint.
-    :vartype koboldcpp_api_url: Optional[str]
+    :vartype ollama_api_url: Optional[str]
+    :ivar koboldcpp_api_url: The URL of the KoboldCPP inference endpoint from the BEND stack.
+    :vartype koboldcpp_api_url: str
     :ivar llm_planning_timeout: The timeout in seconds for LLM planning queries.
     :vartype llm_planning_timeout: int
     :ivar temperature: The sampling temperature for the LLM (0.0-2.0). Lower is more deterministic.
@@ -54,22 +54,21 @@ class RuntimeExecutionConfig(BaseModel):
     """
 
     llm_backend_type: Literal["ollama", "koboldcpp"] = Field(
-        default="ollama",
+        default="koboldcpp",
         description="Specifies which LLM backend to use ('ollama' or 'koboldcpp').",
     )
     llm_model_name: Optional[str] = Field(
         default=None,
-        description="Name/identifier of the LLM model. If None, uses OLLAMA_MODEL or KOBOLDCPP_MODEL "
+        description="Name/identifier of the LLM model. If None, uses KOBOLDCPP_MODEL or OLLAMA_MODEL "
         "(based on backend_type) env var.",
     )
-    ollama_api_url: str = Field(
-        default="http://ollama:11434/api/generate",
-        description="URL of the Ollama inference endpoint.",
-    )
-    koboldcpp_api_url: Optional[str] = Field(
+    ollama_api_url: Optional[str] = Field(
         default=None,
-        description="URL of the KoboldCPP inference endpoint (e.g., 'http://koboldcpp:5001/api/v1/generate'). "
-        "Set if using 'koboldcpp' backend.",
+        description="URL of the Ollama inference endpoint (if 'ollama' backend is used).",
+    )
+    koboldcpp_api_url: str = Field(
+        default="http://koboldcpp:12009/api/v1/generate",
+        description="URL of the KoboldCPP inference endpoint from the BEND stack.",
     )
     llm_planning_timeout: int = Field(
         default=300,

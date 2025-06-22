@@ -25,6 +25,15 @@ from aegis.utils.tool_loader import import_all_tools
 from aegis.web import router as api_router
 from aegis.web.routes_stream import WebSocketLogHandler, connected_clients
 
+# OpenTelemetry Imports
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+
 load_dotenv()
 logger = setup_logger(__name__)
 
@@ -86,6 +95,26 @@ def validate_critical_imports():
 def on_startup():
     """Performs application startup actions."""
     logger.info("--- AEGIS Application Startup ---")
+
+    # --- OpenTelemetry Tracing Setup ---
+    OTEL_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if OTEL_ENDPOINT:
+        provider = TracerProvider()
+        processor = BatchSpanProcessor(
+            OTLPSpanExporter(endpoint=OTEL_ENDPOINT, insecure=True)
+        )
+        provider.add_span_processor(processor)
+        trace.set_tracer_provider(provider)
+
+        FastAPIInstrumentor.instrument_app(app)
+        RequestsInstrumentor().instrument()  # Instrument outgoing requests
+
+        logger.info(f"OpenTelemetry tracing enabled. Exporting to: {OTEL_ENDPOINT}")
+    else:
+        logger.info(
+            "OpenTelemetry tracing is disabled (OTEL_EXPORTER_OTLP_ENDPOINT not set)."
+        )
+    # --- End Tracing Setup ---
 
     validate_critical_imports()
 
