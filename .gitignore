@@ -57,3 +57,5 @@ dist/
 scratch.txt
 tmp/
 temp/
+*.bin
+*.gguf
