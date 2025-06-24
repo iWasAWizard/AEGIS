@@ -13,11 +13,49 @@ configurable engine** for experts.
 
 ---
 
+## ✨ Core Features
+
+*   **🧠 Autonomous Planning:** Uses a local LLM (provided by the **BEND** stack) to reason about problems, form multi-step plans, and select the appropriate tools for the job.
+*   **🔧 Rich, Modular Toolset:** A comprehensive library of tools for system administration, network
+    diagnostics (`nmap`, `scapy`), security testing (`pwntools`), file operations, web automation (`selenium`), and even
+    fuzzing.
+*   **🔒 Built for Safety & Auditing:**
+    *   **Structured Provenance:** Every task generates a machine-readable `provenance.json` "flight recording" of every
+        thought, action, and observation for full traceability.
+    *   **Safe Mode:** Restricts the agent to only use tools that cannot perform destructive or state-changing actions.
+    *   **Centralized Executors:** Standardized and reliable execution logic for remote (SSH) and local commands.
+*   **⚙️ Graph-Based Workflows:** Agent behaviors are defined as graphs using simple YAML presets. This allows for
+    creating complex, conditional logic (e.g., "try this, if it fails, do that") without changing Python code.
+*   **🔌 Dual Interfaces:** Interact via a clean **React-based web UI** or a powerful **Typer-based command-line
+    interface (CLI)**.
+
+---
+
+## 🌟 Advanced Capabilities
+
+Beyond basic tool execution, AEGIS incorporates several advanced systems for enhanced intelligence and usability:
+
+*   **✍️ RAG-Powered Memory:** The agent automatically indexes the logs of every completed task. It can then query this
+    memory using the `query_knowledge_base` tool to learn from its own past successes and failures.
+*   **✅ Execute-and-Verify Flow:** AEGIS supports advanced workflows (e.g., `verified_flow.yaml`) where the agent not only
+    *executes* an action but also runs a follow-up *verification* step. If verification fails, it enters a remediation
+    loop to correct the problem autonomously.
+*   **🧩 Plugin SDK:** The framework features a complete SDK for creating and managing custom tools. A `plugins/` directory
+    allows for drop-in tool loading, and the CLI provides `new-tool` and `validate-tool` commands to streamline
+    development.
+*   **🗺️ Graph Visualization:** The web UI includes a "Graph" tab that visually renders any agent preset, showing the
+    nodes, edges, and conditional logic. This makes complex agent behaviors transparent and easy to debug.
+
+---
+
 ## 🏗️ Architecture
 
 AEGIS is designed to be a consumer of a backend intelligence stack like **BEND**.
 
 ```
+
+---
+
 +---------------------------------+
 |       BEND Backend Stack        |
 | (LLM, STT, TTS, Document RAG)   |
