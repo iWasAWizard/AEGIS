@@ -1,6 +1,6 @@
 # aegis/utils/llm_query.py
 """
-LLM query interface for sending prompts to an Ollama or KoboldCPP instance via HTTP.
+LLM query interface for sending prompts to a KoboldCPP instance via HTTP.
 
 This module provides an asynchronous function to send a structured system/user prompt
 to a configured LLM backend. It supports environment configuration
@@ -23,59 +23,12 @@ from aegis.utils.prompt_formatter import format_prompt
 
 logger = setup_logger(__name__)
 
-OLLAMA_DEFAULT_MODEL_ENV = os.getenv("OLLAMA_MODEL")
 KOBOLDCPP_DEFAULT_MODEL_HINT_ENV = os.getenv("KOBOLDCPP_MODEL")
-
-OLLAMA_FORMAT = os.getenv("OLLAMA_FORMAT", "json")
-
-
-async def _query_ollama_api(
-    session: aiohttp.ClientSession,
-    url: str,
-    model_name: str,
-    formatted_prompt: str,
-    runtime_config: RuntimeExecutionConfig,
-) -> str:
-    """Sends a request to the Ollama /api/generate endpoint."""
-    payload = {
-        "model": model_name,
-        "prompt": formatted_prompt,
-        "format": OLLAMA_FORMAT,
-        "stream": False,
-        "options": {
-            "temperature": runtime_config.temperature,
-            "num_ctx": runtime_config.max_context_length,
-            "top_k": runtime_config.top_k,
-            "top_p": runtime_config.top_p,
-            "repeat_penalty": runtime_config.repetition_penalty,
-        },
-    }
-    if runtime_config.max_tokens_to_generate > 0:
-        payload["options"]["num_predict"] = runtime_config.max_tokens_to_generate
-
-    logger.debug(f"Ollama payload: {json.dumps(payload, indent=2)}")
-    async with session.post(
-        url, json=payload, timeout=runtime_config.llm_planning_timeout
-    ) as response:
-        if not response.ok:
-            body = await response.text()
-            logger.error(f"Error from Ollama ({response.status}): {body}")
-            raise PlannerError(
-                f"Failed to query Ollama. Status: {response.status}, Body: {body}"
-            )
-        result = await response.json()
-        if "response" not in result:
-            logger.error(f"Missing 'response' field in Ollama result: {result}")
-            raise PlannerError(
-                "Invalid Ollama response format: 'response' key is missing."
-            )
-        return result["response"]
 
 
 async def _query_koboldcpp_api(
     session: aiohttp.ClientSession,
     url: str,
-    model_name_hint: Optional[str],
     formatted_prompt: str,
     runtime_config: RuntimeExecutionConfig,
 ) -> str:
@@ -129,43 +82,14 @@ async def llm_query(
     runtime_config: RuntimeExecutionConfig,
 ) -> str:
     """
-    Queries the configured LLM backend (Ollama or KoboldCPP) with system and user prompts.
+    Queries the configured KoboldCPP backend with system and user prompts.
     Uses `models.yaml` via `model_manifest_loader` to determine prompt formatting hints
     and potentially model-specific default context length.
     """
-    backend_type = runtime_config.llm_backend_type
-
-    env_default_for_backend: Optional[str] = None
-    if backend_type == "ollama":
-        env_default_for_backend = OLLAMA_DEFAULT_MODEL_ENV
-    elif backend_type == "koboldcpp":
-        env_default_for_backend = KOBOLDCPP_DEFAULT_MODEL_HINT_ENV
-
-    formatter_hint, model_default_ctx, effective_backend_model_name_from_manifest = (
-        get_model_details_from_manifest(
-            model_key_from_config=runtime_config.llm_model_name,
-            backend_default_identifier_env=env_default_for_backend,
-        )
+    formatter_hint, model_default_ctx, _ = get_model_details_from_manifest(
+        model_key_from_config=runtime_config.llm_model_name,
+        backend_default_identifier_env=KOBOLDCPP_DEFAULT_MODEL_HINT_ENV,
     )
-
-    # If effective_backend_model_name_from_manifest is None, it means models.yaml lookup failed.
-    # In this case, the name sent to the API will be runtime_config.llm_model_name (if set)
-    # or the backend's environment variable default (e.g. OLLAMA_MODEL_ENV).
-    # This `api_payload_model_name` is what gets sent to the backend API.
-    api_payload_model_name = (
-        effective_backend_model_name_from_manifest
-        or runtime_config.llm_model_name
-        or env_default_for_backend
-    )
-
-    if backend_type == "ollama" and not api_payload_model_name:
-        raise ConfigurationError(
-            "Ollama backend: Cannot determine model name for API payload. "
-            "Ensure llm_model_name in config or OLLAMA_MODEL env var is set to a valid Ollama tag, "
-            "and/or models.yaml has a matching entry with a 'backend_model_name'."
-        )
-    # For KoboldCPP, api_payload_model_name is not used in its _query_koboldcpp_api payload,
-    # so it being None is acceptable if relying on pre-loaded model.
 
     query_time_runtime_config = runtime_config.model_copy(deep=True)
     pydantic_default_max_context = RuntimeExecutionConfig.model_fields[
@@ -187,66 +111,44 @@ async def llm_query(
     ]
     formatted_prompt = format_prompt(formatter_hint, messages)
 
-    api_url: Optional[str] = None
-    query_func = None
-
-    if backend_type == "ollama":
-        api_url = query_time_runtime_config.ollama_api_url
-        query_func = _query_ollama_api
-        if not api_url:
-            raise ConfigurationError("Ollama backend: ollama_api_url not configured.")
-        if not api_payload_model_name:
-            raise ConfigurationError(
-                "Ollama backend: model name for API payload is missing."
-            )
-    elif backend_type == "koboldcpp":
-        api_url = query_time_runtime_config.koboldcpp_api_url
-        query_func = _query_koboldcpp_api
-        if not api_url:
-            raise ConfigurationError(
-                "KoboldCPP backend: koboldcpp_api_url not configured."
-            )
-        # api_payload_model_name is passed as model_name_hint to _query_koboldcpp_api
-    else:
-        raise ConfigurationError(f"Unsupported llm_backend_type: {backend_type}")
+    api_url = query_time_runtime_config.koboldcpp_api_url
+    if not api_url:
+        raise ConfigurationError("KoboldCPP backend: koboldcpp_api_url not configured.")
 
     logger.info(
-        f"Sending prompt to {backend_type.upper()} at {api_url} "
-        f"(model for API: '{api_payload_model_name or '(KoboldCPP pre-loaded)'}', formatter: '{formatter_hint}', "
-        f"context: {query_time_runtime_config.max_context_length})"
+        f"Sending prompt to KoboldCPP at {api_url} "
+        f"(model hint: '{runtime_config.llm_model_name or KOBOLDCPP_DEFAULT_MODEL_HINT_ENV}', "
+        f"formatter: '{formatter_hint}', context: {query_time_runtime_config.max_context_length})"
     )
 
     try:
         async with aiohttp.ClientSession() as session:
-            # For _query_ollama_api, api_payload_model_name is the actual model tag for the payload.
-            # For _query_koboldcpp_api, it's passed as model_name_hint, not used in payload.
-            response_text = await query_func(  # type: ignore
+            response_text = await _query_koboldcpp_api(
                 session,
-                api_url,  # type: ignore
-                api_payload_model_name,
+                api_url,
                 formatted_prompt,
                 query_time_runtime_config,
             )
     except asyncio.TimeoutError as e:
-        log_model_display_on_error = api_payload_model_name or "(KoboldCPP pre-loaded)"
+        log_model_display_on_error = (
+            runtime_config.llm_model_name or KOBOLDCPP_DEFAULT_MODEL_HINT_ENV
+        )
         logger.error(
-            f"LLM query to {backend_type.upper()} timed out after {query_time_runtime_config.llm_planning_timeout}s "
-            f"(model: '{log_model_display_on_error}', formatter: {formatter_hint})."
+            f"LLM query to KoboldCPP timed out after {query_time_runtime_config.llm_planning_timeout}s "
+            f"(model hint: '{log_model_display_on_error}', formatter: {formatter_hint})."
         )
         raise PlannerError(
             f"LLM query timed out. The model may be too slow or stuck."
         ) from e
     except aiohttp.ClientError as e:
-        logger.exception(f"AIOHttp client error while querying {backend_type.upper()}")
+        logger.exception(f"AIOHttp client error while querying KoboldCPP")
         raise PlannerError(f"Network error during LLM query: {e}") from e
     except ConfigurationError:
         raise
     except PlannerError:
         raise
     except Exception as e:
-        logger.exception(
-            f"Unexpected error during LLM query to {backend_type.upper()}: {e}"
-        )
+        logger.exception(f"Unexpected error during LLM query to KoboldCPP: {e}")
         raise PlannerError(f"Unexpected error during LLM query: {e}") from e
 
     logger.debug(f"LLM raw response: {response_text}")

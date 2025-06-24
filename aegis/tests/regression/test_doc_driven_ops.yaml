@@ -1,0 +1,12 @@
+# tests/regression/test_doc_driven_ops.yaml
+task:
+  prompt: >
+    Here is your primary objective: Configure the 'ChronoLogger' service on the 'ubuntu-qemu' machine.
+    You must do this by following the instructions in the provided manual. The manual is located at './tests/regression/sample_config_manual.pdf'.
+    Your task involves reading the manual, executing the described configuration steps, and verifying the final state of the service.
+    Finish with a status of 'success' only if the final verification step confirms the service is active and running.
+
+config: "verified_flow"
+
+execution:
+  iterations: 12 # Allow enough steps for ingest, query, create file, append, enable service, verify status.

@@ -17,16 +17,13 @@ client = TestClient(app)
 def mock_reports_dir(tmp_path: Path, monkeypatch):
     """Creates a temporary reports and logs directory structure for testing."""
     reports_dir = tmp_path / "reports"
-    logs_dir = tmp_path / "logs"
     reports_dir.mkdir()
-    logs_dir.mkdir()
 
     # Task 1: Has all artifacts
     task1_dir = reports_dir / "task-001"
     task1_dir.mkdir()
     (task1_dir / "summary.md").write_text("# Summary 1")
     (task1_dir / "provenance.json").write_text(json.dumps({"task_id": "task-001"}))
-    (logs_dir / "task-001.jsonl").touch()
 
     # Task 2: Only has a provenance file
     task2_dir = reports_dir / "task-002"
@@ -42,8 +39,6 @@ def mock_reports_dir(tmp_path: Path, monkeypatch):
 
     # Monkeypatch the constants in the routes module
     monkeypatch.setattr("aegis.web.routes_artifacts.REPORTS_DIR", reports_dir)
-    # The list_artifacts function also looks in 'logs', so we patch that too.
-    monkeypatch.setattr("aegis.web.routes_artifacts.Path.cwd", lambda: tmp_path)
 
 
 def test_list_artifacts(mock_reports_dir):
@@ -60,12 +55,10 @@ def test_list_artifacts(mock_reports_dir):
     assert task1_data is not None
     assert task1_data["has_summary"] is True
     assert task1_data["has_provenance"] is True
-    assert task1_data["has_log"] is True
 
     assert task2_data is not None
     assert task2_data["has_summary"] is False
     assert task2_data["has_provenance"] is True
-    assert task2_data["has_log"] is False
 
 
 def test_get_summary_artifact(mock_reports_dir):

@@ -1,6 +1,5 @@
 // aegis/web/react_ui/src/DashboardTab.jsx
 import React, { useState, useEffect } from 'react';
-import LogStreamTab from './LogStreamTab';
 
 /**
  * A small component to render each task item in the recent activity list.
@@ -61,8 +60,8 @@ const StatusPanel = () => {
 
 /**
  * The main component for the "Dashboard" tab.
- * It provides an at-a-glance view of the system's recent activity, its current
- * status, and a live log stream. It serves as the main landing page for the UI.
+ * It provides an at-a-glance view of the system's recent activity and its current
+ * status. It serves as the main landing page for the UI.
  * @param {object} props - The component props.
  * @param {function} props.navigateAndOpenArtifact - Function to navigate to Artifacts tab.
  * @returns {React.Component} The dashboard component.
@@ -73,39 +72,33 @@ export default function DashboardTab({ navigateAndOpenArtifact }) {
   useEffect(() => {
     fetch('/api/artifacts')
       .then(res => res.json())
-      .then(data => setTasks(data.slice(0, 5))) // Show top 5 most recent
+      .then(data => setTasks(data.slice(0, 10))) // Show top 10 most recent
       .catch(err => console.error("Failed to fetch tasks:", err));
   }, []);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem' }}>
-        <div>
-            <h2 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>📈 Recent Activity</h2>
-            <div style={{ border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--input-bg)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', borderBottom: '1px solid var(--border)' }}>
-                    <strong>Task ID</strong>
-                    <strong>Timestamp</strong>
-                    <strong>Artifacts</strong>
-                </div>
-                {tasks.length > 0 ? (
-                    tasks.map(task =>
-                      <TaskItem
-                        key={task.task_id}
-                        task={task}
-                        onClick={() => navigateAndOpenArtifact(task.task_id)}
-                      />)
-                ) : (
-                    <p style={{ padding: '1rem', textAlign: 'center' }}>No recent tasks found.</p>
-                )}
+    <div>
+        <h2 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>📈 Recent Activity</h2>
+        <div style={{ border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--input-bg)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', borderBottom: '1px solid var(--border)' }}>
+                <strong>Task ID</strong>
+                <strong>Timestamp</strong>
+                <strong>Artifacts</strong>
             </div>
+            {tasks.length > 0 ? (
+                tasks.map(task =>
+                  <TaskItem
+                    key={task.task_id}
+                    task={task}
+                    onClick={() => navigateAndOpenArtifact(task.task_id)}
+                  />)
+            ) : (
+                <p style={{ padding: '1rem', textAlign: 'center' }}>No recent tasks found.</p>
+            )}
+        </div>
 
-            <h2 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginTop: '2rem' }}>ℹ️ System Status</h2>
-            <StatusPanel />
-        </div>
-        <div>
-            {/* The log stream component is embedded here for a unified view. */}
-            <LogStreamTab />
-        </div>
+        <h2 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginTop: '2rem' }}>ℹ️ System Status</h2>
+        <StatusPanel />
     </div>
   );
 }

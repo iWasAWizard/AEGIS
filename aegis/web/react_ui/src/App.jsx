@@ -5,7 +5,6 @@ import PresetsTab from './PresetsTab';
 import ArtifactsTab from './ArtifactsTab';
 import ReportsTab from './ReportsTab'; // ReportsTab is legacy, ArtifactsTab is preferred
 import ToolsTab from './ToolsTab';
-import LogStreamTab from './LogStreamTab';
 import GraphViewTab from './GraphViewTab';
 import DashboardTab from './DashboardTab';
 
@@ -62,8 +61,6 @@ export default function App() {
         return <ReportsTab />;
       case 'tools':
         return <ToolsTab />;
-      case 'logs':
-        return <LogStreamTab />;
       case 'graph':
         return <GraphViewTab />;
       default:
@@ -103,7 +100,6 @@ export default function App() {
         <nav style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <NavButton tabId="dashboard">🏠 Dashboard</NavButton>
           <NavButton tabId="launch">🚀 Launch</NavButton>
-          <NavButton tabId="logs">📡 Live Logs</NavButton>
           <NavButton tabId="graph">🗺️ Graph</NavButton>
           <NavButton tabId="tools">🧰 Tools</NavButton>
           <NavButton tabId="presets">🧠 Presets</NavButton>

@@ -119,24 +119,12 @@ def on_startup():
     validate_critical_imports()
 
     logger.info(
-        f"Default OLLAMA_MODEL (fallback for llm_model_name if backend is 'ollama'): "
-        f"{os.getenv('OLLAMA_MODEL', 'Not Set')}"
-    )
-    logger.info(
-        f"Default OLLAMA_API_URL (fallback for ollama_api_url in runtime if backend is 'ollama'): "
-        f"{os.getenv('OLLAMA_API_URL', 'http://ollama:11434/api/generate')}"
-    )
-    logger.info(
-        f"Default KOBOLDCPP_MODEL (fallback hint for llm_model_name if backend is 'koboldcpp'): "
+        f"Default KOBOLDCPP_MODEL (fallback for llm_model_name): "
         f"{os.getenv('KOBOLDCPP_MODEL', 'Not Set')}"
     )
     logger.info(
-        f"Default KOBOLDCPP_API_URL (fallback for koboldcpp_api_url in runtime if backend is 'koboldcpp'): "
+        f"Default KOBOLDCPP_API_URL (used by runtime config): "
         f"{os.getenv('KOBOLDCPP_API_URL', 'Not Set')}"
-    )
-    logger.info(
-        f"OLLAMA_DIRECT_API_URL (for ollama_generate_direct tool): "
-        f"{os.getenv('OLLAMA_DIRECT_API_URL', 'http://localhost:11434/api/generate')}"
     )
 
     logger.info("Importing all available tools...")

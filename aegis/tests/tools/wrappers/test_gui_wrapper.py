@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from aegis.exceptions import ToolExecutionError
 from aegis.tools.wrappers.gui import (
     gui_action,
     GuiActionInput,
@@ -41,8 +42,8 @@ def mock_pyautogui(monkeypatch):
     "action_name, action_input, expected_call_name, expected_args",
     [
         ("move", {"coordinates": (123, 456)}, "moveTo", (123, 456)),
-        ("click", {"coordinates": (10, 20)}, "click", ()),
-        ("double_click", {}, "doubleClick", ()),
+        ("click", {"coordinates": (10, 20)}, "click", ((10, 20),)),
+        ("double_click", {"coordinates": (30, 40)}, "doubleClick", ((30, 40),)),
         ("type", {"text_to_type": "hello world!"}, "typewrite", ("hello world!",)),
         (
             "screenshot",
@@ -82,15 +83,15 @@ def test_gui_action(
 
 
 def test_gui_action_requires_args(mock_pyautogui):
-    """Verify actions return an error if required arguments are missing."""
-    move_input = GuiActionInput(action="move")
-    assert "[ERROR]" in gui_action(move_input)
+    """Verify actions raise ToolExecutionError if required arguments are missing."""
+    with pytest.raises(ToolExecutionError, match="'coordinates' are required"):
+        gui_action(GuiActionInput(action="move"))
 
-    type_input = GuiActionInput(action="type")
-    assert "[ERROR]" in gui_action(type_input)
+    with pytest.raises(ToolExecutionError, match="'text_to_type' is required"):
+        gui_action(GuiActionInput(action="type"))
 
-    ss_input = GuiActionInput(action="screenshot")
-    assert "[ERROR]" in gui_action(ss_input)
+    with pytest.raises(ToolExecutionError, match="'screenshot_path' is required"):
+        gui_action(GuiActionInput(action="screenshot"))
 
 
 # --- Tests for gui_find_and_click_image ---
@@ -106,19 +107,19 @@ def test_gui_find_and_click_image_success(mock_pyautogui, monkeypatch):
     result = gui_find_and_click_image(input_data)
 
     mock_pyautogui.locateCenterOnScreen.assert_called_once()
-    mock_pyautogui.click.assert_called_once_with(x=500, y=600)
+    mock_pyautogui.click.assert_called_once_with(500, 600)
     assert "Clicked on image at (500, 600)" in result
 
 
 def test_gui_find_and_click_image_not_found(mock_pyautogui, monkeypatch):
-    """Verify the tool correctly times out and returns an error if the image is not found."""
+    """Verify the tool correctly times out and raises an error if the image is not found."""
     monkeypatch.setattr("time.time", MagicMock(side_effect=[0, 1, 2, 3, 4, 5]))
     mock_pyautogui.locateCenterOnScreen.return_value = None
 
     input_data = GuiFindAndClickInput(
         template_image_path="/path/to/missing.png", action="click", timeout_seconds=4
     )
-    result = gui_find_and_click_image(input_data)
+    with pytest.raises(ToolExecutionError, match="Image not found on screen"):
+        gui_find_and_click_image(input_data)
 
     assert mock_pyautogui.locateCenterOnScreen.call_count >= 1
-    assert "[ERROR] Image not found on screen" in result

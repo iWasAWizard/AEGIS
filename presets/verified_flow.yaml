@@ -29,10 +29,8 @@ condition_map:
   end: "summarize"
 
 runtime:
-  llm_backend_type: "koboldcpp"
   llm_model_name: "hermes" # Key from BEND's models.yaml
   koboldcpp_api_url: "http://koboldcpp:12009/api/v1/generate"
-  ollama_api_url: null
   llm_planning_timeout: 300
   temperature: 0.2
   max_context_length: 8192

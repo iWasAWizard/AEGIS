@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ValidationError
 
+from aegis.exceptions import ToolExecutionError
 from aegis.registry import TOOL_REGISTRY, ToolEntry
 from aegis.serve_dashboard import app
 
@@ -86,15 +87,18 @@ def test_run_fuzz_tool_not_a_fuzz_tool():
 
 def test_run_fuzz_tool_validation_error(monkeypatch):
     """Test 400 error when the payload fails Pydantic validation."""
-    # Mock the input model to raise a validation error
-    mock_input_model = MagicMock()
-    mock_input_model.side_effect = ValidationError.from_exception_data(
-        title="MockValidationError", line_errors=[]
-    )
+
+    # Mock the input model's constructor to raise a validation error
+    def validation_error_constructor(*args, **kwargs):
+        raise ValidationError.from_exception_data(
+            title="MockValidationError", line_errors=[]
+        )
 
     # Get the existing tool and monkeypatch its input model for this test
     fuzz_tool_entry = TOOL_REGISTRY["test_fuzz_tool"]
-    monkeypatch.setattr(fuzz_tool_entry, "input_model", mock_input_model)
+    monkeypatch.setattr(
+        fuzz_tool_entry.input_model, "__init__", validation_error_constructor
+    )
 
     payload = {
         "tool_name": "test_fuzz_tool",
@@ -103,3 +107,12 @@ def test_run_fuzz_tool_validation_error(monkeypatch):
     response = client.post("/api/fuzz/run", json=payload)
     assert response.status_code == 400
     assert "Invalid payload" in response.json()["detail"]
+
+
+def test_run_fuzz_tool_execution_error(mock_fuzz_tool_in_registry):
+    """Test 500 error when the tool's run function raises an exception."""
+    mock_fuzz_tool_in_registry.side_effect = ToolExecutionError("Fuzz tool failed!")
+    payload = {"tool_name": "test_fuzz_tool", "payload": {"iterations": 1}}
+    response = client.post("/api/fuzz/run", json=payload)
+    assert response.status_code == 500
+    assert "Fuzz tool failed!" in response.json()["detail"]

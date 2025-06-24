@@ -29,13 +29,13 @@ class ModelEntry(BaseModel):
 
     backend_model_name: Optional[str] = Field(
         None,
-        description="The actual model name/tag the backend API expects (e.g., 'llama3:latest' for Ollama). "
+        description="The actual model name/tag the backend API expects. "
         "If None, other logic determines the API model name.",
     )
     filename_pattern: Optional[List[str]] = Field(
         default_factory=list,
         description="List of case-insensitive patterns to match against backend default identifiers "
-        "(like OLLAMA_MODEL or KOBOLDCPP_MODEL from .env) for inferring entry if 'key' isn't matched.",
+        "from .env, for inferring entry if 'key' isn't matched.",
     )
     formatter_hint: str = Field(
         ...,
@@ -75,10 +75,11 @@ def load_model_manifest_data() -> Dict[str, Any]:
     """
     global _model_manifest_data
     if _model_manifest_data is None:
-        manifest_path = Path("models.yaml")
+        # Point to the consolidated models.yaml in the BEND directory
+        manifest_path = Path("BEND/models.yaml")
         if not manifest_path.is_file():
             logger.warning(
-                "models.yaml not found in the project root. Model features relying on it may be limited."
+                "BEND/models.yaml not found. Model features relying on it may be limited."
             )
             _model_manifest_data = {"models": []}
             return _model_manifest_data
@@ -87,14 +88,14 @@ def load_model_manifest_data() -> Dict[str, Any]:
                 data = yaml.safe_load(f)
                 if data is None or not isinstance(data.get("models"), list):
                     logger.warning(
-                        f"models.yaml is empty or 'models' key is not a list. Treating as empty."
+                        f"BEND/models.yaml is empty or 'models' key is not a list. Treating as empty."
                     )
                     _model_manifest_data = {"models": []}
                 else:
                     _model_manifest_data = data
-            logger.info(f"Raw model manifest data loaded from models.yaml.")
+            logger.info(f"Raw model manifest data loaded from BEND/models.yaml.")
         except yaml.YAMLError as e:
-            logger.exception("Failed to parse models.yaml")
+            logger.exception("Failed to parse BEND/models.yaml")
             _model_manifest_data = {"models": []}
     return _model_manifest_data
 
@@ -110,7 +111,7 @@ def get_parsed_model_manifest() -> ModelManifest:
         try:
             _parsed_model_manifest = ModelManifest(**raw_data)
             logger.info(
-                f"Successfully parsed models.yaml into ModelManifest with {len(_parsed_model_manifest.models)} entries."
+                f"Successfully parsed BEND/models.yaml into ModelManifest with {len(_parsed_model_manifest.models)} entries."
             )
         except Exception as e:
             logger.exception(f"Failed to validate model manifest data: {e}")
@@ -172,7 +173,7 @@ def get_model_details_from_manifest(
     :param model_key_from_config: The model key from AEGIS runtime config (e.g., RuntimeConfig.llm_model_name).
     :type model_key_from_config: Optional[str]
     :param backend_default_identifier_env: The model name/tag/filename from environment variables
-                                           (e.g., OLLAMA_MODEL, KOBOLDCPP_MODEL).
+                                           (e.g., KOBOLDCPP_MODEL).
     :type backend_default_identifier_env: Optional[str]
     :return: Tuple of (formatter_hint, default_max_context_length, effective_backend_model_name).
     :rtype: tuple[str, Optional[int], Optional[str]]

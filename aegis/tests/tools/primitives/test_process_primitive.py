@@ -79,5 +79,7 @@ def test_get_disk_usage(mock_psutil):
 def test_get_disk_usage_not_found(mock_psutil):
     """Verify get_disk_usage handles FileNotFoundError cleanly."""
     mock_psutil.disk_usage.side_effect = FileNotFoundError("Path not found")
-    result = get_disk_usage(GetDiskUsageInput(path="/nonexistent"))
-    assert "[ERROR] Path not found" in result
+    with pytest.raises(
+        ToolExecutionError, match="Path not found for disk usage check: /nonexistent"
+    ):
+        get_disk_usage(GetDiskUsageInput(path="/nonexistent"))

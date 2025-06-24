@@ -12,3 +12,4 @@ config: "verified_flow" # This is the config we are picking from the options in 
 
 execution:
   iterations: 8 # Allow enough steps for create, write, read, delete, finish.
+  safe_mode: false # Override safe mode to allow 'run_local_command' for file ops.

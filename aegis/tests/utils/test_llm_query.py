@@ -57,7 +57,6 @@ async def test_llm_query_kobold_success(
 ):
     """Verify a successful query to KoboldCPP returns the model's response content."""
     mock_aiohttp_session_for_kobold.ok = True
-    # mock_aiohttp_session_for_kobold.status = 200 # Implied by ok=True
     mock_aiohttp_session_for_kobold.json.return_value = {
         "results": [{"text": "KoboldCPP says hello"}]
     }
@@ -180,6 +179,6 @@ async def test_llm_query_no_kobold_url(sample_runtime_config):
     """Verify ConfigurationError if koboldcpp_api_url is not set."""
     sample_runtime_config.koboldcpp_api_url = None
     with pytest.raises(
-        ConfigurationError, match="KoboldCPP API URL .* is not configured"
+        ConfigurationError, match="KoboldCPP backend: koboldcpp_api_url not configured."
     ):
         await llm_query("system", "user", sample_runtime_config)

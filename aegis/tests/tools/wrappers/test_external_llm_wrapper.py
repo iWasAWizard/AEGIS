@@ -6,9 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from aegis.exceptions import ToolExecutionError
 from aegis.tools.wrappers.external_llm import (
     llm_chat_openai,
     LLMChatInput,
+    ChatMessage,
 )
 
 # Mark openai as an optional dependency for testing
@@ -80,8 +82,7 @@ def test_llm_chat_openai_api_error(mock_openai_chat):
     )
 
     messages = [ChatMessage(role="user", content="This will fail.")]
-    input_data = LLMChatInput(messages=messages)
+    input_data = LLMChatInput(messages=messages, api_key="test_key")
 
-    result = llm_chat_openai(input_data)
-    assert "[ERROR] OpenAI chat completion failed" in result
-    assert "API Error" in result
+    with pytest.raises(ToolExecutionError, match="OpenAI API error: API Error"):
+        llm_chat_openai(input_data)

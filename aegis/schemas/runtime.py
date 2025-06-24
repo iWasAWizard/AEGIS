@@ -10,23 +10,21 @@ limits like timeouts and retries.
 
 from typing import Optional, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class RuntimeExecutionConfig(BaseModel):
+class RuntimeExecutionConfig(BaseSettings):
     """Defines supported runtime options for a single task execution.
 
     This model includes parameters for the LLM backend, timeout/retry behavior,
     iteration limits, and safety constraints. It can be defined in a preset
-    or overridden at launch time.
+    or overridden at launch time. It also loads default values from environment
+    variables.
 
-    :ivar llm_backend_type: Specifies which LLM backend to use ('ollama' or 'koboldcpp'). Defaults to 'koboldcpp'.
-    :vartype llm_backend_type: Literal["ollama", "koboldcpp"]
     :ivar llm_model_name: The name/identifier of the LLM model to use (e.g., 'hermes' from BEND).
-                         If None, uses KOBOLDCPP_MODEL or OLLAMA_MODEL env var based on backend_type.
+                         If None, uses KOBOLDCPP_MODEL env var.
     :vartype llm_model_name: Optional[str]
-    :ivar ollama_api_url: The URL of the Ollama inference endpoint.
-    :vartype ollama_api_url: Optional[str]
     :ivar koboldcpp_api_url: The URL of the KoboldCPP inference endpoint from the BEND stack.
     :vartype koboldcpp_api_url: str
     :ivar llm_planning_timeout: The timeout in seconds for LLM planning queries.
@@ -53,18 +51,9 @@ class RuntimeExecutionConfig(BaseModel):
     :vartype iterations: int | None
     """
 
-    llm_backend_type: Literal["ollama", "koboldcpp"] = Field(
-        default="koboldcpp",
-        description="Specifies which LLM backend to use ('ollama' or 'koboldcpp').",
-    )
     llm_model_name: Optional[str] = Field(
         default=None,
-        description="Name/identifier of the LLM model. If None, uses KOBOLDCPP_MODEL or OLLAMA_MODEL "
-        "(based on backend_type) env var.",
-    )
-    ollama_api_url: Optional[str] = Field(
-        default=None,
-        description="URL of the Ollama inference endpoint (if 'ollama' backend is used).",
+        description="Name/identifier of the LLM model. If None, uses KOBOLDCPP_MODEL env var.",
     )
     koboldcpp_api_url: str = Field(
         default="http://koboldcpp:12009/api/v1/generate",
@@ -123,10 +112,9 @@ class RuntimeExecutionConfig(BaseModel):
         description="Maximum number of planning/execution steps before forced termination.",
     )
 
-    class Config:
-        """Pydantic model configuration."""
-
-        extra = "forbid"
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=False
+    )
 
     @field_validator("tool_timeout", "llm_planning_timeout", mode="before")
     @classmethod
@@ -152,7 +140,7 @@ class RuntimeExecutionConfig(BaseModel):
             raise ValueError("Iterations must be a positive integer.")
         return v
 
-    @field_validator("koboldcpp_api_url", "ollama_api_url", mode="before")
+    @field_validator("koboldcpp_api_url", mode="before")
     @classmethod
     def check_url_format(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and not v.startswith(("http://", "https://")):

@@ -1,8 +1,5 @@
 version: "3.9"
 services:
-  # The Ollama service has been removed from this file.
-  # AEGIS now relies on the BEND stack for its LLM backend.
-
   agent:
     env_file:
       - .env
@@ -10,11 +7,6 @@ services:
     ports:
       - "${AEGIS_PORT:-8000}:8000"
     environment:
-      # Environment variables are still passed for flexibility and tool use,
-      # but the agent service itself no longer depends on an Ollama container.
-      - OLLAMA_MODEL
-      - OLLAMA_API_URL
-      - OLLAMA_DIRECT_API_URL
       - KOBOLDCPP_MODEL
       - KOBOLDCPP_API_URL
       - ADMIN_PASSWORD
@@ -39,7 +31,7 @@ services:
       - ./machines.yaml:/app/machines.yaml
       - ./config.yaml:/app/config.yaml
       - ./plugins:/app/plugins
-      - ./models.yaml:/app/models.yaml
+      - ./BEND/models.yaml:/app/BEND/models.yaml
     networks:
       - default
 

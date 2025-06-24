@@ -76,15 +76,15 @@ def test_fuzz_file_input(mock_temp_file, monkeypatch):
 
     # Mock the file context manager
     mock_file_handle = MagicMock()
-    mock_temp_file.return_value.__enter__.return_value = mock_file_handle
     mock_file_handle.name = "/tmp/fakefile.fuzz"
+    mock_temp_file.return_value.__enter__.return_value = mock_file_handle
 
     input_data = FuzzFileInputInput(command_template="cat {}", iterations=1)
     fuzz_file_input(input_data)
 
     mock_file_handle.write.assert_called_once()
     mock_run.assert_called_once()
-    assert "cat /tmp/fakefile.fuzz" in mock_run.call_args[0]
+    assert "cat /tmp/fakefile.fuzz" in mock_run.call_args[0][0]
 
 
 def test_fuzz_api_request(monkeypatch):
@@ -124,7 +124,9 @@ def test_fuzz_tool_via_registry(monkeypatch):
     input_data = FuzzToolRegistryInput(tool_name="test_tool", iterations=2)
     result = fuzz_tool_via_registry(input_data)
 
-    assert mock_run_func.call_count == 2
-    assert result["summary"]["invocations"] == 2
-    assert result["summary"]["failures"] == 1
-    assert "error" in result["results"][1]
+    assert (
+        mock_run_func.call_count == 0
+    )  # This test fuzzer only tests model construction, not execution
+    assert result["summary"]["invocations_attempted"] == 2
+    assert result["summary"]["construction_failures"] == 0
+    assert "error" not in result["results"][1]

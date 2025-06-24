@@ -31,11 +31,10 @@ RUN wget -q https://github.com/mozilla/geckodriver/releases/download/v0.36.0/gec
 
 COPY . .
 
-# Ensure wait-for-koboldcpp.sh is executable
-RUN rm -f ./wait-for-ollama.sh && \
-    chmod +x ./wait-for-koboldcpp.sh
+# Ensure wait-for-bend.sh is executable
+RUN chmod +x ./wait-for-bend.sh
 
 COPY --from=ui-builder /app/aegis/web/react_ui/dist /app/aegis/web/react_ui/dist
 
 # Use the new wait script
-CMD ["./wait-for-koboldcpp.sh", "python", "-m", "aegis.serve_dashboard"]
+CMD ["./wait-for-bend.sh", "python", "-m", "aegis.serve_dashboard"]
