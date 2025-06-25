@@ -9,6 +9,7 @@ pydantic
 pyyaml
 matplotlib
 aiofiles
+aiohttp
 pytest
 tqdm
 rich

@@ -1,0 +1,40 @@
+# backends.yaml
+# Centralized definitions for backend intelligence providers.
+# AEGIS will use a profile name from this file to determine which backend to connect to.
+
+backends:
+  - profile_name: "koboldcpp_local"
+    type: "koboldcpp"
+    # --- Connection ---
+    llm_url: "http://host.docker.internal:5001/api/v1/generate"
+    # --- Generation Parameters ---
+    temperature: 0.2
+    max_tokens_to_generate: 1536
+    top_p: 0.9
+    top_k: 40
+    repetition_penalty: 1.1
+
+  - profile_name: "openai_gpt4"
+    type: "openai"
+    # --- Connection ---
+    model: "gpt-4-turbo"
+    api_key: "${OPENAI_API_KEY}"
+    # --- Generation Parameters ---
+    temperature: 0.7
+    max_tokens_to_generate: 2048
+    top_p: 1.0
+    # --- Service-specific ---
+    tts_model: "tts-1"
+    tts_voice: "alloy"
+    stt_model: "whisper-1"
+
+  - profile_name: "ollama_default"
+    type: "ollama"
+    # --- Connection ---
+    llm_url: "http://host.docker.internal:11434/api/generate"
+    # --- Generation Parameters ---
+    temperature: 0.5
+    max_tokens_to_generate: 2048
+    top_p: 0.9
+    top_k: 40
+    repetition_penalty: 1.1

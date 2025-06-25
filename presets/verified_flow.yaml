@@ -1,6 +1,7 @@
 # presets/verified_flow.yaml
-name: "Verified Agent Flow (KoboldCPP Backend)"
-description: "An advanced agent that verifies outcomes. If verification fails, it remediates. Uses BEND's KoboldCPP backend."
+# An advanced agent that verifies outcomes and remediates if verification fails.
+name: "Verified Agent Flow"
+description: "An advanced agent that verifies outcomes and remediates if verification fails."
 state_type: "aegis.agents.task_state.TaskState"
 entrypoint: "plan"
 
@@ -28,17 +29,7 @@ condition_map:
   continue: "plan"
   end: "summarize"
 
+# This runtime block can contain overrides. For example, we might want this
+# more complex flow to have a longer default context length.
 runtime:
-  llm_model_name: "hermes" # Key from BEND's models.yaml
-  koboldcpp_api_url: "http://koboldcpp:12009/api/v1/generate"
-  llm_planning_timeout: 300
-  temperature: 0.2
   max_context_length: 8192
-  max_tokens_to_generate: 1536
-  top_p: 0.9
-  top_k: 40
-  repetition_penalty: 1.1
-  safe_mode: true
-  tool_timeout: 60
-  tool_retries: 0
-  iterations: 10

@@ -1,0 +1,24 @@
+# aegis/models.yaml
+# Centralized LLM model definitions for AEGIS's prompt formatter.
+
+models:
+  - key: "hermes"
+    name: "Nous-Hermes-2-Mixtral-8x7B"
+    formatter_hint: "chatml"
+    notes: "Default for BEND KoboldCPP"
+
+  - key: "mythomax"
+    name: "MythoMax-L2-13B"
+    formatter_hint: "alpaca"
+
+  - key: "mistral-openorca"
+    name: "Mistral-7B-OpenOrca"
+    formatter_hint: "chatml"
+
+  - key: "deepseek-coder"
+    name: "DeepSeek-Coder-33B"
+    formatter_hint: "codellama-instruct"
+
+  - key: "llama3"
+    name: "Llama 3 Instruct Family"
+    formatter_hint: "llama3"

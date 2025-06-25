@@ -13,6 +13,7 @@ from typing import Any, MutableMapping
 
 from pythonjsonlogger import jsonlogger
 
+from aegis.utils.config import get_config
 from aegis.utils.log_sinks import TaskIdFilter
 
 _LOGGING_CONFIGURED = False
@@ -67,7 +68,14 @@ def setup_logger(
 
     if not _LOGGING_CONFIGURED:
         root_logger = logging.getLogger()
-        log_level_str = os.getenv("AEGIS_LOG_LEVEL", "info").upper()
+        
+        # Get log level from config.yaml, fallback to info
+        try:
+            config = get_config()
+            log_level_str = config.get("logging", {}).get("level", "info").upper()
+        except FileNotFoundError:
+            log_level_str = os.getenv("AEGIS_LOG_LEVEL", "info").upper()
+
         level = getattr(logging, log_level_str, logging.INFO)
         root_logger.setLevel(level)
 

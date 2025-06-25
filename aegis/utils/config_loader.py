@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from aegis.exceptions import ConfigurationError
 from aegis.schemas.agent import AgentConfig
+from aegis.utils.config import get_config as get_system_config
 from aegis.utils.graph_profile_loader import load_agent_graph_config
 from aegis.utils.logger import setup_logger
 from aegis.utils.type_resolver import resolve_dotted_type
@@ -30,49 +31,62 @@ def load_agent_config(
 ) -> AgentConfig:
     """Loads, validates, and resolves an agent configuration into a full AgentConfig object.
 
-    This function serves as the central factory for agent configurations. It can
-    load from a named preset in the `/presets` directory, a specific YAML file path,
-    or a raw dictionary. It then performs several validation and resolution steps:
-    1. Resolves any string-based type references (e.g., `state_type`) into actual Python classes.
-    2. Validates that all referenced nodes in the graph structure are defined.
-    3. Validates the final structure against the `AgentConfig` Pydantic model.
+    This function serves as the central factory for agent configurations. It merges
+    configurations from multiple sources with a clear precedence:
+    System Defaults (from config.yaml) < Preset Config < Raw/File Config.
 
     :param config_file: Path to a specific YAML configuration file.
-    :type config_file: Optional[Union[str, Path]]
     :param profile: The name of a preset profile in the 'presets/' directory.
-    :type profile: Optional[str]
     :param raw_config: A raw dictionary containing the agent configuration.
-    :type raw_config: Optional[dict]
     :return: A fully validated and resolved `AgentConfig` instance.
-    :rtype: AgentConfig
     :raises ConfigurationError: If loading, parsing, or validation fails.
-    :raises ValueError: If no configuration source is provided.
     """
-
     try:
+        # 1. Start with system-wide defaults from config.yaml
+        system_defaults = get_system_config().get("defaults", {})
+        merged_config = system_defaults.copy()
+        
+        # 2. Load preset and merge its settings
+        preset_data = {}
         if profile:
             logger.info(f"Loading config from profile: '{profile}'")
-            config_data = load_agent_graph_config(profile)
-        elif config_file:
+            preset_data = load_agent_graph_config(profile)
+            # Merge runtime settings from preset
+            if "runtime" in preset_data:
+                merged_config.update(preset_data["runtime"])
+        
+        # 3. Load from file or raw dict and merge on top
+        final_config_data = {}
+        if config_file:
             logger.info(f"Loading config from file: '{config_file}'")
-            config_data = yaml.safe_load(Path(config_file).read_text(encoding="utf-8"))
-        elif raw_config is not None:
+            final_config_data = yaml.safe_load(Path(config_file).read_text(encoding="utf-8"))
+        elif raw_config:
             logger.info("Loading from inline raw config dict.")
-            config_data = raw_config
-        else:
-            raise ValueError("Must provide either config_file, profile, or raw_config.")
+            final_config_data = raw_config
 
-        if "state_type" in config_data and isinstance(config_data["state_type"], str):
-            config_data["state_type"] = resolve_dotted_type(config_data["state_type"])
+        # Merge the highest-precedence runtime settings
+        if "runtime" in final_config_data:
+             merged_config.update(final_config_data["runtime"])
 
-        validate_node_names(config_data)
+        # Construct the final config object
+        # Graph structure comes from preset or file/raw, runtime comes from merged data
+        graph_structure_source = final_config_data or preset_data
+        
+        # Ensure 'runtime' key exists before assigning to it
+        if "runtime" not in graph_structure_source:
+             graph_structure_source["runtime"] = {}
+        graph_structure_source["runtime"] = merged_config
+
+        if "state_type" in graph_structure_source and isinstance(graph_structure_source["state_type"], str):
+            graph_structure_source["state_type"] = resolve_dotted_type(graph_structure_source["state_type"])
+
+        validate_node_names(graph_structure_source)
 
         logger.debug(
-            "Attempting to validate the following config data against AgentConfig:\n"
-            f"{json.dumps(config_data, indent=2, default=str)}"
+            "Attempting to validate the final merged config:\n"
+            f"{json.dumps(graph_structure_source, indent=2, default=str)}"
         )
-
-        return AgentConfig(**config_data)
+        return AgentConfig(**graph_structure_source)
 
     except (
         FileNotFoundError,

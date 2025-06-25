@@ -6,9 +6,12 @@ services:
     build: .
     ports:
       - "${AEGIS_PORT:-8000}:8000"
+    # The 'extra_hosts' directive allows the container to resolve 'host.docker.internal'
+    # to the host machine's IP address. This is crucial for connecting to a backend
+    # (like KoboldCPP) running on the host from within the AEGIS container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      - KOBOLDCPP_MODEL
-      - KOBOLDCPP_API_URL
       - ADMIN_PASSWORD
       - ROOT_PASSWORD
       - DEPLOY_PASSWORD
@@ -17,10 +20,7 @@ services:
       - OTEL_SERVICE_NAME=aegis-agent
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
       - BEND_API_KEY=${BEND_API_KEY}
-      - BEND_VOICE_PROXY_URL=http://voiceproxy:8001
-      - BEND_RETRIEVER_URL=http://retriever:8000
-    # depends_on is removed as the backend is now external in the BEND stack.
-    # The wait-for-koboldcpp.sh script now handles startup dependency.
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
     volumes:
       - ./reports:/app/reports
@@ -31,12 +31,7 @@ services:
       - ./machines.yaml:/app/machines.yaml
       - ./config.yaml:/app/config.yaml
       - ./plugins:/app/plugins
-      - ./BEND/models.yaml:/app/BEND/models.yaml
-    networks:
-      - default
-
-# Define the shared external network for communication with BEND
-networks:
-  default:
-    name: aegis_bend_net
-    external: true
+      # The new backends manifest is now the source of truth for connections
+      - ./backends.yaml:/app/backends.yaml
+      # AEGIS needs its own models.yaml for formatter hints
+      - ./aegis/models.yaml:/app/aegis/models.yaml

@@ -5,6 +5,6 @@ or other wrappers to perform more complex, multi-step tasks.
 
 These tools are designed to provide more convenient, goal-oriented actions
 for the agent, such as "backup a remote file" (which combines checking for
-existence and then copying) or "run a port scan" (which composes a shell
-command with specific arguments).
+existence and then copying) or "synthesize_speech" (which uses the configured
+backend provider).
 """

@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from aegis.exceptions import AegisError
 from aegis.registry import log_registry_contents
+from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
 from aegis.utils.tool_loader import import_all_tools
 from aegis.web import router as api_router
@@ -118,15 +119,6 @@ def on_startup():
 
     validate_critical_imports()
 
-    logger.info(
-        f"Default KOBOLDCPP_MODEL (fallback for llm_model_name): "
-        f"{os.getenv('KOBOLDCPP_MODEL', 'Not Set')}"
-    )
-    logger.info(
-        f"Default KOBOLDCPP_API_URL (used by runtime config): "
-        f"{os.getenv('KOBOLDCPP_API_URL', 'Not Set')}"
-    )
-
     logger.info("Importing all available tools...")
     import_all_tools()
     log_registry_contents()
@@ -167,8 +159,16 @@ if __name__ == "__main__":
 
     host = os.getenv("AEGIS_HOST", "0.0.0.0")
     port = int(os.getenv("AEGIS_PORT", 8000))
-    log_level_str = os.getenv("AEGIS_LOG_LEVEL", "info").lower()
     reload_server = os.getenv("AEGIS_RELOAD", "false").lower() == "true"
+
+    # Get log level from config.yaml as the primary source
+    try:
+        config = get_config()
+        log_level_str = config.get("logging", {}).get("level", "info").lower()
+    except (FileNotFoundError, Exception):
+        log_level_str = "info" # Fallback if config is missing or broken
+        logger.warning("config.yaml not found or broken, falling back to log level 'info'.")
+
 
     numeric_log_level = getattr(logging, log_level_str.upper(), logging.INFO)
     logging.getLogger().setLevel(numeric_log_level)
