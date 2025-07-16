@@ -2,6 +2,7 @@
 from .http import HttpExecutor
 from .local import LocalExecutor
 from .pwntools import PwntoolsExecutor
+from .scapy import ScapyExecutor
 from .selenium import SeleniumExecutor
 from .ssh import SSHExecutor
 
@@ -11,4 +12,5 @@ __all__ = [
     "HttpExecutor",
     "SeleniumExecutor",
     "PwntoolsExecutor",
+    "ScapyExecutor",
 ]

@@ -1,4 +1,10 @@
 version: "3.9"
+
+networks:
+  bend-net:
+    external: true
+    name: BEND_bend-net # The name is typically prefixed with the project directory name
+
 services:
   agent:
     env_file:
@@ -6,11 +12,8 @@ services:
     build: .
     ports:
       - "${AEGIS_PORT:-8000}:8000"
-    # The 'extra_hosts' directive allows the container to resolve 'host.docker.internal'
-    # to the host machine's IP address. This is crucial for connecting to a backend
-    # (like KoboldCPP) running on the host from within the AEGIS container.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - bend-net
     environment:
       - ADMIN_PASSWORD
       - ROOT_PASSWORD

@@ -57,7 +57,11 @@ class AgentGraph:
                 node_func = AGENT_NODE_REGISTRY[node_config.tool]
 
                 node_to_add = node_func
-                if node_config.tool in ["reflect_and_plan", "remediate_plan"]:
+                if node_config.tool in [
+                    "reflect_and_plan",
+                    "remediate_plan",
+                    "verify_outcome",
+                ]:
                     node_to_add = partial(node_func, llm_query_func=llm_query)  # type: ignore
 
                 builder.add_node(node_config.id, node_to_add)
@@ -121,7 +125,9 @@ class AgentGraph:
                 builder.add_conditional_edges(
                     source_node_id_for_conditional,
                     decision_function_for_routing,
-                    self.config.condition_map,
+                    {
+                        k: v for k, v in self.config.condition_map.items()
+                    },  # Ensure keys are Hashable
                 )
                 logger.debug(
                     f"Added conditional edge from '{source_node_id_for_conditional}' "

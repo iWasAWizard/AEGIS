@@ -28,9 +28,6 @@ async def list_artifacts() -> List[Dict[str, Any]]:
     treating each subdirectory name as a `task_id`. It checks for the presence
     of key artifact files (`summary.md`, `provenance.json`) and returns a list
     of metadata objects for the UI.
-
-    :return: A list of dictionaries, each representing a task's available artifacts.
-    :rtype: List[Dict[str, Any]]
     """
     logger.info("Artifact list requested. Scanning reports directory.")
     if not REPORTS_DIR.exists() or not REPORTS_DIR.is_dir():
@@ -44,11 +41,27 @@ async def list_artifacts() -> List[Dict[str, Any]]:
 
     for task_dir in task_dirs:
         if task_dir.is_dir():
+            task_id = task_dir.name
+            prompt = "N/A"
+            final_status = "UNKNOWN"
+            provenance_path = task_dir / "provenance.json"
+
+            if provenance_path.is_file():
+                try:
+                    with provenance_path.open("r", encoding="utf-8") as f:
+                        prov_data = json.load(f)
+                        prompt = prov_data.get("task_prompt", "Prompt not found.")
+                        final_status = prov_data.get("final_status", "UNKNOWN")
+                except (IOError, json.JSONDecodeError):
+                    logger.warning(f"Could not read or parse provenance for {task_id}")
+
             results.append(
                 {
-                    "task_id": task_dir.name,
+                    "task_id": task_id,
+                    "prompt": prompt,
+                    "final_status": final_status,
                     "has_summary": (task_dir / "summary.md").exists(),
-                    "has_provenance": (task_dir / "provenance.json").exists(),
+                    "has_provenance": provenance_path.exists(),
                     "timestamp": task_dir.stat().st_mtime,
                 }
             )

@@ -79,8 +79,7 @@ def _fallback_keyword_search(query: str, top_k: int) -> str:
     """
     logger.warning("Falling back to basic keyword search for RAG query.")
     logger.debug(f"Logs directory for keyword search: {LOGS_DIR.resolve()}")
-    if not LOGS_DIR.exists() or not LOGS_DIR.is_dir():  # Check is_dir as well
-        # This is an operational issue with the tool's setup, so raise.
+    if not LOGS_DIR.exists() or not LOGS_DIR.is_dir():
         msg = f"Knowledge base (logs directory) not found or not a directory at '{LOGS_DIR.resolve()}'."
         logger.error(msg)
         raise ToolExecutionError(msg)
@@ -102,8 +101,6 @@ def _fallback_keyword_search(query: str, top_k: int) -> str:
                 logger.error(
                     f"Could not process log file {log_file} during keyword search: {e}"
                 )
-                # Optionally, re-raise as ToolExecutionError or collect these minor errors
-                # For now, let's log and continue, as one corrupt log file shouldn't stop all keyword search.
         logger.debug(
             f"Keyword search scanned {files_scanned_count} files and found {len(matches)} potential matches."
         )
@@ -111,7 +108,6 @@ def _fallback_keyword_search(query: str, top_k: int) -> str:
         logger.exception(
             f"Error while globbing or iterating log files for keyword search: {e}"
         )
-        # This is a more critical failure in accessing logs.
         raise ToolExecutionError(
             f"An error occurred during keyword search directory traversal: {e}"
         )
@@ -137,52 +133,22 @@ def _semantic_search(query: str, top_k: int) -> str:
     """
     logger.info("Performing semantic search with FAISS index.")
     try:
-        logger.debug(f"Attempting to load SentenceTransformer model: '{MODEL_NAME}'")
         model = SentenceTransformer(MODEL_NAME)
-        logger.debug(f"SentenceTransformer model '{MODEL_NAME}' loaded successfully.")
-
-        logger.debug(f"Attempting to read FAISS index from: {INDEX_PATH.resolve()}")
         if not INDEX_PATH.exists():
             raise ToolExecutionError(
                 f"FAISS index file not found at {INDEX_PATH}. Run memory indexer."
             )
         index = faiss.read_index(str(INDEX_PATH))
-        logger.debug(
-            f"FAISS index loaded successfully. Index contains {index.ntotal} vectors."
-        )
 
-        logger.debug(f"Attempting to read mapping file from: {MAPPING_PATH.resolve()}")
         if not MAPPING_PATH.exists():
             raise ToolExecutionError(
                 f"FAISS mapping file not found at {MAPPING_PATH}. Run memory indexer."
             )
         with MAPPING_PATH.open("r", encoding="utf-8") as f:
             text_mapping = json.load(f)
-        logger.debug(
-            f"Mapping file loaded successfully. Contains {len(text_mapping)} entries."
-        )
 
-        if not isinstance(text_mapping, list) and not (
-            isinstance(text_mapping, dict)
-            and all(isinstance(k, str) and k.isdigit() for k in text_mapping.keys())
-        ):
-            logger.error(
-                f"Mapping file {MAPPING_PATH} is not a list or a dict with stringified integer keys. "
-                f"Type: {type(text_mapping)}"
-            )
-            raise ToolExecutionError(
-                f"Invalid format in mapping file {MAPPING_PATH}. Expected list or dict of int-keyed strings."
-            )
-
-        logger.debug(f"Encoding query for semantic search: '{query}'")
         query_embedding = model.encode([query]).astype("float32")
-        logger.debug("Query encoding complete.")
-
-        logger.debug(f"Searching FAISS index for top {top_k} results.")
         distances, indices = index.search(query_embedding, top_k)
-        logger.debug(
-            f"FAISS search complete. Found indices: {indices}, distances: {distances}"
-        )
 
         results = []
         for i in range(len(indices[0])):
@@ -190,33 +156,17 @@ def _semantic_search(query: str, top_k: int) -> str:
             if idx != -1:
                 dist = distances[0][i]
                 try:
-                    if isinstance(text_mapping, list):
-                        text_content = text_mapping[idx]
-                    elif isinstance(text_mapping, dict):
-                        text_content = text_mapping.get(str(idx))
-                    else:
-                        text_content = None
-
+                    text_content = text_mapping.get(str(idx))
                     if text_content is not None:
                         results.append(f"[Relevance: {1 - dist:.2f}] {text_content}")
                     else:
                         logger.warning(
-                            f"Index {idx} found in FAISS but missing in mapping file. "
-                            f"This might indicate an outdated mapping file."
+                            f"Index {idx} found in FAISS but missing in mapping file."
                         )
-                except IndexError:
+                except (KeyError, IndexError):
                     logger.warning(
-                        f"Index {idx} out of bounds for text_mapping list (size {len(text_mapping)}). "
-                        f"Possible index/mapping mismatch."
+                        f"Index {idx} from FAISS search not found in mapping file."
                     )
-                except KeyError:
-                    logger.warning(
-                        f"Key '{str(idx)}' not found in text_mapping dictionary. Possible index/mapping mismatch."
-                    )
-            else:
-                logger.debug(
-                    f"FAISS index search returned -1 at position {i}, indicating fewer than top_k results."
-                )
 
         if not results:
             return (
@@ -225,17 +175,6 @@ def _semantic_search(query: str, top_k: int) -> str:
         return "Found the following relevant entries in my memory:\n\n" + "\n\n".join(
             results
         )
-    except (
-        FileNotFoundError
-    ) as e:  # Should be caught by explicit checks now, but kept as safety
-        logger.error(
-            f"Required file not found during semantic search: {e.filename}. Full error: {e}"
-        )
-        raise ToolExecutionError(
-            f"Semantic search setup error: A required file ({e.filename}) was not found. Ensure index is built."
-        ) from e
-    except ToolExecutionError:  # Re-raise ToolExecutionErrors from our checks
-        raise
     except Exception as e:
         logger.exception(f"Semantic search failed internally: {e}")
         raise ToolExecutionError(f"Semantic search failed: {e}")
@@ -268,49 +207,29 @@ def query_knowledge_base(input_data: KnowledgeQueryInput) -> str:
     :rtype: str
     :raises ToolExecutionError: If semantic search fails critically or keyword search cannot access logs.
     """
-    print("DEBUG RAG: query_knowledge_base FUNCTION ENTERED", flush=True)
     logger.info(
         f"Querying knowledge base with: '{input_data.query}' (top_k={input_data.top_k})"
-    )
-    logger.debug(f"VECTOR_SEARCH_ENABLED: {VECTOR_SEARCH_ENABLED}")
-    logger.debug(f"INDEX_PATH ({INDEX_PATH.resolve()}) exists: {INDEX_PATH.exists()}")
-    logger.debug(
-        f"MAPPING_PATH ({MAPPING_PATH.resolve()}) exists: {MAPPING_PATH.exists()}"
     )
 
     if VECTOR_SEARCH_ENABLED and INDEX_PATH.exists() and MAPPING_PATH.exists():
         try:
             logger.info("Attempting semantic search for knowledge query.")
             return _semantic_search(input_data.query, input_data.top_k)
-        except ToolExecutionError as e:  # Catch errors raised by _semantic_search
+        except ToolExecutionError as e:
             logger.warning(
-                f"Semantic search failed with ToolExecutionError: {e}. Falling back to keyword search."
+                f"Semantic search failed: {e}. Falling back to keyword search."
             )
-            # Fall through to keyword search
-        except Exception as e:
-            logger.exception(
-                f"Unexpected error during semantic search attempt, before fallback: {e}"
-            )
-            logger.warning(
-                "Falling back to keyword search due to unexpected error in semantic search."
-            )
-            # Fall through to keyword search
-    else:  # Conditions for semantic search not met
+    else:
         if not VECTOR_SEARCH_ENABLED:
             logger.warning(
-                "Dependencies for vector search not installed (faiss-cpu, sentence-transformers). "
-                "Cannot perform semantic search."
+                "Dependencies for vector search not installed (faiss-cpu, sentence-transformers)."
             )
         if not INDEX_PATH.exists():
-            logger.warning(
-                f"Memory index file not found at '{INDEX_PATH.resolve()}'. Cannot perform semantic search."
-            )
+            logger.warning(f"Memory index file not found at '{INDEX_PATH.resolve()}'.")
         if not MAPPING_PATH.exists():
             logger.warning(
-                f"Memory mapping file not found at '{MAPPING_PATH.resolve()}'. Cannot perform semantic search."
+                f"Memory mapping file not found at '{MAPPING_PATH.resolve()}'."
             )
 
-    # If semantic search was skipped or failed and fell through, try keyword search.
-    # _fallback_keyword_search will raise ToolExecutionError if it has critical issues.
-    logger.info("Proceeding with keyword search.")
+    logger.info("Proceeding with keyword search as fallback.")
     return _fallback_keyword_search(input_data.query, input_data.top_k)

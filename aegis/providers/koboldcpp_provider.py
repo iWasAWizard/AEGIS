@@ -27,24 +27,27 @@ class KoboldcppProvider(BackendProvider):
     def __init__(self, config: KoboldcppBackendConfig):
         self.config = config
 
-    async def get_completion(self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig) -> str:
+    async def get_completion(
+        self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig
+    ) -> str:
         """
         Gets a completion from the KoboldCPP /generate endpoint.
         """
         # Determine the correct prompt format using AEGIS's own manifest
-        formatter_hint = get_formatter_hint(runtime_config.llm_model_name)
+        model_name = runtime_config.llm_model_name or "default"
+        formatter_hint = get_formatter_hint(model_name)
         formatted_prompt = format_prompt(formatter_hint, messages)
 
         # Prepare payload for KoboldCPP's /generate endpoint
-        # Generation parameters are now read from the provider's own config
+        # Generation parameters are read from the runtime config to allow overrides.
         payload = {
             "prompt": formatted_prompt,
-            "temperature": self.config.temperature,
-            "max_context_length": runtime_config.max_context_length, # This can still be a runtime concern
-            "max_length": self.config.max_tokens_to_generate,
-            "top_p": self.config.top_p,
-            "top_k": self.config.top_k,
-            "rep_pen": self.config.repetition_penalty,
+            "temperature": runtime_config.temperature,
+            "max_context_length": runtime_config.max_context_length,
+            "max_length": runtime_config.max_tokens_to_generate,
+            "top_p": runtime_config.top_p,
+            "top_k": runtime_config.top_k,
+            "rep_pen": runtime_config.repetition_penalty,
         }
 
         logger.info(f"Sending prompt to KoboldCPP backend at {self.config.llm_url}")
@@ -55,16 +58,30 @@ class KoboldcppProvider(BackendProvider):
                 async with session.post(
                     self.config.llm_url,
                     json=payload,
-                    timeout=runtime_config.llm_planning_timeout
+                    timeout=(
+                        aiohttp.ClientTimeout(total=runtime_config.llm_planning_timeout)
+                        if runtime_config.llm_planning_timeout is not None
+                        else None
+                    ),
                 ) as response:
                     if not response.ok:
                         body = await response.text()
-                        logger.error(f"Error from KoboldCPP ({response.status}): {body}")
-                        raise PlannerError(f"Failed to query KoboldCPP. Status: {response.status}, Body: {body}")
+                        logger.error(
+                            f"Error from KoboldCPP ({response.status}): {body}"
+                        )
+                        raise PlannerError(
+                            f"Failed to query KoboldCPP. Status: {response.status}, Body: {body}"
+                        )
 
                     result = await response.json()
-                    if "results" not in result or not result["results"] or "text" not in result["results"][0]:
-                        raise PlannerError("Invalid response format from KoboldCPP: 'results' or 'text' key missing.")
+                    if (
+                        "results" not in result
+                        or not result["results"]
+                        or "text" not in result["results"][0]
+                    ):
+                        raise PlannerError(
+                            "Invalid response format from KoboldCPP: 'results' or 'text' key missing."
+                        )
 
                     return result["results"][0]["text"]
         except asyncio.TimeoutError as e:
@@ -73,7 +90,11 @@ class KoboldcppProvider(BackendProvider):
             raise PlannerError(f"Network error while querying KoboldCPP: {e}") from e
 
     async def get_speech(self, text: str) -> bytes:
-        raise NotImplementedError("KoboldcppProvider does not support speech synthesis.")
+        raise NotImplementedError(
+            "KoboldcppProvider does not support speech synthesis."
+        )
 
     async def get_transcription(self, audio_bytes: bytes) -> str:
-        raise NotImplementedError("KoboldcppProvider does not support audio transcription.")
+        raise NotImplementedError(
+            "KoboldcppProvider does not support audio transcription."
+        )

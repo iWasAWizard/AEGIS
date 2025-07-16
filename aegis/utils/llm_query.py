@@ -23,13 +23,15 @@ def get_provider_for_profile(profile_name: str) -> BackendProvider:
     backend_config = get_backend_config(profile_name)
 
     if backend_config.type == "bend":
-        return BendProvider(config=backend_config) #type: ignore
+        return BendProvider(config=backend_config)
     elif backend_config.type == "openai":
         return OpenAIProvider(config=backend_config)
     elif backend_config.type == "ollama":
-        return OllamaProvider(config=backend_config) #type: ignore
+        return OllamaProvider(config=backend_config)
     else:
-        raise ConfigurationError(f"Unsupported backend provider type: '{backend_config.type}'")
+        raise ConfigurationError(
+            f"Unsupported backend provider type: '{backend_config.type}'"
+        )
 
 
 async def llm_query(
@@ -40,12 +42,20 @@ async def llm_query(
     """
     Queries the configured LLM backend via its provider with system and user prompts.
     """
-    logger.info(f"Dispatching LLM query using backend profile: '{runtime_config.backend_profile}'")
+    logger.info(
+        f"Dispatching LLM query using backend profile: '{runtime_config.backend_profile}'"
+    )
 
     try:
+        if runtime_config.backend_profile is None:
+            raise ConfigurationError(
+                "No backend profile specified in runtime configuration."
+            )
         provider = get_provider_for_profile(runtime_config.backend_profile)
     except ConfigurationError as e:
-        logger.exception(f"Failed to initialize backend provider for profile '{runtime_config.backend_profile}'")
+        logger.exception(
+            f"Failed to initialize backend provider for profile '{runtime_config.backend_profile}'"
+        )
         # Re-raise as it's a critical setup failure
         raise
 

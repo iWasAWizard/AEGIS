@@ -9,7 +9,12 @@ import yaml
 from pydantic import ValidationError
 
 from aegis.exceptions import ConfigurationError
-from aegis.schemas.backend import BendBackendConfig, OpenAIBackendConfig, OllamaBackendConfig, BaseBackendConfig
+from aegis.schemas.backend import (
+    BendBackendConfig,
+    OpenAIBackendConfig,
+    OllamaBackendConfig,
+    BaseBackendConfig,
+)
 from aegis.schemas.settings import settings
 from aegis.utils.logger import setup_logger
 
@@ -39,12 +44,16 @@ def get_backend_config(profile_name: str) -> Any:
     Loads a specific backend's configuration and resolves secrets.
     """
     manifest_data = _load_manifest_from_file()
-    
+
     backend_list = manifest_data.get("backends", [])
-    backend_config_raw = next((b for b in backend_list if b.get("profile_name") == profile_name), None)
+    backend_config_raw = next(
+        (b for b in backend_list if b.get("profile_name") == profile_name), None
+    )
 
     if not backend_config_raw:
-        raise ConfigurationError(f"Backend profile '{profile_name}' not found in backends.yaml.")
+        raise ConfigurationError(
+            f"Backend profile '{profile_name}' not found in backends.yaml."
+        )
 
     # Resolve secret placeholders like ${BEND_API_KEY}
     for key, value in backend_config_raw.items():
@@ -52,8 +61,9 @@ def get_backend_config(profile_name: str) -> Any:
             secret_key = value[2:-1]
             secret_value = getattr(settings, secret_key.upper(), None)
             if secret_value is None:
-                raise ConfigurationError(
-                    f"Secret '{secret_key}' for backend '{profile_name}' not found in environment or .env file."
+                logger.warning(
+                    f"Secret '{secret_key}' for backend '{profile_name}' not found in environment or .env file. "
+                    "This might be okay if it's optional."
                 )
             backend_config_raw[key] = secret_value
 
@@ -67,7 +77,9 @@ def get_backend_config(profile_name: str) -> Any:
         elif backend_type == "ollama":
             return OllamaBackendConfig(**backend_config_raw)
         else:
-            raise ConfigurationError(f"Unknown backend type '{backend_type}' in profile '{profile_name}'.")
+            raise ConfigurationError(
+                f"Unknown backend type '{backend_type}' in profile '{profile_name}'."
+            )
     except ValidationError as e:
         logger.error(f"Validation error for backend profile '{profile_name}': {e}")
         raise ConfigurationError(

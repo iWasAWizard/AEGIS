@@ -12,3 +12,4 @@ config: "verified_flow"
 
 execution:
   iterations: 7
+  safe_mode: false

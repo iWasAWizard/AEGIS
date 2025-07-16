@@ -10,7 +10,7 @@ PROJECT_ROOT=$(dirname "$(readlink -f "$0")")
 cd "$PROJECT_ROOT" # Change to the project root to ensure all paths are relative to it.
 
 AEGIS_COMPOSE_FILE="./docker-compose.yml"
-BEND_DIR="./BEND"
+BEND_DIR="../BEND"
 BEND_MANAGE_SCRIPT="$BEND_DIR/scripts/manage.sh"
 BEND_HEALTHCHECK_SCRIPT="$BEND_DIR/scripts/healthcheck.sh"
 

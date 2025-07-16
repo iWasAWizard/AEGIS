@@ -16,7 +16,11 @@ from typing import Dict, Any, Callable, Literal
 from pydantic import ValidationError
 
 from aegis.agents.task_state import HistoryEntry, TaskState
-from aegis.exceptions import ToolExecutionError, ToolNotFoundError
+from aegis.exceptions import (
+    ToolExecutionError,
+    ToolNotFoundError,
+    ConfigurationError,
+)
 from aegis.registry import get_tool
 from aegis.schemas.plan_output import AgentScratchpad
 from aegis.utils.llm_query import get_provider_for_profile
@@ -31,23 +35,29 @@ async def _run_tool(tool_func: Callable, input_data: Any, state: TaskState) -> A
     needs the state or provider passed to it.
     """
     sig = inspect.signature(tool_func)
-    
+    params = sig.parameters
+
     # Prepare arguments for the tool call
     tool_kwargs = {"input_data": input_data}
 
-    if "state" in sig.parameters:
+    if "state" in params:
         tool_kwargs["state"] = state
-    if "provider" in sig.parameters:
-        # Resolve the provider only if the tool needs it
+    if "provider" in params:
+        if state.runtime.backend_profile is None:
+            raise ConfigurationError(
+                "Cannot execute provider-aware tool: backend_profile is not set in runtime config."
+            )
         provider = get_provider_for_profile(state.runtime.backend_profile)
         tool_kwargs["provider"] = provider
 
+    # Filter out any kwargs that the function doesn't actually accept.
+    final_kwargs = {k: v for k, v in tool_kwargs.items() if k in params}
+
     if asyncio.iscoroutinefunction(tool_func):
-        return await tool_func(**tool_kwargs)
+        return await tool_func(**final_kwargs)
     else:
         loop = asyncio.get_running_loop()
-        # Use a lambda to pass kwargs to the executor
-        return await loop.run_in_executor(None, lambda: tool_func(**tool_kwargs))
+        return await loop.run_in_executor(None, lambda: tool_func(**final_kwargs))
 
 
 async def execute_tool(state: TaskState) -> Dict[str, Any]:
@@ -59,11 +69,18 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
 
     if not plan:
         error_msg = "[ERROR] Execution failed: No plan found in state."
-        logger.error(error_msg, extra={"event_type": "InternalError", "reason": "Missing plan"})
+        logger.error(
+            error_msg, extra={"event_type": "InternalError", "reason": "Missing plan"}
+        )
         plan = AgentScratchpad(
             thought="Critical error: No plan was provided to the executor step. Terminating task.",
             tool_name="finish",
-            tool_args={"reason": "Internal error: missing plan during tool execution.", "status": "failure"},
+            tool_args={
+                "reason": "Internal error: missing plan during tool execution.",
+                "status": "failure",
+            },
+            verification_tool_name=None,
+            verification_tool_args=None,
         )
         entry = HistoryEntry(
             plan=plan,
@@ -82,7 +99,11 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
 
     logger.info(
         f"Executing tool: `{tool_name}`",
-        extra={"event_type": "ToolStart", "tool_name": tool_name, "tool_args": tool_args},
+        extra={
+            "event_type": "ToolStart",
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+        },
     )
 
     if tool_name == "finish":
@@ -93,7 +114,17 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
         logger.info(tool_output)
     else:
         try:
-            tool_entry = get_tool(tool_name, safe_mode=state.runtime.safe_mode)
+            # Resolve safe_mode. Default to True if not set.
+            safe_mode_active = (
+                state.runtime.safe_mode if state.runtime.safe_mode is not None else True
+            )
+            tool_entry = get_tool(tool_name, safe_mode=safe_mode_active)
+
+            # Add enhanced debugging here
+            sig = inspect.signature(tool_entry.run)
+            logger.debug(f"Inspected signature for '{tool_name}': {sig}")
+            logger.debug(f"Found parameters: {list(sig.parameters.keys())}")
+
             input_model_instance = tool_entry.input_model(**tool_args)
             timeout_duration = state.runtime.tool_timeout or tool_entry.timeout
 
@@ -103,9 +134,16 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
                     timeout=timeout_duration,
                 )
             else:
-                tool_output = await _run_tool(tool_entry.run, input_model_instance, state)
+                tool_output = await _run_tool(
+                    tool_entry.run, input_model_instance, state
+                )
 
-        except (ToolNotFoundError, ValidationError, ToolExecutionError) as e:
+        except (
+            ToolNotFoundError,
+            ValidationError,
+            ToolExecutionError,
+            ConfigurationError,
+        ) as e:
             tool_output = f"[ERROR] {type(e).__name__} for '{tool_name}': {e}"
             status = "failure"
             logger.error(tool_output)
@@ -114,21 +152,37 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
             status = "failure"
             logger.error(tool_output)
         except Exception as e:
-            logger.exception(f"Unexpected exception for tool '{tool_name}'", exc_info=True)
+            logger.exception(
+                f"Unexpected exception for tool '{tool_name}'", exc_info=True
+            )
             tool_output = f"[ERROR] Unexpected error in tool '{tool_name}': {type(e).__name__}: {e}"
             status = "failure"
 
-    observation_str = json.dumps(tool_output, default=str) if isinstance(tool_output, (dict, list)) else str(tool_output)
+    observation_str = (
+        json.dumps(tool_output, default=str)
+        if isinstance(tool_output, (dict, list))
+        else str(tool_output)
+    )
 
     if status == "failure":
         logger.error(
             f"Tool `{tool_name}` failed. Observation/Error: {observation_str}",
-            extra={"event_type": "ToolEnd", "tool_name": tool_name, "status": "failure", "error_message": observation_str},
+            extra={
+                "event_type": "ToolEnd",
+                "tool_name": tool_name,
+                "status": "failure",
+                "error_message": observation_str,
+            },
         )
     else:
         logger.info(
             f"Tool `{tool_name}` executed successfully.",
-            extra={"event_type": "ToolEnd", "tool_name": tool_name, "status": "success", "output_preview": observation_str[:200]},
+            extra={
+                "event_type": "ToolEnd",
+                "tool_name": tool_name,
+                "status": "success",
+                "output_preview": observation_str[:200],
+            },
         )
 
     end_time = time.time()

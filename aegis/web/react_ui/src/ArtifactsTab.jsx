@@ -59,6 +59,19 @@ const ArtifactViewer = ({ task }) => {
     );
 };
 
+const getStatusColor = (status) => {
+    switch (status) {
+      case 'SUCCESS':
+        return 'lightgreen';
+      case 'FAILURE':
+        return '#ff6666';
+      case 'PARTIAL':
+        return 'orange';
+      default:
+        return 'grey';
+    }
+  };
+
 /**
  * The main component for the "Artifacts" tab.
  * It fetches and displays a list of all completed tasks that have generated artifacts.
@@ -94,11 +107,10 @@ export default function ArtifactsTab({ targetArtifactId, clearTargetArtifactId }
             itemElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
       }
-      // Clear the target ID after attempting to scroll and expand,
-      // so it doesn't re-trigger on subsequent renders without new navigation.
+      // Clear the target ID after a short delay
       const clearTimer = setTimeout(() => {
         clearTargetArtifactId();
-      }, 500); // Longer delay to ensure animation completes if any
+      }, 500);
       return () => clearTimeout(clearTimer);
     }
   }, [targetArtifactId, clearTargetArtifactId, artifacts]);
@@ -119,24 +131,22 @@ export default function ArtifactsTab({ targetArtifactId, clearTargetArtifactId }
         transition
         timeout={200}
         ref={accordionRef}
-        // By using targetArtifactId in the key, we can force Accordion to re-evaluate initialEntered states
-        // when navigating to this tab with a specific target.
         key={targetArtifactId || 'accordion-default'}
       >
         {artifacts.map((task, idx) => (
           <AccordionItem
-            key={task.task_id} // Use task_id as the key for the item itself for stability
-            itemKey={task.task_id} // This key is used by Accordion for managing state
-            initialEntered={task.task_id === targetArtifactId} // Set initialEntered based on target
+            key={task.task_id}
+            itemKey={task.task_id}
+            initialEntered={task.task_id === targetArtifactId}
             header={
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <code style={{ fontFamily: 'var(--font-mono)' }}>{task.task_id}</code>
-                <span>{new Date(task.timestamp * 1000).toLocaleString()}</span>
+              <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '2fr 3fr 1fr', alignItems: 'center', gap: '1rem' }}>
+                <code style={{ fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.task_id}</code>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.8 }}>{task.prompt}</span>
+                <span style={{ color: getStatusColor(task.final_status), fontWeight: 'bold', justifySelf: 'end' }}>{task.final_status}</span>
               </div>
             }
-            // Add an id to the wrapper div of AccordionItem for scrolling
             style={{ border: '1px solid var(--border)', borderRadius: '6px', marginBottom: '0.5rem' }}
-            id={`accordion-item-${task.task_id}`} // ID for scrolling
+            id={`accordion-item-${task.task_id}`}
             buttonProps={{ style: { width: '100%', textAlign: 'left', padding: '0.75rem', background: 'var(--input-bg)', color: 'var(--fg)', cursor: 'pointer', border: 'none' } }}
             contentProps={{ style: { background: '#111' } }}
           >

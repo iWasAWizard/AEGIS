@@ -13,10 +13,13 @@ from typing import Optional
 import psutil
 from pydantic import BaseModel, Field
 
-from aegis.exceptions import ToolExecutionError
 from aegis.executors.local import LocalExecutor
+from aegis.executors.ssh import SSHExecutor
+from aegis.exceptions import ToolExecutionError
 from aegis.registry import register_tool
+from aegis.schemas.common_inputs import MachineTargetInput
 from aegis.utils.logger import setup_logger
+from aegis.utils.machine_loader import get_machine
 
 logger = setup_logger(__name__)
 
@@ -60,6 +63,25 @@ class RunLocalCommandInput(BaseModel):
         default=None,
         gt=0,
         description="Optional timeout in seconds for this command. Overrides executor default if set.",
+    )
+
+
+class RunRemoteCommandInput(MachineTargetInput):
+    """Input for running a command on a remote machine via SSH.
+
+    :ivar command: The shell command to execute on the remote machine.
+    :vartype command: str
+    :ivar timeout: Optional timeout for this command execution, in seconds.
+    :vartype timeout: Optional[int]
+    """
+
+    command: str = Field(
+        ..., description="The shell command to execute on the remote machine."
+    )
+    timeout: Optional[int] = Field(
+        default=30,
+        gt=0,
+        description="Optional timeout in seconds for this command.",
     )
 
 
@@ -157,6 +179,33 @@ def run_local_command(input_data: RunLocalCommandInput) -> str:
     return executor.run(
         command=input_data.command, shell=input_data.shell, timeout=input_data.timeout
     )
+
+
+@register_tool(
+    name="run_remote_command",
+    input_model=RunRemoteCommandInput,
+    description="Runs a shell command on a remote machine and returns its output.",
+    tags=["system", "shell", "ssh", "primitive"],
+    safe_mode=False,
+    purpose="Execute a shell command on a remote machine.",
+    category="system",
+)
+def run_remote_command(input_data: RunRemoteCommandInput) -> str:
+    """Executes a shell command on a remote machine via SSHExecutor.
+
+    :param input_data: An object containing the machine_name, command, and timeout.
+    :type input_data: RunRemoteCommandInput
+    :return: The combined stdout and stderr from the remote command.
+    :rtype: str
+    :raises ToolExecutionError: If the remote command fails.
+    """
+    logger.info(
+        f"Tool 'run_remote_command' called for machine '{input_data.machine_name}': {input_data.command}"
+    )
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
+    timeout = input_data.timeout if input_data.timeout is not None else 30
+    return executor.run(command=input_data.command, timeout=timeout)
 
 
 def _format_bytes_to_gb(num_bytes: int) -> str:

@@ -5,7 +5,7 @@
 # These can be overridden by presets and then by launch-time requests.
 defaults:
   # The default backend profile to use from backends.yaml
-  backend_profile: "koboldcpp_local"
+  backend_profile: "bend_local"
   # The default abstract model name to use (for formatter hints)
   llm_model_name: "hermes"
   # The default number of steps an agent can take.

@@ -12,35 +12,12 @@ from pydantic import BaseModel, Field
 
 from aegis.registry import register_tool
 from aegis.tools.primitives.primitive_network import http_request, HttpRequestInput
-from aegis.tools.primitives.primitive_system import (
-    run_local_command,
-    RunLocalCommandInput,
-)
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
 # === Input Models ===
-
-
-class NmapScanInput(BaseModel):
-    """Input for running a customized Nmap scan.
-
-    :ivar targets: A list of hosts or IP addresses to scan.
-    :vartype targets: List[str]
-    :ivar ports: A comma-separated string of ports (e.g., '80,443,8080').
-    :vartype ports: str
-    :ivar scan_type_flag: The Nmap scan type flag (e.g., '-sS', '-sT', '-sU').
-    :vartype scan_type_flag: str
-    :ivar extra_flags: Any additional flags to pass to Nmap.
-    :vartype extra_flags: str
-    """
-
-    targets: List[str] = Field(..., description="List of hosts or IPs to scan.")
-    ports: str = Field(..., description="Comma-separated string of ports.")
-    scan_type_flag: str = Field("-sT", description="Nmap scan type flag (e.g., -sS).")
-    extra_flags: str = Field("", description="Additional flags for the Nmap command.")
 
 
 class HttpPostJsonInput(BaseModel):
@@ -75,29 +52,6 @@ class GrafanaUploadInput(HttpPostJsonInput):
 
 
 @register_tool(
-    name="nmap_port_scan",
-    input_model=NmapScanInput,
-    tags=["network", "scan", "nmap", "wrapper"],
-    description="Runs a configurable Nmap scan against specified targets and ports.",
-    safe_mode=False,
-    purpose="Scan network targets for open ports using Nmap.",
-    category="network",
-)
-def nmap_port_scan(input_data: NmapScanInput) -> str:
-    """Constructs and executes an Nmap command based on the provided inputs.
-
-    :param input_data: An object containing scan targets, ports, and flags.
-    :type input_data: NmapScanInput
-    :return: The raw output from the Nmap command.
-    :rtype: str
-    """
-    targets_str = " ".join(input_data.targets)
-    command = f"nmap {input_data.scan_type_flag} -p {input_data.ports} {input_data.extra_flags} {targets_str}"
-    logger.info(f"Executing Nmap scan: {command}")
-    return run_local_command(RunLocalCommandInput(command=command, shell=True))
-
-
-@register_tool(
     name="http_post_json",
     input_model=HttpPostJsonInput,
     tags=["http", "api", "wrapper"],
@@ -120,6 +74,7 @@ def http_post_json(input_data: HttpPostJsonInput) -> str:
     headers = {"Content-Type": "application/json"}
 
     http_input = HttpRequestInput(
+        body=None,
         method="POST",
         url=input_data.url,
         headers=headers,
@@ -155,6 +110,7 @@ def upload_to_grafana(input_data: GrafanaUploadInput) -> str:
     }
 
     http_input = HttpRequestInput(
+        body=None,
         method="POST",
         url=input_data.url,
         headers=headers,

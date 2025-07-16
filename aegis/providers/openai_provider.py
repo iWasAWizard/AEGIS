@@ -2,7 +2,7 @@
 """
 A concrete implementation of the BackendProvider for OpenAI's API.
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import io
 
 import openai
@@ -20,20 +20,23 @@ class OpenAIProvider(BackendProvider):
     """
     Provider for interacting with the official OpenAI Chat Completions API.
     """
+
     def __init__(self, config: OpenAIBackendConfig):
         self.config = config
         self.client = openai.AsyncOpenAI(api_key=self.config.api_key)
 
-    async def get_completion(self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig) -> str:
+    async def get_completion(
+        self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig
+    ) -> str:
         """
         Gets a completion from the OpenAI API.
         """
         logger.info(f"Sending prompt to OpenAI backend (model: {self.config.model})")
-        
+
         try:
             response = await self.client.chat.completions.create(
                 model=self.config.model,
-                messages=messages, # type: ignore
+                messages=messages,  # type: ignore
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens_to_generate,
                 top_p=self.config.top_p,
@@ -50,11 +53,13 @@ class OpenAIProvider(BackendProvider):
 
     async def get_speech(self, text: str) -> bytes:
         """Generates speech using OpenAI's TTS-1 model."""
-        logger.info(f"Requesting speech from OpenAI TTS (model: {self.config.tts_model})")
+        logger.info(
+            f"Requesting speech from OpenAI TTS (model: {self.config.tts_model})"
+        )
         try:
             response = await self.client.audio.speech.create(
                 model=self.config.tts_model,
-                voice=self.config.tts_voice, # type: ignore
+                voice=self.config.tts_voice,  # type: ignore
                 input=text,
             )
             return response.read()
@@ -63,7 +68,9 @@ class OpenAIProvider(BackendProvider):
 
     async def get_transcription(self, audio_bytes: bytes) -> str:
         """Transcribes audio using OpenAI's Whisper-1 model."""
-        logger.info(f"Requesting transcription from OpenAI Whisper (model: {self.config.stt_model})")
+        logger.info(
+            f"Requesting transcription from OpenAI Whisper (model: {self.config.stt_model})"
+        )
         try:
             # The OpenAI library expects a file-like object, so we wrap the bytes.
             # We also need to give it a name with a valid extension.
@@ -77,3 +84,15 @@ class OpenAIProvider(BackendProvider):
             return transcript.text
         except openai.APIError as e:
             raise ToolExecutionError(f"OpenAI audio transcription failed: {e}") from e
+
+    async def ingest_document(
+        self, file_path: str, source_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        raise NotImplementedError("OpenAIProvider does not support document ingestion.")
+
+    async def retrieve_knowledge(
+        self, query: str, top_k: int = 5
+    ) -> List[Dict[str, Any]]:
+        raise NotImplementedError(
+            "OpenAIProvider does not support knowledge retrieval."
+        )

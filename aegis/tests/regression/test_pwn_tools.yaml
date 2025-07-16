@@ -10,3 +10,4 @@ config: "verified_flow"
 
 execution:
   iterations: 5
+  safe_mode: false

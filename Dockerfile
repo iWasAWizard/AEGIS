@@ -31,10 +31,6 @@ RUN wget -q https://github.com/mozilla/geckodriver/releases/download/v0.36.0/gec
 
 COPY . .
 
-# Ensure wait-for-bend.sh is executable
-RUN chmod +x ./wait-for-bend.sh
-
 COPY --from=ui-builder /app/aegis/web/react_ui/dist /app/aegis/web/react_ui/dist
 
-# Use the new wait script
-CMD ["./wait-for-bend.sh", "python", "-m", "aegis.serve_dashboard"]
+CMD ["python", "-m", "aegis.serve_dashboard"]

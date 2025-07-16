@@ -1,6 +1,6 @@
 # 🛡️ AEGIS: Autonomous Agentic Framework
 
-[![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![Python Version](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/containerized-Docker-blue)](https://www.docker.com/)
 [![Built with LangGraph](https://img.shields.io/badge/built%20with-LangGraph-orange)](https://github.com/langchain-ai/langgraph)
@@ -13,7 +13,7 @@ The core philosophy is to provide a **powerful, configurable engine** for expert
 
 ## 🏗️ Architecture
 
-AEGIS is now a fully standalone framework. It operates as a client that connects to backend services defined in `backends.yaml`.
+AEGIS is a fully standalone framework. It operates as a client that connects to backend services defined in `backends.yaml`.
 
 ```
 +---------------------------------+      +--------------------------------+
@@ -53,13 +53,13 @@ AEGIS is now a fully standalone framework. It operates as a client that connects
 
 1.  **Configure Your Backend:**
     *   Open the `backends.yaml` file in the project root.
-    *   Edit a profile to point to your backend. For a local KoboldCPP instance, the default `koboldcpp_local` profile should work if KoboldCPP is running on port 5001.
+    *   Edit a profile to point to your backend. For a local KoboldCPP instance, the default `bend_local` profile should work if it is running on your host.
         ```yaml
         # backends.yaml
         backends:
-          - profile_name: "koboldcpp_local"
-            type: "koboldcpp"
-            llm_url: "http://host.docker.internal:5001/api/v1/generate"
+          - profile_name: "bend_local"
+            type: "bend"
+            llm_url: "http://host.docker.internal:12009/api/v1/generate"
         ```
 
 2.  **Configure Environment Secrets:**
@@ -80,5 +80,5 @@ AEGIS is now a fully standalone framework. It operates as a client that connects
 
 5.  **Run a Task:**
     *   Go to the "Launch" tab.
-    *   In the "Execution Overrides" section, ensure the `backend_profile` matches the one you configured in `backends.yaml` (e.g., `koboldcpp_local` or `openai_gpt4`).
+    *   In the "Execution Overrides" section, ensure the `backend_profile` matches the one you configured in `backends.yaml` (e.g., `bend_local` or `openai_gpt4`).
     *   Enter a prompt and launch the task.

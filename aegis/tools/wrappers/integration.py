@@ -36,16 +36,6 @@ class RunDiagnosticsBundleInput(MachineTargetInput):
     pass
 
 
-class SpawnBackgroundMonitorInput(MachineTargetInput):
-    """Input model for spawning a background process on a remote host.
-
-    :ivar command: Command to run in background.
-    :vartype command: str
-    """
-
-    command: str = Field(description="Command to run in background.")
-
-
 @register_tool(
     name="schedule_cron_job",
     input_model=ScheduleCronJobInput,
@@ -104,34 +94,3 @@ def run_diagnostics_bundle(input_data: RunDiagnosticsBundleInput) -> str:
         "echo '---' && ps aux | head -n 10 && echo '---' && who && echo '---' && ss -tuln"
     )
     return executor.run(bundle)
-
-
-@register_tool(
-    name="spawn_background_monitor",
-    input_model=SpawnBackgroundMonitorInput,
-    tags=["ssh", "background", "monitor", "midlevel", "wrapper"],
-    description="Run a background process on a remote host using nohup.",
-    safe_mode=True,
-    purpose="Run a persistent background command via nohup",
-    category="system",
-)
-def spawn_background_monitor(input_data: SpawnBackgroundMonitorInput) -> str:
-    """Runs a command in the background on a remote host using nohup.
-
-    This ensures the command will continue running even after the SSH
-    session is closed. Output is redirected to /dev/null.
-
-    :param input_data: An object containing the machine name and the command to run.
-    :type input_data: SpawnBackgroundMonitorInput
-    :return: The output of the nohup command (typically empty on success) or a success message.
-    :rtype: str
-    """
-    logger.info(
-        f"Spawning background monitor on {input_data.machine_name} with command: '{input_data.command}'"
-    )
-    machine = get_machine(input_data.machine_name)
-    executor = SSHExecutor(machine)
-    wrapped_command = f"nohup {input_data.command} > /dev/null 2>&1 &"
-    # executor.run() raises on error. nohup command is silent on success.
-    executor.run(wrapped_command)
-    return f"Successfully spawned background monitor on {input_data.machine_name} with command: '{input_data.command}'"

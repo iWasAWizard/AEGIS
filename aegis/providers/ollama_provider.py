@@ -4,11 +4,11 @@ A concrete implementation of the BackendProvider for a generic Ollama backend.
 """
 import asyncio
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import aiohttp
 
-from aegis.exceptions import PlannerError
+from aegis.exceptions import PlannerError, ToolExecutionError
 from aegis.providers.base import BackendProvider
 from aegis.schemas.backend import OllamaBackendConfig
 from aegis.schemas.runtime import RuntimeExecutionConfig
@@ -27,23 +27,27 @@ class OllamaProvider(BackendProvider):
     def __init__(self, config: OllamaBackendConfig):
         self.config = config
 
-    async def get_completion(self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig) -> str:
+    async def get_completion(
+        self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig
+    ) -> str:
         """
         Gets a completion from the Ollama /generate endpoint.
         """
+        if runtime_config.llm_model_name is None:
+            raise PlannerError("llm_model_name must be specified in runtime_config.")
         formatter_hint = get_formatter_hint(runtime_config.llm_model_name)
         formatted_prompt = format_prompt(formatter_hint, messages)
 
         payload = {
-            "model": runtime_config.llm_model_name, # Ollama requires the model name in the payload
+            "model": runtime_config.llm_model_name,  # Ollama requires the model name in the payload
             "prompt": formatted_prompt,
             "stream": False,
             "options": {
-                "temperature": self.config.temperature,
+                "temperature": runtime_config.temperature,
                 "num_ctx": runtime_config.max_context_length,
-                "top_k": self.config.top_k,
-                "top_p": self.config.top_p,
-                "repeat_penalty": self.config.repetition_penalty,
+                "top_k": runtime_config.top_k,
+                "top_p": runtime_config.top_p,
+                "repeat_penalty": runtime_config.repetition_penalty,
             },
         }
 
@@ -55,16 +59,24 @@ class OllamaProvider(BackendProvider):
                 async with session.post(
                     self.config.llm_url,
                     json=payload,
-                    timeout=runtime_config.llm_planning_timeout
+                    timeout=(
+                        aiohttp.ClientTimeout(total=runtime_config.llm_planning_timeout)
+                        if runtime_config.llm_planning_timeout is not None
+                        else None
+                    ),
                 ) as response:
                     if not response.ok:
                         body = await response.text()
                         logger.error(f"Error from Ollama ({response.status}): {body}")
-                        raise PlannerError(f"Failed to query Ollama. Status: {response.status}, Body: {body}")
+                        raise PlannerError(
+                            f"Failed to query Ollama. Status: {response.status}, Body: {body}"
+                        )
 
                     result = await response.json()
                     if "response" not in result:
-                        raise PlannerError("Invalid response format from Ollama: 'response' key missing.")
+                        raise PlannerError(
+                            "Invalid response format from Ollama: 'response' key missing."
+                        )
 
                     return result["response"]
         except asyncio.TimeoutError as e:
@@ -76,4 +88,18 @@ class OllamaProvider(BackendProvider):
         raise NotImplementedError("Ollama provider does not support speech synthesis.")
 
     async def get_transcription(self, audio_bytes: bytes) -> str:
-        raise NotImplementedError("Ollama provider does not support audio transcription.")
+        raise NotImplementedError(
+            "Ollama provider does not support audio transcription."
+        )
+
+    async def ingest_document(
+        self, file_path: str, source_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        raise NotImplementedError("OllamaProvider does not support document ingestion.")
+
+    async def retrieve_knowledge(
+        self, query: str, top_k: int = 5
+    ) -> List[Dict[str, Any]]:
+        raise NotImplementedError(
+            "OllamaProvider does not support knowledge retrieval."
+        )

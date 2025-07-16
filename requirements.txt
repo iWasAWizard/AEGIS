@@ -17,6 +17,7 @@ httpx
 openai
 tiktoken
 psutil
+python-json-logger
 selenium
 hypothesis
 python-multipart

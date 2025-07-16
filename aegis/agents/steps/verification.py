@@ -14,86 +14,97 @@ from pydantic import ValidationError
 from aegis.agents.steps.check_termination import check_termination
 from aegis.agents.steps.execute_tool import _run_tool
 from aegis.agents.task_state import TaskState
-from aegis.exceptions import PlannerError, ToolError
+from aegis.exceptions import PlannerError
 from aegis.registry import get_tool
 from aegis.schemas.plan_output import AgentScratchpad
+from aegis.utils.llm_query import llm_query
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
-async def verify_outcome(state: TaskState) -> Dict[str, Any]:
+async def verify_outcome(
+    state: TaskState, llm_query_func: Callable[..., Awaitable[str]]
+) -> Dict[str, Any]:
     """
-    Verifies the outcome of the last executed tool and updates the history with the result.
-
-    This function is a standard graph node. It runs the verification logic and
-    updates the `verification_status` in the last history entry. It returns a
-    dictionary with the updated history to merge back into the main state.
-
-    :param state: The current agent task state.
-    :type state: TaskState
-    :return: A dictionary containing the updated history list.
-    :rtype: Dict[str, Any]
+    Verifies the outcome of the last executed tool using an LLM call for judgment.
     """
-    logger.info("🔎 Step: Verify Outcome")
-    logger.debug(f"Entering verify_outcome with state: {repr(state)}")
-
-    if not state.history:
-        logger.warning(
-            "Verification called with no history. This should not happen in a valid graph."
-        )
-        return state.model_dump()
-
+    logger.info("🔎 Step: Verify Outcome (LLM-driven)")
     last_history_entry = state.history[-1]
     last_observation = last_history_entry.observation
     last_plan = state.latest_plan
 
-    # Default to success if no verification is planned
-    verification_result: Literal["success", "failure"] = "success"
-
     if last_history_entry.status == "failure":
         logger.warning(
-            f"Verification automatically failed due to error in main tool execution: {last_observation}"
+            f"Verification automatically failed due to error in main tool: {last_observation}"
         )
-        verification_result = "failure"
-    elif last_plan and last_plan.verification_tool_name:
-        v_tool_name = last_plan.verification_tool_name
-        v_tool_args = last_plan.verification_tool_args or {}
-        logger.info(
-            f"Running verification tool: {v_tool_name} with args: {v_tool_args}"
+        last_history_entry.verification_status = "failure"
+        return {"history": state.history}
+
+    if not last_plan or not last_plan.verification_tool_name:
+        logger.info("No verification tool specified in plan. Assuming success.")
+        last_history_entry.verification_status = "success"
+        return {"history": state.history}
+
+    v_tool_name = last_plan.verification_tool_name
+    v_tool_args = last_plan.verification_tool_args or {}
+    logger.info(f"Running verification tool: {v_tool_name} with args: {v_tool_args}")
+
+    try:
+        tool_entry = get_tool(
+            v_tool_name,
+            safe_mode=(
+                state.runtime.safe_mode
+                if state.runtime.safe_mode is not None
+                else False
+            ),
         )
+        input_model = tool_entry.input_model(**v_tool_args)
+        verification_output = await _run_tool(tool_entry.run, input_model, state)
+    except Exception as e:
+        logger.error(f"Verification tool '{v_tool_name}' failed to execute: {e}")
+        last_history_entry.verification_status = "failure"
+        return {"history": state.history}
 
-        try:
-            tool_entry = get_tool(v_tool_name, safe_mode=state.runtime.safe_mode)
-            input_model = tool_entry.input_model(**v_tool_args)
-            verification_output = await _run_tool(tool_entry.run, input_model)
+    system_prompt = (
+        "You are a verification system. Your task is to determine if an action was successful. "
+        "Based on the plan, the action's result, and a verification step's output, "
+        "you must respond with only one word: 'success' or 'failure'."
+    )
+    user_prompt = (
+        f"## Original Plan\n"
+        f"**Thought:** {last_plan.thought}\n"
+        f"**Action:** Ran tool `{last_plan.tool_name}` with args `{json.dumps(last_plan.tool_args)}`.\n\n"
+        f"## Result of Action\n"
+        f"```\n{last_observation}\n```\n\n"
+        f"## Verification Step\n"
+        f"To confirm the result, the tool `{v_tool_name}` was run. Its output was:\n"
+        f"```\n{verification_output}\n```\n\n"
+        f"## Your Judgement\n"
+        f"Did the original action achieve its goal, as confirmed by the verification step? "
+        f"Respond with only 'success' or 'failure'."
+    )
 
-            success_keywords = [
-                "running",
-                "active",
-                "exists",
-                "open",
-                "success",
-                "found",
-            ]
-            output_lower = str(verification_output).lower()
+    try:
+        response = await llm_query_func(system_prompt, user_prompt, state.runtime)
+        result = response.strip().lower()
+        if result not in ["success", "failure"]:
+            logger.warning(
+                f"LLM verifier gave ambiguous response: '{response}'. Defaulting to failure."
+            )
+            result = "failure"
+        # Cast result to Literal['success', 'failure']
+        if result == "success":
+            last_history_entry.verification_status = "success"
+        elif result == "failure":
+            last_history_entry.verification_status = "failure"
+        else:
+            last_history_entry.verification_status = None
+        logger.info(f"LLM verification result: '{result}'")
+    except Exception as e:
+        logger.error(f"LLM call for verification failed: {e}. Defaulting to failure.")
+        last_history_entry.verification_status = "failure"
 
-            if any(keyword in output_lower for keyword in success_keywords):
-                logger.info(
-                    f"Verification successful. Output: '{output_lower[:100]}...'"
-                )
-                verification_result = "success"
-            else:
-                logger.warning(
-                    f"Verification failed. Output did not contain success keywords: '{output_lower[:100]}...'"
-                )
-                verification_result = "failure"
-
-        except ToolError as e:
-            logger.error(f"Verification tool '{v_tool_name}' failed to execute: {e}")
-            verification_result = "failure"
-
-    last_history_entry.verification_status = verification_result
     return {"history": state.history}
 
 
@@ -135,27 +146,28 @@ async def remediate_plan(
     :raises PlannerError: If the LLM response for remediation is unparsable.
     """
     logger.info("🩹 Step: Remediate Plan")
-    logger.debug(f"Entering remediate_plan with state: {repr(state)}")
-
     last_history_entry = state.history[-1]
     last_plan = last_history_entry.plan
     last_observation = last_history_entry.observation
 
     remediation_context = (
-        f"Your previous attempt to achieve the goal failed.\n"
-        f"Main Goal: {state.task_prompt}\n"
-        f"Action Attempted: You ran the tool `{last_plan.tool_name}` "
-        f"with arguments `{json.dumps(last_plan.tool_args, default=str)}`.\n"
-        f"Observed Outcome: {last_observation}\n\n"
-        f"This outcome was not successful. Analyze the observed outcome and your previous thought process. "
-        f"Formulate a new plan to either fix the problem or try an alternative approach to achieve the original goal. "
-        f"If you are stuck, consider using `query_knowledge_base` to find solutions."
+        f"Your previous attempt to achieve the goal failed. Here is the context:\n\n"
+        f"**Main Goal:** {state.task_prompt}\n\n"
+        f"**Failed Step Details:**\n"
+        f"- **Your Thought:** {last_plan.thought}\n"
+        f"- **Action Attempted:** You ran the tool `{last_plan.tool_name}` with arguments `{json.dumps(last_plan.tool_args, default=str)}`.\n"
+        f"- **Observed Outcome (The Error):** {last_observation}\n\n"
+        f"**Your Task:**\n"
+        f"Analyze the error in the 'Observed Outcome'. The plan was flawed. "
+        f"Formulate a new, single-step plan to either fix the problem directly or to try a different approach to achieve the original goal. "
+        f"If you are stuck, consider using `query_knowledge_base` to find solutions from past tasks. "
+        f"Create a new JSON object with your corrected plan."
     )
     # Import locally to avoid circular dependency issues at module load time
     from aegis.agents.steps.reflect_and_plan import construct_planning_prompt
 
     system_prompt, _ = construct_planning_prompt(state)
-    user_prompt = remediation_context + "\n\n## Your New JSON Response:"
+    user_prompt = remediation_context
 
     try:
         llm_response_str = await llm_query_func(

@@ -98,12 +98,13 @@ def update_memory_index():
 
         # Build and save the FAISS index
         index = faiss.IndexFlatL2(embedding_dim)
-        index.add(embeddings.astype(np.float32))
+
+        contiguous_embeddings = np.ascontiguousarray(embeddings, dtype=np.float32)
+        index.add(contiguous_embeddings)  # type: ignore
+
         faiss.write_index(index, str(INDEX_PATH))
 
         # Save the mapping file (from vector index to text chunk)
-        # Store as a dictionary with integer index as key (stringified for JSON)
-        # to allow non-contiguous indices if logs are deleted/re-indexed later.
         mapping_dict = {str(i): chunk for i, chunk in enumerate(chunks)}
         with MAPPING_PATH.open("w", encoding="utf-8") as f:
             json.dump(mapping_dict, f)

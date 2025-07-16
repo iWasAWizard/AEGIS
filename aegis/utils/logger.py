@@ -11,10 +11,10 @@ import os
 import sys
 from typing import Any, MutableMapping
 
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger import json
 
 from aegis.utils.config import get_config
-from aegis.utils.log_sinks import TaskIdFilter
+from aegis.utils.log_sinks import JsonlFileHandler, TaskIdFilter
 
 _LOGGING_CONFIGURED = False
 
@@ -68,7 +68,7 @@ def setup_logger(
 
     if not _LOGGING_CONFIGURED:
         root_logger = logging.getLogger()
-        
+
         # Get log level from config.yaml, fallback to info
         try:
             config = get_config()
@@ -84,17 +84,28 @@ def setup_logger(
 
         # Configure console handler to output structured JSON logs to stdout
         console_handler = logging.StreamHandler(sys.stdout)
-        # The format string includes standard fields plus our custom task_id
-        formatter = jsonlogger.JsonFormatter(
+        console_formatter = json.JsonFormatter(
             "%(asctime)s %(name)s %(levelname)s %(task_id)s %(message)s"
         )
-        console_handler.setFormatter(formatter)
+        console_handler.setFormatter(console_formatter)
         console_handler.addFilter(TaskIdFilter())
         root_logger.addHandler(console_handler)
 
-        root_logger.info(
-            f"Root logger configured with JSON stdout handler. Level: {log_level_str}"
-        )
+        # Configure file handler to write structured logs to per-task files
+        try:
+            logs_dir = get_config().get("paths", {}).get("logs", "logs")
+            file_handler = JsonlFileHandler(logs_dir=logs_dir)
+            file_formatter = json.JsonFormatter(
+                "%(asctime)s %(name)s %(levelname)s %(task_id)s %(message)s %(extra_data)s"
+            )
+            file_handler.setFormatter(file_formatter)
+            root_logger.addHandler(file_handler)
+            root_logger.info(
+                f"Root logger configured. Level: {log_level_str}. Handlers: Console (JSON), JSONL File."
+            )
+        except Exception as e:
+            root_logger.error(f"Failed to configure JSONL file logger: {e}")
+
         _LOGGING_CONFIGURED = True
 
     logger_instance = logging.getLogger(name)

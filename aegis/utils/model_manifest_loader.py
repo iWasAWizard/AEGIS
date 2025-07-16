@@ -2,22 +2,21 @@
 """
 Utility for loading and accessing LLM model definitions from AEGIS's models.yaml.
 """
+import functools
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-_model_manifest_data: Optional[Dict[str, Any]] = None
-_parsed_model_manifest: Optional["ModelManifest"] = None
-
 
 class ModelEntry(BaseModel):
     """Represents a single model definition from aegis/models.yaml."""
+
     key: str
     name: str
     formatter_hint: str
@@ -26,48 +25,48 @@ class ModelEntry(BaseModel):
 
 class ModelManifest(BaseModel):
     """Represents the entire collection of models defined in models.yaml."""
+
     models: List[ModelEntry] = Field(default_factory=list)
 
 
-def load_model_manifest_data() -> Dict[str, Any]:
-    """Loads the aegis/models.yaml file and caches the raw data."""
-    global _model_manifest_data
-    if _model_manifest_data is None:
-        # This now correctly points to AEGIS's own config file.
-        manifest_path = Path("aegis/models.yaml")
-        if not manifest_path.is_file():
-            logger.warning(
-                "aegis/models.yaml not found. Prompt formatting may be incorrect."
-            )
-            _model_manifest_data = {"models": []}
-            return _model_manifest_data
-        try:
-            with manifest_path.open("r", encoding="utf-8") as f:
-                _model_manifest_data = yaml.safe_load(f)
-            logger.info("AEGIS model manifest for formatter hints loaded.")
-        except yaml.YAMLError as e:
-            logger.exception("Failed to parse aegis/models.yaml")
-            _model_manifest_data = {"models": []}
-    return _model_manifest_data
+@functools.cache
+def _load_and_parse_manifest() -> ModelManifest:
+    """
+    Loads, parses, and validates the models.yaml file.
+    The @functools.cache decorator ensures this runs only once.
+    """
+    manifest_path = Path("aegis/models.yaml")
+    if not manifest_path.is_file():
+        logger.warning(
+            "aegis/models.yaml not found. Prompt formatting may be incorrect."
+        )
+        return ModelManifest(models=[])
+
+    try:
+        with manifest_path.open("r", encoding="utf-8") as f:
+            raw_data = yaml.safe_load(f)
+        return ModelManifest(**raw_data)
+    except (yaml.YAMLError, ValidationError) as e:
+        logger.exception(f"Failed to load or validate AEGIS model manifest: {e}")
+        # Return an empty manifest as a safe fallback
+        return ModelManifest(models=[])
 
 
 def get_parsed_model_manifest() -> ModelManifest:
-    """Parses the cached raw model manifest data using Pydantic."""
-    global _parsed_model_manifest
-    raw_data = load_model_manifest_data()
-    if _parsed_model_manifest is None:
-        try:
-            _parsed_model_manifest = ModelManifest(**raw_data)
-        except Exception as e:
-            logger.exception(f"Failed to validate AEGIS model manifest data: {e}")
-            _parsed_model_manifest = ModelManifest(models=[])
-    return _parsed_model_manifest
+    """
+    Returns the cached, parsed model manifest.
+    Triggers the loading process on the first call.
+    """
+    return _load_and_parse_manifest()
 
 
 def get_formatter_hint(model_name: str) -> str:
-    """Retrieves a formatter hint by its 'key'."""
+    """
+    Retrieves a formatter hint by its 'key' from the cached manifest.
+    """
     default_formatter = "chatml"
     manifest = get_parsed_model_manifest()
+
     if not model_name or not manifest.models:
         return default_formatter
 
@@ -76,5 +75,7 @@ def get_formatter_hint(model_name: str) -> str:
         if entry.key.lower() == search_term_lower:
             return entry.formatter_hint
 
-    logger.warning(f"No formatter hint found for model '{model_name}'. Falling back to '{default_formatter}'.")
+    logger.warning(
+        f"No formatter hint found for model '{model_name}'. Falling back to '{default_formatter}'."
+    )
     return default_formatter
