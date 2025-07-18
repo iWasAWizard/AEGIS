@@ -11,7 +11,7 @@ models:
     name: "MythoMax-L2-13B"
     formatter_hint: "alpaca"
 
-  - key: "mistral-openorca"
+  - key: "hf.co/TheBloke/Mistral-7B-OpenOrca-GGUF:Q4_K_M"
     name: "Mistral-7B-OpenOrca"
     formatter_hint: "chatml"
 
@@ -22,3 +22,8 @@ models:
   - key: "llama3"
     name: "Llama 3 Instruct Family"
     formatter_hint: "llama3"
+
+  - key: "llama3:8b-instruct"
+    name: "Llama 3 8B Instruct (Ollama)"
+    formatter_hint: "llama3"
+    notes: "For use with the Ollama backend. Model must be pulled via 'ollama pull'."

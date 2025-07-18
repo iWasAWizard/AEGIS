@@ -5,17 +5,19 @@
 # These can be overridden by presets and then by launch-time requests.
 defaults:
   # The default backend profile to use from backends.yaml
-  backend_profile: "bend_local"
+  backend_profile: "ollama_default"
   # The default abstract model name to use (for formatter hints)
-  llm_model_name: "hermes"
+  llm_model_name: "hf.co/TheBloke/Mistral-7B-OpenOrca-GGUF:Q4_K_M"
   # The default number of steps an agent can take.
   iterations: 10
+  # Maximum number of tokens the LLM should generate for a plan. This is crucial for performance.
+  max_tokens_to_generate: 1024
   # The default timeout for LLM planning calls.
   llm_planning_timeout: 300
   # The default timeout for individual tool calls.
   tool_timeout: 60
   # Default safety mode. Set to false to allow unsafe tools by default.
-  safe_mode: true
+  safe_mode: false
 
 # Directory paths for generated outputs.
 # These paths are relative to the project root.

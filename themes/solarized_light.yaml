@@ -1,0 +1,11 @@
+name: "Solarized Light"
+description: "A classic low-contrast light theme for daytime use."
+properties:
+  bg: "#fdf6e3"
+  fg: "#586e75"
+  border: "#93a1a1"
+  accent: "#268bd2"
+  input-bg: "#eee8d5"
+  input-fg: "#002b36"
+  font: "'Georgia', serif"
+  font-size: "16px"

@@ -1,0 +1,11 @@
+name: "Nord"
+description: "A popular arctic, north-bluish color palette."
+properties:
+  bg: "#2e3440"
+  fg: "#d8dee9"
+  border: "#4c566a"
+  accent: "#88c0d0"
+  input-bg: "#3b4252"
+  input-fg: "#eceff4"
+  font: "'Roboto Mono', monospace"
+  font-size: "16px"

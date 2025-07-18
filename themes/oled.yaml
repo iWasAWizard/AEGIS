@@ -1,0 +1,11 @@
+name: "OLED"
+description: "A true black theme for OLED screens."
+properties:
+  bg: "#000000"
+  fg: "#ffffff"
+  border: "#444444"
+  accent: "#3b82f6"
+  input-bg: "#111111"
+  input-fg: "#ffffff"
+  font: "'Segoe UI', sans-serif"
+  font-size: "16px"

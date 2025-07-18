@@ -1,4 +1,11 @@
-cd ..; cd AEGIS; rm -rf ./aegis_repo.zip; zipar ./aegis_repo.zip .; docker compose down; docker image rm aegis-agent; docker compose build --no-cache; docker compose up
+./manage_stack down && ./manage_stack rebuild && ./manage_stack up && manage_stack logs
+
+
+
+zipar aegis_repo.zip .
+
+
+
 
 curl -X POST http://localhost:8000/api/launch \
 -H "Content-Type: application/json" \
@@ -8,7 +15,12 @@ curl -X POST http://localhost:8000/api/launch \
     },
     "config": "default",
     "execution": {
-        "llm_model_name": "mistral:7b-instruct-v0.3-q4_K_M",
+        "llm_model_name": "https://huggingface.co/TheBloke/Mistral-7B-OpenOrca-GGUF/resolve/main/mistral-7b-openorca.Q4_K_M.gguf",
         "iterations": 3
     }
 }'
+
+
+
+Prompt:
+Create a new folder, temp. Inside, create a new file funny.sh. Edit the contents of the file to echo a joke to the command line. Execute the script and return the results.

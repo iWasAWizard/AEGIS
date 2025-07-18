@@ -1,0 +1,11 @@
+name: "Light"
+description: "Why would you want this?"
+properties:
+  bg: "#ffffff"
+  fg: "#000000"
+  border: "#cccccc"
+  accent: "#0066cc"
+  input-bg: "#f4f4f4"
+  input-fg: "#000000"
+  font: "'Helvetica Neue', sans-serif"
+  font-size: "16px"

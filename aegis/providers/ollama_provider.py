@@ -21,7 +21,7 @@ logger = setup_logger(__name__)
 
 class OllamaProvider(BackendProvider):
     """
-    Provider for interacting with a standalone Ollama /api/generate endpoint.
+    Provider for interacting with a standalone Ollama /api/chat endpoint.
     """
 
     def __init__(self, config: OllamaBackendConfig):
@@ -31,33 +31,57 @@ class OllamaProvider(BackendProvider):
         self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig
     ) -> str:
         """
-        Gets a completion from the Ollama /generate endpoint.
+        Gets a completion from the Ollama /api/chat endpoint.
         """
-        if runtime_config.llm_model_name is None:
-            raise PlannerError("llm_model_name must be specified in runtime_config.")
-        formatter_hint = get_formatter_hint(runtime_config.llm_model_name)
-        formatted_prompt = format_prompt(formatter_hint, messages)
+        # The URL is updated to the correct endpoint
+        chat_url = self.config.llm_url.replace("/generate", "/chat")
 
-        payload = {
-            "model": runtime_config.llm_model_name,  # Ollama requires the model name in the payload
-            "prompt": formatted_prompt,
-            "stream": False,
-            "options": {
-                "temperature": runtime_config.temperature,
-                "num_ctx": runtime_config.max_context_length,
-                "top_k": runtime_config.top_k,
-                "top_p": runtime_config.top_p,
-                "repeat_penalty": runtime_config.repetition_penalty,
-            },
+        # Build payload carefully, respecting runtime overrides but falling back to defaults.
+        options = {
+            "temperature": (
+                runtime_config.temperature
+                if runtime_config.temperature is not None
+                else self.config.temperature
+            ),
+            "num_ctx": runtime_config.max_context_length,
+            "top_k": (
+                runtime_config.top_k
+                if runtime_config.top_k is not None
+                else self.config.top_k
+            ),
+            "top_p": (
+                runtime_config.top_p
+                if runtime_config.top_p is not None
+                else self.config.top_p
+            ),
+            "repeat_penalty": (
+                runtime_config.repetition_penalty
+                if runtime_config.repetition_penalty is not None
+                else self.config.repetition_penalty
+            ),
+            # The number of tokens to generate is also an option for the chat endpoint
+            "num_predict": (
+                runtime_config.max_tokens_to_generate
+                if runtime_config.max_tokens_to_generate is not None
+                else self.config.max_tokens_to_generate
+            ),
         }
 
-        logger.info(f"Sending prompt to Ollama backend at {self.config.llm_url}")
+        payload = {
+            "model": runtime_config.llm_model_name,
+            # We now pass the structured messages directly
+            "messages": messages,
+            "stream": False,
+            "options": {k: v for k, v in options.items() if v is not None},
+        }
+
+        logger.info(f"Sending prompt to Ollama chat backend at {chat_url}")
         logger.debug(f"Ollama payload: {json.dumps(payload, indent=2)}")
 
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    self.config.llm_url,
+                    chat_url,
                     json=payload,
                     timeout=(
                         aiohttp.ClientTimeout(total=runtime_config.llm_planning_timeout)
@@ -73,12 +97,13 @@ class OllamaProvider(BackendProvider):
                         )
 
                     result = await response.json()
-                    if "response" not in result:
+                    # The response structure is different for /api/chat
+                    if "message" not in result or "content" not in result["message"]:
                         raise PlannerError(
-                            "Invalid response format from Ollama: 'response' key missing."
+                            "Invalid response format from Ollama chat: 'message' or 'content' key missing."
                         )
 
-                    return result["response"]
+                    return result["message"]["content"]
         except asyncio.TimeoutError as e:
             raise PlannerError("Query to Ollama timed out.") from e
         except aiohttp.ClientError as e:

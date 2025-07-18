@@ -32,32 +32,48 @@ class BendProvider(BackendProvider):
         self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig
     ) -> str:
         """Gets a completion from the BEND KoboldCPP /generate endpoint."""
-        if runtime_config.llm_model_name is None:
-            raise PlannerError("llm_model_name must be specified in runtime_config.")
         formatter_hint = get_formatter_hint(runtime_config.llm_model_name)
         formatted_prompt = format_prompt(formatter_hint, messages)
 
+        # Build payload carefully, respecting runtime overrides but falling back to defaults.
         payload = {
             "prompt": formatted_prompt,
-            "temperature": runtime_config.temperature,
             "max_context_length": runtime_config.max_context_length,
-            "max_length": runtime_config.max_tokens_to_generate,
-            "top_p": runtime_config.top_p,
-            "top_k": runtime_config.top_k,
-            "rep_pen": runtime_config.repetition_penalty,
+            "temperature": (
+                runtime_config.temperature
+                if runtime_config.temperature is not None
+                else self.config.temperature
+            ),
+            "max_length": (
+                runtime_config.max_tokens_to_generate
+                if runtime_config.max_tokens_to_generate is not None
+                else self.config.max_tokens_to_generate
+            ),
+            "top_p": (
+                runtime_config.top_p
+                if runtime_config.top_p is not None
+                else self.config.top_p
+            ),
+            "top_k": (
+                runtime_config.top_k
+                if runtime_config.top_k is not None
+                else self.config.top_k
+            ),
+            "rep_pen": (
+                runtime_config.repetition_penalty
+                if runtime_config.repetition_penalty is not None
+                else self.config.repetition_penalty
+            ),
         }
 
         logger.info(f"Sending prompt to BEND backend at {self.config.llm_url}")
+        logger.debug(f"BEND/KoboldCPP payload: {json.dumps(payload, indent=2)}")
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     self.config.llm_url,
                     json=payload,
-                    timeout=(
-                        aiohttp.ClientTimeout(total=runtime_config.llm_planning_timeout)
-                        if runtime_config.llm_planning_timeout is not None
-                        else None
-                    ),
+                    timeout=runtime_config.llm_planning_timeout,
                 ) as response:
                     if not response.ok:
                         body = await response.text()
@@ -81,6 +97,8 @@ class BendProvider(BackendProvider):
 
     async def get_speech(self, text: str) -> bytes:
         """Generates speech by calling the BEND voice proxy."""
+        if not self.config.voice_proxy_url:
+            raise ToolExecutionError("BEND voice proxy URL is not configured.")
         url = f"{self.config.voice_proxy_url}/speak"
         headers = {"Content-Type": "application/json"}
         if self.config.api_key:
@@ -98,6 +116,8 @@ class BendProvider(BackendProvider):
 
     async def get_transcription(self, audio_bytes: bytes) -> str:
         """Transcribes audio by calling the BEND voice proxy."""
+        if not self.config.voice_proxy_url:
+            raise ToolExecutionError("BEND voice proxy URL is not configured.")
         url = f"{self.config.voice_proxy_url}/transcribe"
         headers = {}
         if self.config.api_key:

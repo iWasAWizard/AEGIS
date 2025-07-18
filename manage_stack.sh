@@ -27,7 +27,7 @@ print_error() {
 }
 
 usage() {
-    echo "Usage: $0 {up|down|rebuild|pull|status|logs|exec|restart|prune}"
+    echo "Usage: $0 {up|down|rebuild|pull|status|logs|exec|restart|prune} [service]"
     echo
     echo "Commands:"
     echo "  up                - Start both AEGIS and BEND stacks."
@@ -47,11 +47,12 @@ if [ -z "$1" ]; then
     usage
 fi
 
-AEGIS_DIR="./aegis"
+# Define paths relative to the script's execution directory.
+AEGIS_DIR="."
 BEND_DIR="../BEND"
 
-if [ ! -d "$AEGIS_DIR" ] || [ ! -d "$BEND_DIR" ]; then
-    print_error "Couldn't find the folders!\nMake sure that the 'AEGIS' and 'BEND' directories\nare at the same directory level!"
+if [ ! -d "${AEGIS_DIR}" ] || [ ! -d "${BEND_DIR}" ]; then
+    print_error "Couldn't find the folders!\nMake sure that the 'aegis' and 'BEND' directories are present."
     exit 1
 fi
 
@@ -66,67 +67,78 @@ BEND_SERVICES=("koboldcpp" "openwebui" "whisper" "piper" "glances" "qdrant" "ret
 
 TARGET_DIR=""
 if [[ " ${AEGIS_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
-    TARGET_DIR=$AEGIS_DIR
+    TARGET_DIR=${AEGIS_DIR}
 elif [[ " ${BEND_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
-    TARGET_DIR=$BEND_DIR
+    TARGET_DIR=${BEND_DIR}
 fi
 
 case "$COMMAND" in
     up)
         print_info "Starting BEND stack..."
-        (cd "$BEND_DIR" && ./scripts/manage.sh up)
+        (cd "${BEND_DIR}" && ./scripts/manage.sh up)
         print_info "Starting AEGIS stack..."
-        (cd "$AEGIS_DIR" && docker compose up --build -d)
+        (cd "${AEGIS_DIR}" && docker compose up --build -d)
         print_success "All stacks started."
+        print_info "Cleaning up old images..."
+        docker image prune -f
         ;;
 
     down)
         print_info "Stopping AEGIS stack..."
-        (cd "$AEGIS_DIR" && docker compose down)
-        (cd "$BEND_DIR" && ./scripts/manage.sh down)
+        (cd "${AEGIS_DIR}" && docker compose down)
+        print_info "Stopping BEND stack..."
+        (cd "${BEND_DIR}" && ./scripts/manage.sh down)
         print_success "All stacks stopped."
         ;;
 
     rebuild)
         print_info "Force rebuilding images..."
-        if [ -n "$SERVICE" ]; then
-            print_info "Rebuilding service: $SERVICE"
-            (cd "$TARGET_DIR" && docker compose build --no-cache "$SERVICE")
-            print_info "Restarting service: $SERVICE"
-            (cd "$TARGET_DIR" && docker compose up -d --force-recreate "$SERVICE")
+        if [ -n "${SERVICE}" ]; then
+            print_info "Rebuilding service: ${SERVICE}"
+            (cd "${TARGET_DIR}" && docker compose build --no-cache "${SERVICE}")
+            print_info "Restarting service: ${SERVICE}"
+            (cd "${TARGET_DIR}" && docker compose up -d --force-recreate "${SERVICE}")
         else
             print_info "Rebuilding BEND stack..."
-            (cd "$BEND_DIR" && docker compose build --no-cache)
-            (cd "$BEND_DIR" && docker compose up -d --force-recreate)
+            (cd "${BEND_DIR}" && docker compose build --no-cache)
+            (cd "${BEND_DIR}" && docker compose up -d --force-recreate)
             print_info "Rebuilding AEGIS stack..."
-            (cd "$AEGIS_DIR" && docker compose build --no-cache)
-            (cd "$AEGIS_DIR" && docker compose up -d --force-recreate)
+            (cd "${AEGIS_DIR}" && docker compose build --no-cache)
+            (cd "${AEGIS_DIR}" && docker compose up -d --force-recreate)
         fi
         print_success "Rebuild and restart complete."
+        print_info "Cleaning up old images..."
+        docker image prune -f
         ;;
 
     pull)
         print_info "Pulling latest images for BEND stack..."
-        (cd "$BEND_DIR" && docker compose pull)
+        (cd "${BEND_DIR}" && docker compose pull)
         print_info "Pulling latest images for AEGIS stack..."
-        (cd "$AEGIS_DIR" && docker compose pull)
+        (cd "${AEGIS_DIR}" && docker compose pull)
         print_success "Image pull complete."
         ;;
 
     status)
-        (cd "$BEND_DIR" && ./scripts/manage.sh status)
+        print_info "--- BEND Stack Status ---"
+        (cd "${BEND_DIR}" && ./scripts/manage.sh status)
         echo ""
         print_info "--- AEGIS Stack Status ---"
-        (cd "$AEGIS_DIR" && docker compose ps)
+        (cd "${AEGIS_DIR}" && docker compose ps)
         ;;
 
     logs)
         SERVICE=${SERVICE:-"agent"} # Default to agent logs
         print_info "Tailing logs for service: '$SERVICE'... (Ctrl+C to exit)"
-        if [ -z "$TARGET_DIR" ] && [ "$SERVICE" != "agent" ]; then
-            TARGET_DIR=$BEND_DIR # Assume it's a BEND service if not AEGIS
-        elif [ -z "$TARGET_DIR" ]; then
-             TARGET_DIR=$AEGIS_DIR
+
+        # Determine target directory based on service name
+        if [[ " ${AEGIS_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
+            TARGET_DIR=${AEGIS_DIR}
+        elif [[ " ${BEND_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
+            TARGET_DIR=${BEND_DIR}
+        else
+             print_error "Unknown service '$SERVICE'."
+             exit 1
         fi
         (cd "$TARGET_DIR" && docker compose logs -f "$SERVICE")
         ;;
@@ -149,8 +161,8 @@ case "$COMMAND" in
         if [ -n "$SERVICE" ]; then
              (cd "$TARGET_DIR" && docker compose restart "$SERVICE")
         else
-            (cd "$AEGIS_DIR" && docker compose restart)
-            (cd "$BEND_DIR" && docker compose restart)
+            (cd "${AEGIS_DIR}" && docker compose restart)
+            (cd "${BEND_DIR}" && docker compose restart)
         fi
         print_success "Restart complete."
         ;;
@@ -161,9 +173,9 @@ case "$COMMAND" in
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             print_info "Pruning AEGIS stack..."
-            (cd "$AEGIS_DIR" && docker compose down -v)
+            (cd "${AEGIS_DIR}" && docker compose down -v)
             print_info "Pruning BEND stack..."
-            (cd "$BEND_DIR" && ./scripts/manage.sh down -v) # Assuming BEND manage script supports -v
+            (cd "${BEND_DIR}" && ./scripts/manage.sh down -v)
             print_success "All stacks and data have been pruned."
         else
             print_info "Prune operation cancelled."

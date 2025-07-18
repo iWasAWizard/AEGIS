@@ -44,8 +44,7 @@ pytest_cache/
 *.tar
 *.tar.gz
 
-# Default config profiles (keep only user-added ones)
-presets/*.example.yaml
+# Protect default preset LangGraph configurations
 !presets/*.yaml
 
 # Node or web-related (if added later)
@@ -53,9 +52,12 @@ node_modules/
 build/
 dist/
 
-# Custom
+# Temporary stuff
 scratch.txt
 tmp/
 temp/
+
+# Binaries and modelfiles
 *.bin
 *.gguf
+*.safetensors

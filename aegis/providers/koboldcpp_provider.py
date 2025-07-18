@@ -4,11 +4,11 @@ A concrete implementation of the BackendProvider for a generic KoboldCPP backend
 """
 import asyncio
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import aiohttp
 
-from aegis.exceptions import PlannerError
+from aegis.exceptions import PlannerError, ToolExecutionError
 from aegis.providers.base import BackendProvider
 from aegis.schemas.backend import KoboldcppBackendConfig
 from aegis.schemas.runtime import RuntimeExecutionConfig
@@ -33,21 +33,38 @@ class KoboldcppProvider(BackendProvider):
         """
         Gets a completion from the KoboldCPP /generate endpoint.
         """
-        # Determine the correct prompt format using AEGIS's own manifest
-        model_name = runtime_config.llm_model_name or "default"
-        formatter_hint = get_formatter_hint(model_name)
+        formatter_hint = get_formatter_hint(runtime_config.llm_model_name)
         formatted_prompt = format_prompt(formatter_hint, messages)
 
-        # Prepare payload for KoboldCPP's /generate endpoint
-        # Generation parameters are read from the runtime config to allow overrides.
+        # Build payload carefully, respecting runtime overrides but falling back to defaults.
         payload = {
             "prompt": formatted_prompt,
-            "temperature": runtime_config.temperature,
             "max_context_length": runtime_config.max_context_length,
-            "max_length": runtime_config.max_tokens_to_generate,
-            "top_p": runtime_config.top_p,
-            "top_k": runtime_config.top_k,
-            "rep_pen": runtime_config.repetition_penalty,
+            "temperature": (
+                runtime_config.temperature
+                if runtime_config.temperature is not None
+                else self.config.temperature
+            ),
+            "max_length": (
+                runtime_config.max_tokens_to_generate
+                if runtime_config.max_tokens_to_generate is not None
+                else self.config.max_tokens_to_generate
+            ),
+            "top_p": (
+                runtime_config.top_p
+                if runtime_config.top_p is not None
+                else self.config.top_p
+            ),
+            "top_k": (
+                runtime_config.top_k
+                if runtime_config.top_k is not None
+                else self.config.top_k
+            ),
+            "rep_pen": (
+                runtime_config.repetition_penalty
+                if runtime_config.repetition_penalty is not None
+                else self.config.repetition_penalty
+            ),
         }
 
         logger.info(f"Sending prompt to KoboldCPP backend at {self.config.llm_url}")
@@ -58,11 +75,7 @@ class KoboldcppProvider(BackendProvider):
                 async with session.post(
                     self.config.llm_url,
                     json=payload,
-                    timeout=(
-                        aiohttp.ClientTimeout(total=runtime_config.llm_planning_timeout)
-                        if runtime_config.llm_planning_timeout is not None
-                        else None
-                    ),
+                    timeout=runtime_config.llm_planning_timeout,
                 ) as response:
                     if not response.ok:
                         body = await response.text()
@@ -97,4 +110,18 @@ class KoboldcppProvider(BackendProvider):
     async def get_transcription(self, audio_bytes: bytes) -> str:
         raise NotImplementedError(
             "KoboldcppProvider does not support audio transcription."
+        )
+
+    async def ingest_document(
+        self, file_path: str, source_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        raise NotImplementedError(
+            "KoboldcppProvider does not support document ingestion."
+        )
+
+    async def retrieve_knowledge(
+        self, query: str, top_k: int = 5
+    ) -> List[Dict[str, Any]]:
+        raise NotImplementedError(
+            "KoboldcppProvider does not support knowledge retrieval."
         )

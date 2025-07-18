@@ -1,0 +1,11 @@
+name: "Gruvbox Dark"
+description: "A retro groove-inspired dark theme with a warm palette."
+properties:
+  bg: "#282828"
+  fg: "#ebdbb2"
+  border: "#504945"
+  accent: "#83a598"
+  input-bg: "#3c3836"
+  input-fg: "#fbf1c7"
+  font: "'Consolas', 'Monaco', monospace"
+  font-size: "16px"

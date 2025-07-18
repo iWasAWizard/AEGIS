@@ -1,43 +1,35 @@
-# backends.yaml
-# Centralized definitions for backend intelligence providers.
-# AEGIS will use a profile name from this file to determine which backend to connect to.
-
 backends:
-  - profile_name: "bend_local"
-    type: "bend"
-    # --- Connection ---
-    llm_url: "http://localhost:12009/api/v1/generate"
-    voice_proxy_url: "http://localhost:12008"
-    rag_url: "http://localhost:12007"
-    api_key: "${BEND_API_KEY}" # Use secret from .env file
-    # --- Generation Parameters ---
-    temperature: 0.2
-    max_tokens_to_generate: 1536
-    top_p: 0.9
-    top_k: 40
-    repetition_penalty: 1.1
+- profile_name: bend_local
+  type: bend
+  llm_url: http://koboldcpp:5001/api/generate
+  voice_proxy_url: http://voiceproxy:8001
+  rag_url: http://retriever:8000
+  api_key: ${BEND_API_KEY}
+  temperature: 0.2
+  max_tokens_to_generate: 1536
+  top_p: 0.9
+  top_k: 40
+  repetition_penalty: 1.1
 
-  - profile_name: "openai_gpt4"
-    type: "openai"
-    # --- Connection ---
-    model: "gpt-4-turbo"
-    api_key: "${OPENAI_API_KEY}"
-    # --- Generation Parameters ---
-    temperature: 0.7
-    max_tokens_to_generate: 2048
-    top_p: 1.0
-    # --- Service-specific ---
-    tts_model: "tts-1"
-    tts_voice: "alloy"
-    stt_model: "whisper-1"
+- profile_name: openai_gpt4
+  type: openai
+  model: gpt-4-turbo
+  api_key: ${OPENAI_API_KEY}
+  temperature: 0.7
+  max_tokens_to_generate: 2048
+  top_p: 1.0
+  tts_model: tts-1
+  tts_voice: alloy
+  stt_model: whisper-1
 
-  - profile_name: "ollama_default"
-    type: "ollama"
-    # --- Connection ---
-    llm_url: "http://localhost:11434/api/generate"
-    # --- Generation Parameters ---
-    temperature: 0.5
-    max_tokens_to_generate: 2048
-    top_p: 0.9
-    top_k: 40
-    repetition_penalty: 1.1
+- profile_name: ollama_default
+  type: ollama
+  llm_url: http://ollama:11434/api/generate
+  voice_proxy_url: http://voiceproxy:8001
+  rag_url: http://retriever:8000
+  api_key: ${BEND_API_KEY}
+  temperature: 0.2
+  max_tokens_to_generate: 1536
+  top_p: 0.9
+  top_k: 40
+  repetition_penalty: 1.1

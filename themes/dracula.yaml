@@ -1,0 +1,11 @@
+name: "Dracula"
+description: "A popular dark theme for developers."
+properties:
+  bg: "#282a36"
+  fg: "#f8f8f2"
+  border: "#6272a4"
+  accent: "#bd93f9"
+  input-bg: "#44475a"
+  input-fg: "#f8f8f2"
+  font: "'Fira Code', monospace"
+  font-size: "16px"

@@ -19,9 +19,10 @@ class RuntimeExecutionConfig(BaseModel):
     All fields are optional, as they are merged from system defaults,
     presets, and launch-time overrides.
     """
+
     backend_profile: Optional[str] = Field(
         None,
-        description="The name of the backend profile from backends.yaml to use for all backend services."
+        description="The name of the backend profile from backends.yaml to use for all backend services.",
     )
     llm_model_name: Optional[str] = Field(
         None,

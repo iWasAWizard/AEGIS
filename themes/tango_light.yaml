@@ -1,0 +1,11 @@
+name: "Tango Light"
+description: "A light theme based on the Tango Desktop Project color palette."
+properties:
+  bg: "#eeeeec"
+  fg: "#2e3436"
+  border: "#d3d7cf"
+  accent: "#3465a4"
+  input-bg: "#ffffff"
+  input-fg: "#2e3436"
+  font: "'Ubuntu', sans-serif"
+  font-size: "16px"

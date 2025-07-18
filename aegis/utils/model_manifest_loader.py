@@ -35,10 +35,11 @@ def _load_and_parse_manifest() -> ModelManifest:
     Loads, parses, and validates the models.yaml file.
     The @functools.cache decorator ensures this runs only once.
     """
-    manifest_path = Path("aegis/models.yaml")
+    logger.info("Cache miss. Loading models.yaml from disk...")
+    manifest_path = Path("models.yaml")  # Correct path inside container
     if not manifest_path.is_file():
         logger.warning(
-            "aegis/models.yaml not found. Prompt formatting may be incorrect."
+            "models.yaml not found at root. Prompt formatting may be incorrect."
         )
         return ModelManifest(models=[])
 
@@ -58,6 +59,12 @@ def get_parsed_model_manifest() -> ModelManifest:
     Triggers the loading process on the first call.
     """
     return _load_and_parse_manifest()
+
+
+def clear_model_manifest_cache():
+    """Clears the cache for the model manifest loader."""
+    _load_and_parse_manifest.cache_clear()
+    logger.info("Cleared models.yaml cache.")
 
 
 def get_formatter_hint(model_name: str) -> str:

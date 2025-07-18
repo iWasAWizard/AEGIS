@@ -1,0 +1,11 @@
+name: "Hacker"
+description: "A retro green-on-black terminal theme."
+properties:
+  bg: "#000000"
+  fg: "#00ff00"
+  border: "#003300"
+  accent: "#00cc00"
+  input-bg: "#001100"
+  input-fg: "#00ff00"
+  font: "'Courier New', monospace"
+  font-size: "15px"

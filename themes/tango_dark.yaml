@@ -1,0 +1,11 @@
+name: "Tango Dark"
+description: "A dark theme based on the Tango Desktop Project color palette."
+properties:
+  bg: "#2e3436"
+  fg: "#eeeeec"
+  border: "#555753"
+  accent: "#729fcf"
+  input-bg: "#3a3f41"
+  input-fg: "#eeeeec"
+  font: "'Ubuntu Mono', monospace"
+  font-size: "15px"

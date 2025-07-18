@@ -129,7 +129,11 @@ def capture_screenshot(input_data: CaptureScreenshotInput) -> str:
     if input_data.machine_name.lower() == "localhost":
         logger.info("Performing local screenshot.")
         gui_input = GuiActionInput(
-            action="screenshot", screenshot_path=input_data.save_path
+            action="screenshot",
+            screenshot_path=input_data.save_path,
+            coordinates=None,
+            text_to_type=None,
+            duration_seconds=0.1,
         )
         # Assuming gui_action will raise ToolExecutionError on failure.
         return gui_action(gui_input)

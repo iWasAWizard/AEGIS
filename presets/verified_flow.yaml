@@ -33,3 +33,4 @@ condition_map:
 # more complex flow to have a longer default context length.
 runtime:
   max_context_length: 8192
+  safe_mode: false

@@ -29,3 +29,9 @@ def get_config() -> dict:
         with config_path.open("r") as f:
             _config = yaml.safe_load(f)
     return _config
+
+
+def clear_config_cache():
+    """Clears the in-memory cache for config.yaml."""
+    global _config
+    _config = None

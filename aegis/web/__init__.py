@@ -14,6 +14,7 @@ from aegis.utils.logger import setup_logger
 from aegis.web.routes_artifacts import router as artifacts_router
 from aegis.web.routes_backends import router as backends_router
 from aegis.web.routes_compare import router as compare_router
+from aegis.web.routes_config_editor import router as config_editor_router
 from aegis.web.routes_fuzz import router as fuzz_router
 from aegis.web.routes_graphs import router as graphs_router
 from aegis.web.routes_inventory import router as inventory_router
@@ -22,6 +23,7 @@ from aegis.web.routes_logs import router as logs_router
 from aegis.web.routes_models import router as models_router
 from aegis.web.routes_presets import router as presets_router
 from aegis.web.routes_stream import router as log_streamer_router
+from aegis.web.routes_themes import router as themes_router
 
 logger = setup_logger(__name__)
 
@@ -37,6 +39,8 @@ router.include_router(launch_router)
 router.include_router(fuzz_router)
 router.include_router(logs_router)
 router.include_router(graphs_router)
-router.include_router(backends_router)
+router.include_router(config_editor_router)
 router.include_router(models_router)
+router.include_router(themes_router)
+router.include_router(backends_router)
 router.include_router(log_streamer_router, prefix="/ws")

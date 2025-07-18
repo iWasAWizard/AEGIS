@@ -79,12 +79,10 @@ const getStatusColor = (status) => {
  * `ArtifactViewer` component when clicked.
  * @param {object} props - The component props.
  * @param {string|null} props.targetArtifactId - The ID of the artifact to initially open.
- * @param {function} props.clearTargetArtifactId - Function to clear the target artifact ID.
  * @returns {React.Component} The artifacts tab component.
  */
-export default function ArtifactsTab({ targetArtifactId, clearTargetArtifactId }) {
+export default function ArtifactsTab({ targetArtifactId }) {
   const [artifacts, setArtifacts] = useState([]);
-  const accordionRef = useRef(null); // Ref for the accordion container for scrolling
 
   const fetchArtifacts = () => {
     fetch('/api/artifacts')
@@ -97,23 +95,17 @@ export default function ArtifactsTab({ targetArtifactId, clearTargetArtifactId }
     fetchArtifacts();
   }, []);
 
-  // Effect to handle scrolling to and clearing the target artifact ID
+  // Effect to handle scrolling to the target artifact ID when the page loads
   useEffect(() => {
     if (targetArtifactId && artifacts.length > 0) {
       const itemElement = document.getElementById(`accordion-item-${targetArtifactId}`);
       if (itemElement) {
-        // Slight delay to ensure the item is rendered and accordion can process initialEntered
         setTimeout(() => {
             itemElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
       }
-      // Clear the target ID after a short delay
-      const clearTimer = setTimeout(() => {
-        clearTargetArtifactId();
-      }, 500);
-      return () => clearTimeout(clearTimer);
     }
-  }, [targetArtifactId, clearTargetArtifactId, artifacts]);
+  }, [targetArtifactId, artifacts]);
 
   return (
     <div>
@@ -130,10 +122,8 @@ export default function ArtifactsTab({ targetArtifactId, clearTargetArtifactId }
       <Accordion
         transition
         timeout={200}
-        ref={accordionRef}
-        key={targetArtifactId || 'accordion-default'}
       >
-        {artifacts.map((task, idx) => (
+        {artifacts.map((task) => (
           <AccordionItem
             key={task.task_id}
             itemKey={task.task_id}

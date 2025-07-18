@@ -27,6 +27,7 @@ def _load_manifest_from_file() -> dict:
     """Loads the backends.yaml file and caches it in memory."""
     global _backend_manifest_cache
     if _backend_manifest_cache is None:
+        logger.info("Cache miss. Loading backends.yaml from disk...")
         manifest_path = Path("backends.yaml")
         if not manifest_path.is_file():
             raise ConfigurationError("backends.yaml not found in the root directory.")
@@ -85,3 +86,10 @@ def get_backend_config(profile_name: str) -> Any:
         raise ConfigurationError(
             f"Invalid configuration for backend profile '{profile_name}': {e}"
         ) from e
+
+
+def clear_backend_manifest_cache():
+    """Clears the in-memory cache for backends.yaml."""
+    global _backend_manifest_cache
+    _backend_manifest_cache = None
+    logger.info("Cleared backends.yaml cache.")

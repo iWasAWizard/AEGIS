@@ -3,13 +3,14 @@ version: "3.9"
 networks:
   bend-net:
     external: true
-    name: BEND_bend-net # The name is typically prefixed with the project directory name
+    name: bend_bend-net # The name is typically prefixed with the project directory name
 
 services:
   agent:
     env_file:
       - .env
     build: .
+    container_name: agent
     ports:
       - "${AEGIS_PORT:-8000}:8000"
     networks:
@@ -34,7 +35,6 @@ services:
       - ./machines.yaml:/app/machines.yaml
       - ./config.yaml:/app/config.yaml
       - ./plugins:/app/plugins
-      # The new backends manifest is now the source of truth for connections
       - ./backends.yaml:/app/backends.yaml
-      # AEGIS needs its own models.yaml for formatter hints
-      - ./aegis/models.yaml:/app/aegis/models.yaml
+      - ./models.yaml:/app/models.yaml
+      - ./themes:/app/themes
