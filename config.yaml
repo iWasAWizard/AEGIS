@@ -2,25 +2,37 @@
 # Central configuration for the AEGIS framework.
 
 # System-wide default settings.
-# These can be overridden by presets and then by launch-time requests.
+# These values are used for any task unless overridden by a preset or a
+# specific launch request.
 defaults:
-  # The default backend profile to use from backends.yaml
-  backend_profile: "ollama_default"
-  # The default abstract model name to use (for formatter hints)
-  llm_model_name: "hf.co/TheBloke/Mistral-7B-OpenOrca-GGUF:Q4_K_M"
-  # The default number of steps an agent can take.
+  # The default backend profile from backends.yaml to use if none is specified.
+  backend_profile: "bend_local"
+
+  # The default abstract model name from models.yaml. This is used to look up
+  # the correct prompt formatter.
+  llm_model_name: "hermes"
+
+  # The default maximum number of plan-execute steps an agent can take before
+  # the task is automatically terminated.
   iterations: 10
-  # Maximum number of tokens the LLM should generate for a plan. This is crucial for performance.
-  max_tokens_to_generate: 1024
-  # The default timeout for LLM planning calls.
+
+  # The default timeout in seconds for waiting for a response from the LLM.
+  # This should be high enough for local models to generate a complete plan.
   llm_planning_timeout: 300
-  # The default timeout for individual tool calls.
+
+  # The default maximum number of tokens the LLM should generate for a plan.
+  # This prevents the LLM from rambling and improves performance.
+  max_tokens_to_generate: 1536
+
+  # The default timeout in seconds for tool execution.
   tool_timeout: 60
-  # Default safety mode. Set to false to allow unsafe tools by default.
-  safe_mode: false
+
+  # The default safety mode. If true, tools marked as [UNSAFE] cannot be run
+  # unless overridden.
+  safe_mode: true
 
 # Directory paths for generated outputs.
-# These paths are relative to the project root.
+# These paths are relative to the AEGIS project root.
 paths:
   reports: "reports"
   screenshots: "reports/screenshots"
@@ -28,12 +40,16 @@ paths:
   logs: "logs"
   index: "index"
 
-# Configuration for Retrieval-Augmented Generation (RAG) and memory.
+# Configuration for RAG and agent memory.
 rag:
+  # The model to use for vector embeddings.
   embedding_model: "all-MiniLM-L6-v2"
+  # FAISS vector index.
   index_filename: "aegis_memory.faiss"
+  # Map of vector IDs to text content.
   mapping_filename: "aegis_memory_mapping.json"
 
-# Logging configuration
+# Logging configuration for the AEGIS agent itself.
 logging:
-  level: "info"
+  # 'debug', 'info', 'warning', 'error'.
+  level: "debug"
