@@ -13,7 +13,7 @@ nodes:
   - id: "summarize"
     tool: "summarize_result"
   - id: "human_checkpoint"
-    tool: "process_human_feedback" # Changed from no_op
+    tool: "process_human_feedback"
 
 edges:
   - ["plan", "execute"]

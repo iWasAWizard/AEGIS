@@ -67,62 +67,36 @@ class AgentGraph:
                 logger.debug(f"Added edge: {src} -> {dst}")
 
             if self.config.condition_node and self.config.condition_map:
+                # The node that is used as the *source* for the conditional edge
                 source_node_id_for_conditional = self.config.condition_node
 
+                # The function that is called to get the routing *decision*
+                # The logic inside this function determines which key from condition_map to use.
+                # In our presets, the conditional routing decision logic is always in `check_termination`
+                # for the basic flow, or `route_after_verification` for the advanced one.
+                # We need to map the source node of the branch to the correct decision function.
                 decision_function_for_routing: Callable
-                # Explicitly choose the routing function based on the source node ID from config
-                if source_node_id_for_conditional == "execute":
+
+                if self.config.condition_node == "execute":
+                    # In default.yaml, after 'execute', we call 'check_termination' to decide where to go.
                     decision_function_for_routing = check_termination
-                    logger.debug(
-                        f"Using 'check_termination' as decision function for conditional edge from "
-                        f"'{source_node_id_for_conditional}'."
-                    )
-                elif source_node_id_for_conditional == "verify":
+                elif self.config.condition_node == "verify":
+                    # In verified_flow.yaml, after 'verify', we call 'route_after_verification'.
                     decision_function_for_routing = route_after_verification
-                    logger.debug(
-                        f"Using 'route_after_verification' as decision function for conditional edge from "
-                        f"'{source_node_id_for_conditional}'."
-                    )
                 else:
-                    # This generic fallback might be hit if you create new presets
-                    # and the condition_node is a node whose registered tool IS the decider function.
-                    cond_node_config = next(
-                        (
-                            n
-                            for n in self.config.nodes
-                            if n.id == source_node_id_for_conditional
-                        ),
-                        None,
+                    # Fallback for other potential custom flows
+                    decision_function_for_routing = AGENT_NODE_REGISTRY.get(
+                        source_node_id_for_conditional, check_termination
                     )
-                    if (
-                        cond_node_config
-                        and cond_node_config.tool in AGENT_NODE_REGISTRY
-                    ):
-                        decision_function_for_routing = AGENT_NODE_REGISTRY[
-                            cond_node_config.tool
-                        ]
-                        logger.debug(
-                            f"Using tool '{cond_node_config.tool}' from node '{source_node_id_for_conditional}' "
-                            f"as decision function."
-                        )
-                    else:
-                        raise ConfigurationError(
-                            f"Could not determine decision function for conditional node "
-                            f"'{source_node_id_for_conditional}'. "
-                            f"Ensure it's correctly defined in preset or handled explicitly here."
-                        )
 
                 builder.add_conditional_edges(
                     source_node_id_for_conditional,
                     decision_function_for_routing,
-                    {
-                        k: v for k, v in self.config.condition_map.items()
-                    },  # Ensure keys are Hashable
+                    self.config.condition_map,
                 )
                 logger.debug(
                     f"Added conditional edge from '{source_node_id_for_conditional}' "
-                    f"with map: {self.config.condition_map} using function "
-                    f"'{decision_function_for_routing.__name__}'"
+                    f"with map: {self.config.condition_map}"
                 )
 
             logger.info("Graph construction complete. Compiling...")

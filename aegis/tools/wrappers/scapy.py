@@ -1,4 +1,4 @@
-# aegis/tools/wrappers/scapy_exec.py
+# aegis/tools/wrappers/scapy.py
 """
 Wrapper tools for leveraging the 'scapy' library for network packet
 crafting, sending, and analysis.

@@ -28,8 +28,6 @@ export default function App() {
   const [prompt, setPrompt] = useState('');
   const [presets, setPresets] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState('');
-  const [backends, setBackends] = useState([]);
-  const [selectedBackend, setSelectedBackend] = useState('');
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -85,7 +83,7 @@ export default function App() {
       .then(setConfigFiles)
       .catch(err => console.error("Failed to fetch editable files:", err));
 
-    const fetchData = (url, setter, defaultSetter, findDefault) => {
+    const fetchData = (url, setter, defaultSetter, findDefault, keyField) => {
         fetch(url)
             .then(res => {
                 if (!res.ok) throw new Error(`API fetch failed for ${url}`);
@@ -102,18 +100,17 @@ export default function App() {
                     setter([]);
                 }
             })
-            .catch(err => console.error(err));
+            .catch(err => {
+                console.error(`Error fetching from ${url}:`, err);
+                setter([]); // Set to empty array on error
+            });
     };
 
     fetchData('/api/presets', setPresets, setSelectedPreset, data => {
         const d = data.find(p => p.id === 'default');
         return d ? d.id : data[0].id;
     });
-    fetchData('/api/backends', setBackends, setSelectedBackend, data => {
-        const d = data.find(b => b.profile_name === 'bend_local');
-        return d ? d.profile_name : data[0].profile_name;
-    });
-    fetchData('/api/models', setModels, setSelectedModel, data => {
+    fetchData('/api/backend/models', setModels, setSelectedModel, data => {
         const d = data.find(m => m.key === 'hermes');
         return d ? d.key : data[0].key;
     });
@@ -154,7 +151,6 @@ export default function App() {
   // --- Lifted Functions for Child Components ---
   const launch = async (executionOverrides, isSafeMode) => {
     const executionPayload = {
-        backend_profile: selectedBackend,
         llm_model_name: selectedModel,
         safe_mode: isSafeMode,
     };
@@ -267,7 +263,7 @@ export default function App() {
     switch (activeTab) {
       case 'dashboard': return <DashboardTab navigateAndOpenArtifact={navigateAndOpenArtifact} />;
       case 'launch':
-        return <LaunchTab {...{ prompt, setPrompt, presets, selectedPreset, setSelectedPreset, backends, selectedBackend, setSelectedBackend, models, selectedModel, setSelectedModel, isLoading, setIsLoading, error, setError, response, setResponse, launch, logs, setLogs, wsStatus }} />;
+        return <LaunchTab {...{ prompt, setPrompt, presets, selectedPreset, setSelectedPreset, models, selectedModel, setSelectedModel, isLoading, setIsLoading, error, setError, response, setResponse, launch, logs, setLogs, wsStatus }} />;
       case 'presets':
         return <PresetsTab {...{ presetList, currentPresetId, presetForm, setPresetForm, presetConfigError, setPresetConfigError, loadPreset, savePreset, fetchPresets: fetchPresetsForEditor }} />;
       case 'editor':

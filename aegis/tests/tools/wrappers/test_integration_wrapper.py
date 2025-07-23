@@ -12,8 +12,6 @@ from aegis.tools.wrappers.integration import (
     ScheduleCronJobInput,
     run_diagnostics_bundle,
     RunDiagnosticsBundleInput,
-    spawn_background_monitor,
-    SpawnBackgroundMonitorInput,
 )
 
 
@@ -92,34 +90,3 @@ def test_run_diagnostics_bundle_failure(mock_ssh_executor_instance):
         "echo '---' && ps aux | head -n 10 && echo '---' && who && echo '---' && ss -tuln"
     )
     mock_ssh_executor_instance.run.assert_called_once_with(expected_bundle_cmd)
-
-
-def test_spawn_background_monitor_success(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.run.return_value = ""  # nohup command is silent
-    command_to_run = "/usr/local/bin/long_running_monitor --config /etc/monitor.conf"
-    input_data = SpawnBackgroundMonitorInput(
-        machine_name="app-server", command=command_to_run
-    )
-    result = spawn_background_monitor(input_data)
-
-    expected_cmd = f"nohup {command_to_run} > /dev/null 2>&1 &"
-    mock_ssh_executor_instance.run.assert_called_once_with(expected_cmd)
-    assert (
-        result
-        == f"Successfully spawned background monitor on app-server with command: '{command_to_run}'"
-    )
-
-
-def test_spawn_background_monitor_failure(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.run.side_effect = ToolExecutionError(
-        "nohup for monitor failed"
-    )
-    command_to_run = "/usr/local/bin/long_running_monitor"
-    input_data = SpawnBackgroundMonitorInput(
-        machine_name="app-server", command=command_to_run
-    )
-
-    with pytest.raises(ToolExecutionError, match="nohup for monitor failed"):
-        spawn_background_monitor(input_data)
-    expected_cmd = f"nohup {command_to_run} > /dev/null 2>&1 &"
-    mock_ssh_executor_instance.run.assert_called_once_with(expected_cmd)

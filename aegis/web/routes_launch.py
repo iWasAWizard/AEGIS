@@ -9,7 +9,7 @@ import uuid
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException
-from langgraph.pregel import GraphInterrupt, Pregel
+from langgraph.pregel import GraphInterrupt
 from pydantic import ValidationError
 from langfuse.langchain import CallbackHandler
 
@@ -119,9 +119,11 @@ async def launch_task(payload: LaunchRequest) -> LaunchResponse:
         logger.info(f"⏸️  Task {task_id} has been paused for human input.")
         # Store the compiled graph and the interrupted state for later resumption.
         INTERRUPTED_STATES[task_id] = {"graph": agent_graph, "state": e.values}
+        # The observation from the 'ask_human_for_input' tool contains the question.
+        last_observation = e.values.get("history", [])[-1].observation
         return LaunchResponse(
             task_id=task_id,
-            summary="Task paused for human input. Use the /api/resume endpoint to continue.",
+            summary=last_observation,
             status="PAUSED",
             history=[],
         )

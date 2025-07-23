@@ -11,6 +11,7 @@ pyyaml
 matplotlib
 aiofiles
 aiohttp
+cmd2
 pytest
 tqdm
 rich

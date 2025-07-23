@@ -56,6 +56,11 @@ async def run_single_test(test_path: Path) -> bool:
             )
         )
         runtime_config = preset_config.runtime
+        # Correctly merge the full execution block from the test file
+        if launch_payload.execution:
+            runtime_config = runtime_config.model_copy(
+                update=launch_payload.execution.model_dump(exclude_unset=True)
+            )
         if launch_payload.iterations is not None:
             runtime_config.iterations = launch_payload.iterations
 
@@ -67,7 +72,9 @@ async def run_single_test(test_path: Path) -> bool:
 
         graph_structure = AgentGraphConfig(
             state_type=preset_config.state_type,
-            entrypoint=preset_config.entrypoint,
+            entrypoint=(
+                preset_config.entrypoint if preset_config.entrypoint is not None else ""
+            ),
             nodes=preset_config.nodes,
             edges=preset_config.edges,
             condition_node=preset_config.condition_node,
