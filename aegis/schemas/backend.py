@@ -23,6 +23,9 @@ class KoboldcppBackendConfig(BaseBackendConfig):
     llm_url: str = Field(
         ..., description="The full URL to the KoboldCPP /generate endpoint."
     )
+    model: Optional[str] = Field(
+        None, description="The Hugging Face model identifier being served."
+    )
     temperature: float = Field(0.2)
     max_tokens_to_generate: int = Field(1536)
     top_p: float = Field(0.9)

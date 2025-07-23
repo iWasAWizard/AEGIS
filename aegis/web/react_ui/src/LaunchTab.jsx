@@ -13,6 +13,7 @@ export default function LaunchTab({
   // Config state and setters
   prompt, setPrompt,
   presets, selectedPreset, setSelectedPreset,
+  backends, selectedBackend, setSelectedBackend,
   models, selectedModel, setSelectedModel,
   // Execution state and functions
   isLoading, setIsLoading,
@@ -52,7 +53,7 @@ export default function LaunchTab({
   };
 
   const handleLaunch = async () => {
-    if (isLoading || !prompt || !selectedPreset) {
+    if (isLoading || !prompt || !selectedPreset || !selectedBackend) {
         return;
     }
     setIsLoading(true);
@@ -113,7 +114,7 @@ export default function LaunchTab({
   };
 
 
-  const isLaunchDisabled = isLoading || isPaused || !prompt || !selectedPreset;
+  const isLaunchDisabled = isLoading || isPaused || !prompt || !selectedPreset || !selectedBackend;
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
@@ -125,11 +126,17 @@ export default function LaunchTab({
               This is the primary control panel for executing agent tasks. Enter a high-level goal, select a configuration, and click "Launch Task".
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div>
                     <label htmlFor="preset">Agent Preset:</label>
                     <select id="preset" value={selectedPreset} onChange={e => setSelectedPreset(e.target.value)} disabled={isLoading}>
                       {Array.isArray(presets) && presets.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                    </select>
+                </div>
+                <div>
+                    <label htmlFor="backend">Backend Profile:</label>
+                    <select id="backend" value={selectedBackend} onChange={e => setSelectedBackend(e.target.value)} disabled={isLoading}>
+                        {Array.isArray(backends) && backends.map((b) => (<option key={b.profile_name} value={b.profile_name}>{b.profile_name} ({b.type})</option>))}
                     </select>
                 </div>
                 <div>

@@ -6,6 +6,7 @@ backends:
   voice_proxy_url: http://voiceproxy:8001
   rag_url: http://retriever:8000
   api_key: ${BEND_API_KEY}
+  model: "NousResearch/Nous-Hermes-2-Mistral-7B-DPO"
   temperature: 0.2
   max_tokens_to_generate: 1536
   top_p: 0.9
