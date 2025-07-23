@@ -1,10 +1,7 @@
-# aegis/docker-compose.yml
-version: "3.9"
-
 networks:
   bend-net:
     external: true
-    name: ${BEND_NETWORK_NAME:-bend_bend-net} # Use variable, with a default
+    name: ${AEGIS_EXTERNAL_NETWORK:-bend_bend-net} # Use variable, with a default
 
 services:
   agent:
@@ -29,8 +26,6 @@ services:
       - LANGFUSE_HOST=${LANGFUSE_HOST}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
-      # Explicitly define the path to the model manifest inside the container
-      - MODEL_MANIFEST_PATH=/app/models.yaml
     restart: unless-stopped
     volumes:
       - ./reports:/app/reports

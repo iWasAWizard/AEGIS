@@ -1,4 +1,3 @@
-# aegis/web/react_ui/src/LaunchTab.jsx
 // aegis/web/react_ui/src/LaunchTab.jsx
 import React, { useEffect, useRef, useState } from 'react';
 import TaskResultViewer from './components/TaskResultViewer';

@@ -40,12 +40,13 @@ def mock_state_factory():
 
 
 @pytest.fixture
-def mock_instructor_for_verify(monkeypatch):
+def mock_instructor_client(monkeypatch):
+    """Mocks the instructor-patched OpenAI client for both verify and remediate."""
     mock_create = AsyncMock()
     mock_client = MagicMock()
     mock_client.chat.completions.create = mock_create
-    monkeypatch.setattr("instructor.patch", lambda x: mock_client)
-    monkeypatch.setattr("openai.OpenAI", MagicMock())
+    monkeypatch.setattr("aegis.agents.steps.verification.instructor.patch", lambda x: mock_client)
+    monkeypatch.setattr("aegis.agents.steps.verification.OpenAI", MagicMock())
     monkeypatch.setattr("aegis.agents.steps.verification.get_backend_config", MagicMock(return_value=MagicMock(llm_url="http://test/v1/c", model="test")))
     return mock_create
 
@@ -72,12 +73,12 @@ async def test_verify_outcome_main_tool_failed(mock_state_factory):
 @patch("aegis.agents.steps.verification._run_tool")
 @patch("aegis.agents.steps.verification.get_tool")
 async def test_verify_outcome_verification_succeeds(
-    mock_get_tool, mock_run_tool, mock_state_factory, mock_instructor_for_verify
+    mock_get_tool, mock_run_tool, mock_state_factory, mock_instructor_client
 ):
     """Test successful verification when the LLM judge returns 'success'."""
     mock_get_tool.return_value = MagicMock(run=MagicMock(), input_model=DummyInput)
     mock_run_tool.return_value = "Service is active and running."
-    mock_instructor_for_verify.return_value = VerificationJudgement(judgement="success")
+    mock_instructor_client.return_value = VerificationJudgement(judgement="success")
 
     plan = AgentScratchpad(thought="t", tool_name="t", verification_tool_name="v_tool")
     state = mock_state_factory(plan, "main output")
@@ -87,15 +88,15 @@ async def test_verify_outcome_verification_succeeds(
 
 
 @pytest.mark.asyncio
-async def test_remediate_plan_success(mock_state_factory, mock_instructor_for_verify):
+async def test_remediate_plan_success(mock_state_factory, mock_instructor_client):
     """Test that a remediation plan is generated correctly."""
     new_plan = AgentScratchpad(thought="remediation thought", tool_name="fix_tool", tool_args={})
-    mock_instructor_for_verify.return_value = new_plan
+    mock_instructor_client.return_value = new_plan
 
     plan = AgentScratchpad(thought="original plan", tool_name="failing_tool")
     state = mock_state_factory(plan, "[ERROR] It failed", status="failure")
 
     result_dict = await remediate_plan(state)
 
-    mock_instructor_for_verify.assert_awaited_once()
+    mock_instructor_client.assert_awaited_once()
     assert "remediation thought" in result_dict["latest_plan"].thought

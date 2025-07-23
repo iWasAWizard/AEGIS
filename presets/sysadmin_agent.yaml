@@ -1,0 +1,49 @@
+# aegis/presets/sysadmin_agent.yaml
+# A specialist agent for system administration tasks.
+name: "System Administration Agent"
+description: "A specialist agent focused on system diagnostics, file management, and command execution on local or remote machines."
+state_type: "aegis.agents.task_state.TaskState"
+entrypoint: "plan"
+
+nodes:
+  - id: "plan"
+    tool: "reflect_and_plan"
+  - id: "execute"
+    tool: "execute_tool"
+  - id: "summarize"
+    tool: "summarize_result"
+
+edges:
+  - ["plan", "execute"]
+  - ["summarize", "__end__"]
+
+condition_node: "execute"
+condition_map:
+  continue: "plan"
+  end: "summarize"
+
+# This agent is given a curated list of tools for system administration.
+# This makes it more focused and less likely to get confused by irrelevant tools.
+runtime:
+  safe_mode: false # Sysadmin tasks often require unsafe operations.
+  tool_allowlist:
+    # Core command execution
+    - "run_local_command"
+    - "run_remote_command"
+    - "run_remote_python_snippet"
+    - "run_remote_background_command"
+    # Local and remote file operations
+    - "write_to_file"
+    - "read_file"
+    - "delete_file"
+    - "diff_local_file_after_edit"
+    - "read_remote_file"
+    - "append_to_remote_file"
+    - "get_remote_directory_listing"
+    - "check_remote_file_exists"
+    # System diagnostics
+    - "list_processes"
+    - "get_disk_usage"
+    - "run_diagnostics_bundle"
+    # General reasoning
+    - "invoke_llm"

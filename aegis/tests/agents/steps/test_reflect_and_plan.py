@@ -2,7 +2,7 @@
 """
 Unit tests for the reflect_and_plan agent step.
 """
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
@@ -37,8 +37,8 @@ def mock_instructor_client(monkeypatch):
     mock_create = AsyncMock()
     mock_client_instance = MagicMock()
     mock_client_instance.chat.completions.create = mock_create
-    monkeypatch.setattr("instructor.patch", lambda x: mock_client_instance)
-    monkeypatch.setattr("openai.OpenAI", MagicMock())
+    monkeypatch.setattr("aegis.agents.steps.reflect_and_plan.instructor.patch", lambda x: mock_client_instance)
+    monkeypatch.setattr("aegis.agents.steps.reflect_and_plan.OpenAI", MagicMock())
     monkeypatch.setattr("aegis.agents.steps.reflect_and_plan.get_backend_config", MagicMock(return_value=MagicMock(llm_url="http://test/v1/c", model="test")))
     return mock_create
 

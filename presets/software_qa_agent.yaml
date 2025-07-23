@@ -1,0 +1,38 @@
+# aegis/presets/software_qa_agent.yaml
+# A specialist agent for software quality assurance tasks.
+name: "Software QA Agent"
+description: "A specialist agent that can write test code, execute it, read the results, and validate software behavior."
+state_type: "aegis.agents.task_state.TaskState"
+entrypoint: "plan"
+
+nodes:
+  - id: "plan"
+    tool: "reflect_and_plan"
+  - id: "execute"
+    tool: "execute_tool"
+  - id: "summarize"
+    tool: "summarize_result"
+
+edges:
+  - ["plan", "execute"]
+  - ["summarize", "__end__"]
+
+condition_node: "execute"
+condition_map:
+  continue: "plan"
+  end: "summarize"
+
+# This agent has tools for file I/O, running tests, and comparing outputs.
+runtime:
+  safe_mode: false # Needs to run commands to execute tests.
+  tool_allowlist:
+    # Core software development lifecycle tools
+    - "write_to_file"
+    - "read_file"
+    - "run_local_command" # For running compilers, interpreters, or test suites like pytest
+    - "diff_text_blocks"
+    - "diff_local_file_after_edit"
+    # Data extraction for parsing test results
+    - "extract_structured_data"
+    # LLM for writing test code or summarizing failures
+    - "invoke_llm"

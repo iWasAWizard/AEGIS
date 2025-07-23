@@ -2,6 +2,8 @@
 # AEGIS/manage_stack.sh
 # A simple management script for the entire AEGIS+BEND stack.
 
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
 # --- Colors ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -48,8 +50,8 @@ if [ -z "$1" ]; then
 fi
 
 # Define paths relative to the script's execution directory.
-AEGIS_DIR=".."
-BEND_DIR="../../BEND"
+AEGIS_DIR="${SCRIPT_DIR}/.."
+BEND_DIR="${SCRIPT_DIR}/../../BEND"
 
 if [ ! -d "${AEGIS_DIR}" ] || [ ! -d "${BEND_DIR}" ]; then
     print_error "Couldn't find the folders!\nMake sure that the 'aegis' and 'BEND' directories are present."
@@ -64,7 +66,7 @@ EXEC_CMD="$@"
 
 AEGIS_SERVICES=("agent")
 # Updated list of all BEND services
-BEND_SERVICES=("vllm" "redis" "langfuse-server" "langfuse-db" "nemoguardrails" "openwebui" "whisper" "piper" "glances" "qdrant" "retriever" "voiceproxy")
+BEND_SERVICES=("vllm" "redis" "langfuse-server" "langfuse-db" "nemoguardrails" "openwebui" "whisper" "piper" "glances" "qdrant" "retriever" "voiceproxy" "koboldcpp")
 
 TARGET_DIR=""
 if [[ " ${AEGIS_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
@@ -79,23 +81,25 @@ case "$COMMAND" in
         (cd "${BEND_DIR}" && ./scripts/manage.sh up)
 
         print_info "Checking for shared Docker network..."
-        if ! docker network ls | grep -q "bend_bend-net"; then
-            print_error "The 'bend_bend-net' network was not found. Please ensure the BEND stack is running correctly before starting AEGIS."
-            exit 1
-        fi
-        print_success "Shared network found."
-
-        print_info "Starting AEGIS stack..."
-        # Source the .env file to pass all variables to the docker compose command
+        # Source the .env file to get the network name
         if [ -f "${AEGIS_DIR}/.env" ]; then
-            set -a # Automatically export all variables
+            set -a
             source "${AEGIS_DIR}/.env"
             set +a
-            (cd "${AEGIS_DIR}" && docker compose up --build -d)
-        else
-            print_warn "AEGIS .env file not found. Starting without it."
-            (cd "${AEGIS_DIR}" && docker compose up --build -d)
         fi
+
+        # Use the variable from the .env file, with a default
+        NETWORK_NAME=${AEGIS_EXTERNAL_NETWORK:-bend_bend-net}
+
+        if ! docker network ls | grep -q "$NETWORK_NAME"; then
+            print_error "The '${NETWORK_NAME}' network was not found. Please ensure the backend stack is running correctly before starting AEGIS."
+            exit 1
+        fi
+        print_success "Shared network '$NETWORK_NAME' found."
+
+        print_info "Starting AEGIS stack..."
+        # The .env file is already sourced, so docker compose will pick it up
+        (cd "${AEGIS_DIR}" && docker compose up --build -d)
 
         print_success "All stacks started."
         print_info "Cleaning up old images..."
@@ -181,7 +185,7 @@ case "$COMMAND" in
     restart)
         print_info "Restarting stacks..."
         if [ -n "$SERVICE" ]; then
-             if [ -z "$TARGET_DIR" ]; then
+             if [ -z "${TARGET_DIR}" ]; then
                 print_error "Unknown service '$SERVICE'."
                 exit 1
             fi

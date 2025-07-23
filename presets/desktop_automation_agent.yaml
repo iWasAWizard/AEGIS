@@ -1,0 +1,39 @@
+# aegis/presets/desktop_automation_agent.yaml
+# A specialist agent for GUI-based automation.
+name: "Desktop Automation Agent"
+description: "A specialist agent that can see the screen, control the mouse/keyboard, and speak. Used for RPA and GUI testing."
+state_type: "aegis.agents.task_state.TaskState"
+entrypoint: "plan"
+
+nodes:
+  - id: "plan"
+    tool: "reflect_and_plan"
+  - id: "execute"
+    tool: "execute_tool"
+  - id: "summarize"
+    tool: "summarize_result"
+
+edges:
+  - ["plan", "execute"]
+  - ["summarize", "__end__"]
+
+condition_node: "execute"
+condition_map:
+  continue: "plan"
+  end: "summarize"
+
+# This agent's toolset is focused on visual and audio interaction.
+runtime:
+  safe_mode: false # GUI control is inherently unsafe.
+  tool_allowlist:
+    # Visual Perception
+    - "capture_screenshot"
+    - "ocr_read_screen_area"
+    # GUI Control
+    - "gui_action"
+    - "gui_find_and_click_image"
+    - "gui_find_and_read"
+    # Audio Output
+    - "synthesize_speech"
+    # General Reasoning
+    - "invoke_llm"

@@ -29,10 +29,8 @@ async def test_invoke_llm_success():
 
     mock_provider.get_completion.assert_awaited_once()
     call_args, _ = mock_provider.get_completion.call_args
-    assert call_args[0] == [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "What is AI?"},
-    ]
+    assert "You are a sub-module" in call_args[0][0]["content"] # Check for prompt wrapping
+    assert call_args[0][1]["content"] == "What is AI?"
     assert call_args[1] == state.runtime
     assert result == "LLM response"
 

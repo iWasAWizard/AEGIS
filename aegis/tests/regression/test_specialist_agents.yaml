@@ -1,0 +1,11 @@
+# tests/regression/test_specialist_agents.yaml
+task:
+  prompt: >
+    You are a specialist agent. Your task is to get a directory listing for '/tmp' on the 'ubuntu-qemu' machine.
+    You must NOT use the 'run_remote_command' tool. You must use the specific tool for listing directories.
+
+config: "database_agent" # This specialist preset only has specific tools.
+
+execution:
+  iterations: 5
+  safe_mode: false # The underlying tools may be unsafe
