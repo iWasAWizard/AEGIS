@@ -22,6 +22,7 @@ from aegis.web.routes_launch import router as launch_router
 from aegis.web.routes_logs import router as logs_router
 from aegis.web.routes_models import router as models_router
 from aegis.web.routes_presets import router as presets_router
+from aegis.web.routes_resume import router as resume_router
 from aegis.web.routes_stream import router as log_streamer_router
 from aegis.web.routes_themes import router as themes_router
 
@@ -36,6 +37,7 @@ router.include_router(compare_router)
 router.include_router(artifacts_router)
 router.include_router(inventory_router)
 router.include_router(launch_router)
+router.include_router(resume_router)
 router.include_router(fuzz_router)
 router.include_router(logs_router)
 router.include_router(graphs_router)

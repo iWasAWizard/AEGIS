@@ -1,3 +1,4 @@
+# requirements.txt
 langchain-core
 aiohttp
 langgraph
@@ -16,6 +17,7 @@ rich
 httpx
 openai
 tiktoken
+instructor
 psutil
 python-json-logger
 selenium
@@ -23,6 +25,9 @@ hypothesis
 python-multipart
 pwntools
 python-dotenv
+redis
+langfuse
+langchain-openai
 sentence-transformers
 faiss-cpu
 pydantic-settings

@@ -1,3 +1,4 @@
+# aegis/web/react_ui/src/App.jsx
 // aegis/web/react_ui/src/App.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import LaunchTab from './LaunchTab';
@@ -35,8 +36,6 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [response, setResponse] = useState(null);
-  const [isSafeMode, setIsSafeMode] = useState(true);
-  const [executionOverrides, setExecutionOverrides] = useState('');
   const [logs, setLogs] = useState([]);
   const [wsStatus, setWsStatus] = useState('Connecting...');
   const wsRef = useRef(null);
@@ -154,29 +153,20 @@ export default function App() {
   };
 
   // --- Lifted Functions for Child Components ---
-  const launch = async () => {
-    if (isLoading || !prompt || !selectedPreset || !selectedBackend || !selectedModel) {
-        return;
-    }
-    setIsLoading(true);
-    setError('');
-    setResponse(null);
-    setLogs([]);
-
+  const launch = async (executionOverrides, isSafeMode) => {
     const executionPayload = {
         backend_profile: selectedBackend,
         llm_model_name: selectedModel,
         safe_mode: isSafeMode,
     };
 
-    if (executionOverrides.trim()) {
+    if (executionOverrides && executionOverrides.trim()) {
         try {
             const overrides = JSON.parse(executionOverrides);
             Object.assign(executionPayload, overrides);
         } catch (e) {
-            setError('Invalid JSON in Execution Overrides. Please correct it and try again.');
-            setIsLoading(false);
-            return;
+            // This error will be caught by the caller in LaunchTab
+            throw new Error('Invalid JSON in Execution Overrides. Please correct it and try again.');
         }
     }
 
@@ -186,20 +176,14 @@ export default function App() {
       execution: executionPayload
     };
 
-    try {
-      const res = await fetch('/api/launch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.detail || `HTTP Error: ${res.status}`);
-      setResponse(json);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
+    const res = await fetch('/api/launch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.detail || `HTTP Error: ${res.status}`);
+    return json;
   };
 
   const loadConfigFileContent = (path) => {
@@ -284,7 +268,7 @@ export default function App() {
     switch (activeTab) {
       case 'dashboard': return <DashboardTab navigateAndOpenArtifact={navigateAndOpenArtifact} />;
       case 'launch':
-        return <LaunchTab {...{ prompt, setPrompt, presets, selectedPreset, setSelectedPreset, backends, selectedBackend, setSelectedBackend, models, selectedModel, setSelectedModel, isLoading, error, response, launch, isSafeMode, setIsSafeMode, executionOverrides, setExecutionOverrides, logs, setLogs, wsStatus }} />;
+        return <LaunchTab {...{ prompt, setPrompt, presets, selectedPreset, setSelectedPreset, backends, selectedBackend, setSelectedBackend, models, selectedModel, setSelectedModel, isLoading, setIsLoading, error, setError, response, setResponse, launch, logs, setLogs, wsStatus }} />;
       case 'presets':
         return <PresetsTab {...{ presetList, currentPresetId, presetForm, setPresetForm, presetConfigError, setPresetConfigError, loadPreset, savePreset, fetchPresets: fetchPresetsForEditor }} />;
       case 'editor':

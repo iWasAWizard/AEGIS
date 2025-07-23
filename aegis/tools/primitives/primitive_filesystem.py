@@ -29,26 +29,6 @@ logger = setup_logger(__name__)
 # === Input Models ===
 
 
-class CreateRandomFileInput(BaseModel):
-    """Input for creating a file of a specific size with random data.
-
-    :ivar file_path: The full path where the new file will be created.
-    :vartype file_path: str
-    :ivar size: The desired size of the file. Supports shorthands like '10k', '25M', '1G'.
-                Defaults to bytes if no suffix is given.
-    :vartype size: str
-    """
-
-    file_path: str = Field(
-        ..., description="The full path where the new file will be created."
-    )
-    size: str = Field(
-        ...,
-        description="The desired size of the file. Supports shorthands like '10k', '25M', '1G'. "
-        "Defaults to bytes if no suffix is given.",
-    )
-
-
 class TransferFileToRemoteInput(MachineFileInput):
     """Input model for transferring a local file to a remote host.
 
@@ -109,82 +89,7 @@ class GetRemoteDirectoryListingInput(MachineTargetInput):
     directory_path: str = Field(..., description="Directory path to list.")
 
 
-class DiffTextBlocksInput(BaseModel):
-    """Input model for generating a diff between two blocks of text.
-
-    :ivar old: Original block of text.
-    :vartype old: str
-    :ivar new: New block of text.
-    :vartype new: str
-    """
-
-    old: str = Field(..., description="Original block of text.")
-    new: str = Field(..., description="New block of text.")
-
-
 # === Tools ===
-
-
-@register_tool(
-    name="create_random_file",
-    input_model=CreateRandomFileInput,
-    tags=["file", "local", "generate", "primitive"],
-    description="Creates a local file of a specified size filled with random data from /dev/urandom.",
-    safe_mode=False,
-    purpose="Generate a test file of a specific size.",
-    category="file_ops",
-)
-def create_random_file(input_data: CreateRandomFileInput) -> str:
-    """Creates a file of a given size using the 'dd' command.
-
-    Parses a size string with suffixes (k, M, G, etc.) to construct the
-    appropriate dd command to generate a file from /dev/urandom.
-
-    :param input_data: An object containing the file path and size string.
-    :type input_data: CreateRandomFileInput
-    :return: The output of the dd command execution.
-    :rtype: str
-    """
-    logger.info(
-        f"Request to create file '{input_data.file_path}' with size '{input_data.size}'"
-    )
-
-    size_str = input_data.size.lower().strip()
-    match = re.match(r"^(\d+)([kmgtp]?)b?$", size_str)
-
-    if not match:
-        return (
-            f"[ERROR] Invalid size format: '{input_data.size}'. "
-            f"Use a number with an optional suffix (k, M, G, T, P)."
-        )
-
-    value = int(match.group(1))
-    suffix = match.group(2)
-
-    block_size = "1K"
-    count = 0
-
-    if not suffix:
-        count = (value + 1023) // 1024
-    elif suffix == "k":
-        count = value
-    elif suffix == "m":
-        count = value * 1024
-    elif suffix == "g":
-        count = value * 1024 * 1024
-    elif suffix == "t":
-        count = value * 1024 * 1024 * 1024
-    elif suffix == "p":
-        count = value * 1024 * 1024 * 1024 * 1024
-
-    if count == 0 and value > 0:
-        block_size = str(value)
-        count = 1
-
-    command = f"dd if=/dev/urandom of={shlex.quote(input_data.file_path)} bs={block_size} count={count}"
-
-    logger.info(f"Executing command: {command}")
-    return run_local_command(RunLocalCommandInput(command=command, shell=True))
 
 
 @register_tool(
@@ -366,29 +271,3 @@ def get_remote_directory_listing(input_data: GetRemoteDirectoryListingInput) -> 
     executor = SSHExecutor(machine)
     output = executor.run(f"ls -la {shlex.quote(input_data.directory_path)}")
     return output
-
-
-@register_tool(
-    name="diff_text_blocks",
-    input_model=DiffTextBlocksInput,
-    tags=["diff", "text", "primitive"],
-    description="Generate a unified diff between two blocks of text.",
-    safe_mode=True,
-    purpose="Generate a unified diff between two blocks of text",
-    category="file_ops",
-)
-def diff_text_blocks(input_data: DiffTextBlocksInput) -> str:
-    """Generates a unified diff between two strings.
-
-    :param input_data: An object containing the 'old' and 'new' text blocks.
-    :type input_data: DiffTextBlocksInput
-    :return: A string containing the unified diff.
-    :rtype: str
-    """
-    logger.info("Generating diff between two text blocks")
-    old_lines = input_data.old.strip().splitlines()
-    new_lines = input_data.new.strip().splitlines()
-    diff = difflib.unified_diff(
-        old_lines, new_lines, fromfile="old", tofile="new", lineterm=""
-    )
-    return "\n".join(diff)

@@ -36,7 +36,7 @@ async def list_artifacts() -> List[Dict[str, Any]]:
 
     results: List[Dict[str, Any]] = []
     task_dirs = sorted(
-        REPORTS_DIR.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True
+        REPORTS_DIR.iterdir(), key=lambda n: n.stat().st_mtime, reverse=True
     )
 
     for task_dir in task_dirs:

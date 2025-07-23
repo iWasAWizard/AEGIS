@@ -53,3 +53,8 @@ rag:
 logging:
   # 'debug', 'info', 'warning', 'error'.
   level: "debug"
+
+# Centralized service URLs
+services:
+  redis_url: "redis://redis:6379/0"
+  guardrails_url: "http://nemoguardrails:8000/v1/chat/completions"

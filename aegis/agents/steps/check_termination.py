@@ -14,14 +14,15 @@ logger = setup_logger(__name__)
 
 
 def check_termination(state: TaskState) -> str:
-    """Determines if the agent should continue planning or end the task.
+    """Determines if the agent should continue, interrupt, or end the task.
 
     This function acts as a conditional edge in the graph. It checks for
-    a 'finish' tool call or if the step limit has been reached.
+    a 'finish' tool call, an 'ask_human_for_input' call, or if the step
+    limit has been reached.
 
     :param state: The current state of the agent's task.
     :type state: TaskState
-    :return: A routing string, either 'continue' to loop or 'end' to terminate.
+    :return: A routing string: 'continue', 'interrupt', or 'end'.
     :rtype: str
     """
     logger.info("✅ Step: Check for Termination")
@@ -29,12 +30,22 @@ def check_termination(state: TaskState) -> str:
         f"Current state: steps_taken={state.steps_taken}, max_iterations={state.runtime.iterations}"
     )
 
+    if not state.history:
+        return "continue"
+
+    last_tool_name = state.history[-1].plan.tool_name
+
     # Condition 1: Check if the last planned tool was 'finish'.
-    if state.history and state.history[-1].plan.tool_name == "finish":
+    if last_tool_name == "finish":
         logger.info("Termination condition met: 'finish' tool was called.")
         return "end"
 
-    # Condition 2: Check if the maximum number of steps has been reached.
+    # Condition 2: Check if the last tool was a request for human input.
+    if last_tool_name == "ask_human_for_input":
+        logger.info("Interrupt condition met: 'ask_human_for_input' tool was called.")
+        return "interrupt"
+
+    # Condition 3: Check if the maximum number of steps has been reached.
     max_steps = state.runtime.iterations
     if max_steps is not None and state.steps_taken >= max_steps:
         logger.warning(f"Termination condition met: Max steps ({max_steps}) reached.")

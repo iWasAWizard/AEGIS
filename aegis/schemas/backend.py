@@ -59,6 +59,24 @@ class OllamaBackendConfig(BaseBackendConfig):
     repetition_penalty: float = Field(1.1)
 
 
+class VllmBackendConfig(BaseBackendConfig):
+    """Configuration specific to a vLLM OpenAI-compatible backend."""
+
+    type: Literal["vllm"] = "vllm"
+    llm_url: str = Field(
+        ..., description="The full URL to the vLLM /v1/chat/completions endpoint."
+    )
+    model: str = Field(
+        "aegis-agent-model",
+        description="The served model name, as defined in the vLLM server command.",
+    )
+    temperature: float = Field(0.2)
+    max_tokens_to_generate: int = Field(1536)
+    top_p: float = Field(0.9)
+    top_k: int = Field(-1)  # -1 is often used to disable top-k in vLLM
+    repetition_penalty: float = Field(1.1)
+
+
 class OpenAIBackendConfig(BaseModel):
     """Configuration specific to an OpenAI-compatible API backend."""
 

@@ -30,7 +30,7 @@ class ToolEntry(BaseModel):
     :ivar name: The unique, callable name of the tool.
     :vartype name: str
     :ivar run: The actual function to execute for this tool.
-    :vartype run: Callable[[Any], Any]
+    :vartype run: Callable[[BaseModel], Any]
     :ivar input_model: The Pydantic model used to validate the tool's input.
     :vartype input_model: Type[BaseModel]
     :ivar tags: A list of lowercase tags for categorization and filtering.
@@ -50,7 +50,7 @@ class ToolEntry(BaseModel):
     """
 
     name: str
-    run: Callable[[Any], Any]
+    run: Callable[[BaseModel], Any]
     input_model: Type[BaseModel]
     tags: List[str]
     description: str
@@ -108,7 +108,7 @@ def register_tool(
     category: Optional[str] = None,
     timeout: Optional[int] = None,
     retries: int = 0,
-) -> Callable[[Callable[[Any], Any]], Callable[[Any], Any]]:
+) -> Callable[[Callable[[BaseModel], Any]], Callable[[BaseModel], Any]]:
     """A decorator to register a function as a tool for the agent system.
 
     This decorator is the primary mechanism for adding new capabilities to the agent.
@@ -137,7 +137,7 @@ def register_tool(
     :rtype: Callable
     """
 
-    def decorator(func: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    def decorator(func: Callable[[BaseModel], Any]) -> Callable[[BaseModel], Any]:
         if not callable(func):
             raise TypeError(f"Registered tool '{name}' must be a callable function.")
         if name in TOOL_REGISTRY:

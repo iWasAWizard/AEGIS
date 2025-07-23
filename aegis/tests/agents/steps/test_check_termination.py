@@ -41,6 +41,14 @@ def test_terminate_on_finish_tool(base_state: TaskState):
     assert check_termination(base_state) == "end"
 
 
+def test_interrupt_on_ask_human_tool(base_state: TaskState):
+    """The agent must interrupt if the last tool was 'ask_human_for_input'."""
+    plan = AgentScratchpad(thought="ask", tool_name="ask_human_for_input", tool_args={})
+    entry = HistoryEntry(plan=plan, observation="Asking human", status="success")
+    base_state.history = [entry]
+    assert check_termination(base_state) == "interrupt"
+
+
 def test_terminate_on_max_iterations(base_state: TaskState):
     """The agent must terminate if it has reached its iteration limit."""
     base_state.runtime.iterations = 3

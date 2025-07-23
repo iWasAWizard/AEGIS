@@ -7,6 +7,7 @@ operations, using Python's robust `pathlib` library for safety and
 reliability. They are intended to be the primary way for an agent to
 manage local files and directories.
 """
+import difflib
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -32,6 +33,23 @@ class FilePathInput(BaseModel):
 class WriteFileInput(BaseModel):
     path: str = Field(..., description="The path to the file.")
     content: str = Field(..., description="The content to write into the file.")
+
+
+class DiffLocalFileAfterEditInput(BaseModel):
+    """Input for diffing a local file before and after an in-place edit.
+
+    :ivar file_path: The path to the local file to edit and diff.
+    :vartype file_path: str
+    :ivar replacement_text: The new text to completely overwrite the file with.
+    :vartype replacement_text: str
+    """
+
+    file_path: str = Field(
+        ..., description="The path to the local file to edit and diff."
+    )
+    replacement_text: str = Field(
+        ..., description="The new text to completely overwrite the file with."
+    )
 
 
 # --- Tools ---
@@ -124,3 +142,41 @@ def delete_file(input_data: FilePathInput) -> str:
         error_msg = f"Failed to delete file at '{input_data.path}': {e}"
         logger.error(error_msg)
         raise ToolExecutionError(error_msg)
+
+
+@register_tool(
+    name="diff_local_file_after_edit",
+    input_model=DiffLocalFileAfterEditInput,
+    tags=["local", "file", "edit", "diff", "wrapper"],
+    description="Reads a local file, overwrites it with new text, and returns a diff of the changes.",
+    safe_mode=True,
+    purpose="Compare local file contents before and after an in-place replacement.",
+    category="filesystem",
+)
+def diff_local_file_after_edit(input_data: DiffLocalFileAfterEditInput) -> str:
+    """Performs an in-place edit of a local file and returns a diff of the changes.
+
+    :param input_data: An object containing the local file path and new content.
+    :type input_data: DiffLocalFileAfterEditInput
+    :return: A unified diff of the changes or an error message.
+    :rtype: str
+    """
+    try:
+        file_path = Path(input_data.file_path)
+        if not file_path.is_file():
+            raise ToolExecutionError(f"Local file not found: {file_path}")
+
+        original_content = file_path.read_text(encoding="utf-8")
+        file_path.write_text(input_data.replacement_text, encoding="utf-8")
+
+        diff = difflib.unified_diff(
+            original_content.splitlines(),
+            input_data.replacement_text.splitlines(),
+            fromfile=f"{file_path.name} (before)",
+            tofile=f"{file_path.name} (after)",
+            lineterm="",
+        )
+        return "\n".join(diff) or "File content was identical; no changes made."
+    except Exception as e:
+        logger.exception(f"Failed to edit and diff local file: {input_data.file_path}")
+        raise ToolExecutionError(f"Failed to edit and diff local file: {e}")

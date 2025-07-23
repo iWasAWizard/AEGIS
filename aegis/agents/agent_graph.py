@@ -13,7 +13,6 @@ from aegis.agents.steps.verification import route_after_verification
 from aegis.exceptions import ConfigurationError
 from aegis.schemas.agent import AgentGraphConfig
 from aegis.schemas.node_registry import AGENT_NODE_REGISTRY
-from aegis.utils.llm_query import llm_query
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -55,16 +54,7 @@ class AgentGraph:
                         f"Node function '{node_config.tool}' not found in AGENT_NODE_REGISTRY."
                     )
                 node_func = AGENT_NODE_REGISTRY[node_config.tool]
-
-                node_to_add = node_func
-                if node_config.tool in [
-                    "reflect_and_plan",
-                    "remediate_plan",
-                    "verify_outcome",
-                ]:
-                    node_to_add = partial(node_func, llm_query_func=llm_query)  # type: ignore
-
-                builder.add_node(node_config.id, node_to_add)
+                builder.add_node(node_config.id, node_func)
                 logger.debug(
                     f"Added node '{node_config.id}' with function '{node_config.tool}'"
                 )
@@ -136,7 +126,9 @@ class AgentGraph:
                 )
 
             logger.info("Graph construction complete. Compiling...")
-            compiled_graph = builder.compile()
+            compiled_graph = builder.compile(
+                interrupt_before=self.config.interrupt_nodes
+            )
             logger.info("Graph compiled successfully.")
             return compiled_graph
 

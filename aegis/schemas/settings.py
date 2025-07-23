@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     DEPLOY_PASSWORD: str = "changeme"
     ESXI_PASSWORD: str = "vmware123"
 
+    # LangFuse Observability Settings
+    LANGFUSE_HOST: str = "http://langfuse-server:3000"
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_PUBLIC_KEY: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )

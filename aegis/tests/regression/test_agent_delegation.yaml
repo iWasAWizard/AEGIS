@@ -1,0 +1,16 @@
+# tests/regression/test_agent_delegation.yaml
+task:
+  prompt: >
+    You are an orchestrator agent. Your task is to delegate the job of creating a file to a specialist agent.
+    1. Use the 'dispatch_subtask_to_agent' tool.
+    2. The prompt for the sub-agent should be: "Create a local file named 'sub_agent_test.tmp' and write the text 'delegation successful' into it."
+    3. Use the 'default' preset for the sub-agent.
+    4. Use the 'vllm_local' backend profile for the sub-agent.
+    5. For verification, check that the summary returned by the sub-agent contains the word 'success'.
+    6. If verified, finish with a status of 'success'.
+
+config: "orchestrator" # Use the orchestrator preset which has the dispatch tool
+
+execution:
+  iterations: 5
+  safe_mode: true

@@ -36,6 +36,8 @@ class AgentGraphConfig(BaseModel):
     :vartype condition_map: Dict[str, str]
     :ivar middleware: An optional list of callables to modify state during execution.
     :vartype middleware: Optional[List[Callable[[Dict], Dict]]]
+    :ivar interrupt_nodes: A list of node IDs to interrupt execution before they run.
+    :vartype interrupt_nodes: List[str]
     """
 
     state_type: Any
@@ -45,6 +47,7 @@ class AgentGraphConfig(BaseModel):
     condition_node: Optional[str] = None
     condition_map: Dict[str, str] = Field(default_factory=dict)
     middleware: Optional[List[Callable[[Dict], Dict]]] = None
+    interrupt_nodes: List[str] = Field(default_factory=list)
 
     class Config:
         """Pydantic configuration to allow arbitrary types like callables."""
@@ -75,6 +78,8 @@ class AgentConfig(BaseModel):
     :vartype middleware: Optional[List[Any]]
     :ivar runtime: Default runtime options for this agent configuration.
     :vartype runtime: RuntimeExecutionConfig
+    :ivar interrupt_nodes: A list of node IDs to interrupt execution before they run.
+    :vartype interrupt_nodes: List[str]
     """
 
     state_type: Optional[Any] = None
@@ -85,6 +90,7 @@ class AgentConfig(BaseModel):
     condition_map: Dict[str, str] = Field(default_factory=dict)
     middleware: Optional[List[Any]] = None
     runtime: RuntimeExecutionConfig = Field(default_factory=RuntimeExecutionConfig)
+    interrupt_nodes: List[str] = Field(default_factory=list)
 
     class Config:
         """Pydantic configuration to allow arbitrary types like callables."""

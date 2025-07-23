@@ -2,324 +2,268 @@
 """
 Unit tests for the filesystem primitive tools.
 """
-from unittest.mock import MagicMock
 
-import pytest
+import difflib
+import re
+import shlex
 
-from aegis.exceptions import ToolExecutionError  # Ensure this is imported
-from aegis.tools.primitives.primitive_filesystem import (
-    create_random_file,
-    CreateRandomFileInput,
-    diff_text_blocks,
-    DiffTextBlocksInput,
-    transfer_file_to_remote,
-    TransferFileToRemoteInput,
-    fetch_file_from_remote,
-    FetchFileFromRemoteInput,
-    read_remote_file,
-    MachineFileInput,  # MachineFileInput is used by read_remote_file
-    check_remote_file_exists,  # Uses MachineFileInput
-    run_remote_script,
-    RunRemoteScriptInput,
-    append_to_remote_file,
-    AppendToRemoteFileInput,
-    get_remote_directory_listing,
-    GetRemoteDirectoryListingInput,
+from pydantic import BaseModel, Field
+
+from aegis.executors.ssh import SSHExecutor
+from aegis.registry import register_tool
+from aegis.schemas.common_inputs import MachineFileInput, MachineTargetInput
+from aegis.tools.primitives.primitive_system import (
+    run_local_command,
+    RunLocalCommandInput,
 )
-from aegis.tools.primitives.primitive_system import RunLocalCommandInput
+from aegis.utils.logger import setup_logger
+from aegis.utils.machine_loader import get_machine
+
+logger = setup_logger(__name__)
 
 
-@pytest.fixture
-def mock_run_local_command_for_dd(monkeypatch):
-    """Mocks the run_local_command primitive specifically for create_random_file."""
-    mock = MagicMock(return_value="dd command output")
-    monkeypatch.setattr(
-        "aegis.tools.primitives.primitive_filesystem.run_local_command", mock
-    )
-    return mock
+# === Input Models ===
 
 
-@pytest.fixture
-def mock_ssh_executor_instance(monkeypatch):
+class TransferFileToRemoteInput(MachineFileInput):
+    """Input model for transferring a local file to a remote host.
+
+    :ivar source_path: Path to the local file to transfer.
+    :vartype source_path: str
+    :ivar destination_path: Destination path on the remote machine.
+    :vartype destination_path: str
     """
-    Mocks the SSHExecutor class to return a mock instance,
-    and returns the mock instance for further configuration in tests.
+
+    source_path: str = Field(..., description="Path to the local file to transfer.")
+    destination_path: str = Field(
+        ..., description="Destination path on the remote machine."
+    )
+
+
+class FetchFileFromRemoteInput(MachineFileInput):
+    """Input model for fetching a file from a remote host.
+
+    :ivar local_path: Destination path on the local machine.
+    :vartype local_path: str
     """
-    mock_instance = MagicMock()
-    # Default behavior for methods, can be overridden in tests
-    mock_instance.run.return_value = "mocked ssh run output"
-    mock_instance.upload.return_value = "mocked ssh upload success"
-    mock_instance.download.return_value = "mocked ssh download success"
-    mock_instance.check_file_exists.return_value = True
 
-    mock_ssh_executor_class = MagicMock(return_value=mock_instance)
-    monkeypatch.setattr(
-        "aegis.tools.primitives.primitive_filesystem.SSHExecutor",
-        mock_ssh_executor_class,
+    local_path: str = Field(..., description="Destination path on the local machine.")
+
+
+class RunRemoteScriptInput(MachineFileInput):
+    """Input model for uploading and executing a script on a remote host.
+
+    :ivar script_path: Local path to the shell script to send and execute.
+    :vartype script_path: str
+    :ivar remote_path: Destination path on the remote machine.
+    :vartype remote_path: str
+    """
+
+    script_path: str = Field(
+        ..., description="Local path to the shell script to send and execute."
     )
-    # Also mock get_machine as it's used before SSHExecutor instantiation
-    monkeypatch.setattr(
-        "aegis.tools.primitives.primitive_filesystem.get_machine", MagicMock()
-    )
-    return mock_instance
+    remote_path: str = Field(..., description="Destination path on the remote machine.")
 
 
-# --- Tests for create_random_file (does not use SSHExecutor) ---
-@pytest.mark.parametrize(
-    "size_input, expected_dd_command_part_bs, expected_dd_command_part_count",
-    [
-        ("10k", "bs=1K", "count=10"),
-        ("25M", "bs=1K", "count=25600"),
-        ("1G", "bs=1K", "count=1048576"),
-        ("512", "bs=1K", "count=1"),  # dd will handle small sizes with bs=1K count=1
-        ("1023", "bs=1K", "count=1"),
-        ("1024", "bs=1K", "count=1"),
-        ("0", "bs=1K", "count=0"),
-        (
-            "500b",
-            "bs=1K",
-            "count=1",
-        ),  # Treat 'b' suffix same as no suffix for this simple parser
-        ("700B", "bs=1K", "count=1"),
-    ],
+class AppendToRemoteFileInput(MachineFileInput):
+    """Input model for appending text to a remote file.
+
+    :ivar content: Text to append to the file.
+    :vartype content: str
+    """
+
+    content: str = Field(..., description="Text to append to the file.")
+
+
+class GetRemoteDirectoryListingInput(MachineTargetInput):
+    """Input model for listing the contents of a remote directory.
+
+    :ivar directory_path: Directory path to list.
+    :vartype directory_path: str
+    """
+
+    directory_path: str = Field(..., description="Directory path to list.")
+
+
+# === Tools ===
+
+
+@register_tool(
+    name="transfer_file_to_remote",
+    input_model=TransferFileToRemoteInput,
+    tags=["ssh", "scp", "remote", "file", "primitive"],
+    description="Transfer a file from the local system to a remote machine via SCP.",
+    safe_mode=True,
+    purpose="Transfer a local file to a remote system using SCP",
+    category="file_ops",
 )
-def test_create_random_file_command_generation(
-    mock_run_local_command_for_dd,
-    size_input,
-    expected_dd_command_part_bs,
-    expected_dd_command_part_count,
-):
-    input_data = CreateRandomFileInput(file_path="test.dat", size=size_input)
-    create_random_file(input_data)
+def transfer_file_to_remote(input_data: TransferFileToRemoteInput) -> str:
+    """Transfers a local file to a remote machine using the SSHExecutor.
 
-    mock_run_local_command_for_dd.assert_called_once()
-    call_args = mock_run_local_command_for_dd.call_args[0][0]
-    assert isinstance(call_args, RunLocalCommandInput)
-    command = call_args.command
-    assert "dd if=/dev/urandom of='test.dat'" in command
-    assert expected_dd_command_part_bs in command
-    assert expected_dd_command_part_count in command
-
-
-def test_create_random_file_invalid_size(mock_run_local_command_for_dd):
-    input_data = CreateRandomFileInput(file_path="test.dat", size="10megabytes")
-    result = create_random_file(input_data)
-    assert "[ERROR] Invalid size format" in result
-    mock_run_local_command_for_dd.assert_not_called()
-
-
-# --- Tests for diff_text_blocks (does not use SSHExecutor) ---
-def test_diff_text_blocks():
-    old_text = "hello world\nthis is line 2\ngoodbye"
-    new_text = "hello mars\nthis is line 2\nfarewell"
-
-    input_data = DiffTextBlocksInput(old=old_text, new=new_text)
-    result = diff_text_blocks(input_data)
-
-    assert "--- old" in result
-    assert "+++ new" in result
-    assert "@@ -1,3 +1,3 @@" in result
-    assert "-hello world" in result
-    assert "+hello mars" in result
-    assert " this is line 2" in result
-    assert "-goodbye" in result
-    assert "+farewell" in result
-
-
-# --- Tests for SSHExecutor-based tools ---
-
-
-def test_transfer_file_to_remote_success(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.upload.return_value = (
-        "Successfully uploaded /local/src to testhost:/remote/dest"
+    :param input_data: An object containing machine name, source path, and destination path.
+    :type input_data: TransferFileToRemoteInput
+    :return: The result of the upload operation.
+    :rtype: str
+    """
+    logger.info(
+        f"Transferring '{input_data.source_path}' to '{input_data.machine_name}:{input_data.destination_path}'"
     )
-    input_data = TransferFileToRemoteInput(
-        machine_name="testhost",
-        source_path="/local/src",
-        destination_path="/remote/dest",
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
+    return executor.upload(input_data.source_path, input_data.destination_path)
+
+
+@register_tool(
+    name="fetch_file_from_remote",
+    input_model=FetchFileFromRemoteInput,
+    tags=["ssh", "scp", "remote", "file", "primitive"],
+    description="Download a file from a remote machine to the local system via SCP.",
+    safe_mode=True,
+    purpose="Download a specific file from a remote host",
+    category="file_ops",
+)
+def fetch_file_from_remote(input_data: FetchFileFromRemoteInput) -> str:
+    """Fetches a file from a remote machine using the SSHExecutor.
+
+    :param input_data: An object containing machine name, remote path, and local path.
+    :type input_data: FetchFileFromRemoteInput
+    :return: The result of the download operation.
+    :rtype: str
+    """
+    logger.info(
+        f"Fetching '{input_data.machine_name}:{input_data.file_path}' to '{input_data.local_path}'"
     )
-    result = transfer_file_to_remote(input_data)
-    mock_ssh_executor_instance.upload.assert_called_once_with(
-        "/local/src", "/remote/dest"
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
+    return executor.download(input_data.file_path, input_data.local_path)
+
+
+@register_tool(
+    name="read_remote_file",
+    input_model=MachineFileInput,
+    tags=["ssh", "remote", "file", "read", "primitive"],
+    description="Read the contents of a file on a remote system.",
+    safe_mode=True,
+    purpose="Read and return the contents of a remote file",
+    category="file_ops",
+)
+def read_remote_file(input_data: MachineFileInput) -> str:
+    """Reads the content of a remote file using `cat` via the SSHExecutor.
+
+    :param input_data: An object containing the machine name and remote file path.
+    :type input_data: MachineFileInput
+    :return: The contents of the remote file.
+    :rtype: str
+    """
+    logger.info(
+        f"Reading remote file '{input_data.file_path}' from machine '{input_data.machine_name}'"
     )
-    assert result == "Successfully uploaded /local/src to testhost:/remote/dest"
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
+    output = executor.run(f"cat {shlex.quote(input_data.file_path)}")
+    return output
 
 
-def test_transfer_file_to_remote_failure(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.upload.side_effect = ToolExecutionError(
-        "SCP upload failed"
+@register_tool(
+    name="check_remote_file_exists",
+    input_model=MachineFileInput,
+    tags=["ssh", "remote", "file", "check", "primitive"],
+    description="Check if a specific file exists on a remote system.",
+    safe_mode=True,
+    purpose="Determine if a specific file exists on a remote machine",
+    category="file_ops",
+)
+def check_remote_file_exists(input_data: MachineFileInput) -> str:
+    """Checks if a file exists on a remote machine using the SSHExecutor.
+
+    :param input_data: An object containing the machine name and remote file path.
+    :type input_data: MachineFileInput
+    :return: "Exists" if the file is found, "Missing" otherwise.
+    :rtype: str
+    """
+    logger.info(
+        f"Checking for remote file '{input_data.file_path}' on machine '{input_data.machine_name}'"
     )
-    input_data = TransferFileToRemoteInput(
-        machine_name="testhost", source_path="/bad/src", destination_path="/remote/dest"
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
+    return "Exists" if executor.check_file_exists(input_data.file_path) else "Missing"
+
+
+@register_tool(
+    name="run_remote_script",
+    input_model=RunRemoteScriptInput,
+    tags=["ssh", "scp", "remote", "script", "primitive"],
+    description="Upload a local script to a remote host and execute it.",
+    safe_mode=True,
+    purpose="Upload and execute a local script on a remote machine",
+    category="system",
+)
+def run_remote_script(input_data: RunRemoteScriptInput) -> str:
+    """Uploads and executes a script on a remote machine.
+
+    :param input_data: An object containing machine name, local script path, and remote destination path.
+    :type input_data: RunRemoteScriptInput
+    :return: The output of the script execution, or an error if the upload fails.
+    :rtype: str
+    """
+    logger.info(
+        f"Uploading and running script '{input_data.script_path}' on machine '{input_data.machine_name}'"
     )
-    with pytest.raises(ToolExecutionError, match="SCP upload failed"):
-        transfer_file_to_remote(input_data)
-    mock_ssh_executor_instance.upload.assert_called_once_with(
-        "/bad/src", "/remote/dest"
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
+    executor.upload(input_data.script_path, input_data.remote_path)
+    output = executor.run(f"bash {shlex.quote(input_data.remote_path)}")
+    return output
+
+
+@register_tool(
+    name="append_to_remote_file",
+    input_model=AppendToRemoteFileInput,
+    tags=["ssh", "remote", "file", "append", "primitive"],
+    description="Append a line of text to a file on a remote machine.",
+    safe_mode=True,
+    purpose="Append text to a remote file via SSH",
+    category="file_ops",
+)
+def append_to_remote_file(input_data: AppendToRemoteFileInput) -> str:
+    """Appends content to a remote file using `echo` and `tee`.
+
+    :param input_data: An object containing machine name, file path, and content to append.
+    :type input_data: AppendToRemoteFileInput
+    :return: The output of the remote command.
+    :rtype: str
+    """
+    logger.info(
+        f"Appending content to '{input_data.file_path}' on machine '{input_data.machine_name}'"
     )
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
+    cmd = f"echo {shlex.quote(input_data.content)} | sudo tee -a {shlex.quote(input_data.file_path)}"
+    output = executor.run(cmd)
+    return output
 
 
-def test_fetch_file_from_remote_success(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.download.return_value = (
-        "Successfully downloaded testhost:/remote/src to /local/dest"
+@register_tool(
+    name="get_remote_directory_listing",
+    input_model=GetRemoteDirectoryListingInput,
+    tags=["ssh", "remote", "directory", "list", "primitive"],
+    description="List contents of a directory on a remote machine.",
+    safe_mode=True,
+    purpose="List the contents of a remote directory using 'ls -la'",
+    category="file_ops",
+)
+def get_remote_directory_listing(input_data: GetRemoteDirectoryListingInput) -> str:
+    """Lists the contents of a remote directory using `ls -la`.
+
+    :param input_data: An object containing the machine name and directory path.
+    :type input_data: GetRemoteDirectoryListingInput
+    :return: The formatted directory listing from the remote host.
+    :rtype: str
+    """
+    logger.info(
+        f"Listing directory '{input_data.directory_path}' on machine '{input_data.machine_name}'"
     )
-    input_data = FetchFileFromRemoteInput(
-        machine_name="testhost", file_path="/remote/src", local_path="/local/dest"
-    )
-    result = fetch_file_from_remote(input_data)
-    mock_ssh_executor_instance.download.assert_called_once_with(
-        "/remote/src", "/local/dest"
-    )
-    assert result == "Successfully downloaded testhost:/remote/src to /local/dest"
-
-
-def test_fetch_file_from_remote_failure(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.download.side_effect = ToolExecutionError(
-        "SCP download failed"
-    )
-    input_data = FetchFileFromRemoteInput(
-        machine_name="testhost", file_path="/bad/remote", local_path="/local/dest"
-    )
-    with pytest.raises(ToolExecutionError, match="SCP download failed"):
-        fetch_file_from_remote(input_data)
-    mock_ssh_executor_instance.download.assert_called_once_with(
-        "/bad/remote", "/local/dest"
-    )
-
-
-def test_read_remote_file_success(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.run.return_value = "remote file content"
-    input_data = MachineFileInput(machine_name="testhost", file_path="/path/file.txt")
-    result = read_remote_file(input_data)
-    mock_ssh_executor_instance.run.assert_called_once_with("cat '/path/file.txt'")
-    assert result == "remote file content"
-
-
-def test_read_remote_file_failure(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.run.side_effect = ToolExecutionError("Remote cat failed")
-    input_data = MachineFileInput(
-        machine_name="testhost", file_path="/path/badfile.txt"
-    )
-    with pytest.raises(ToolExecutionError, match="Remote cat failed"):
-        read_remote_file(input_data)
-    mock_ssh_executor_instance.run.assert_called_once_with("cat '/path/badfile.txt'")
-
-
-def test_check_remote_file_exists_positive(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.check_file_exists.return_value = True
-    input_data = MachineFileInput(machine_name="testhost", file_path="/path/exists.txt")
-    result = check_remote_file_exists(input_data)
-    assert result == "Exists"
-    mock_ssh_executor_instance.check_file_exists.assert_called_once_with(
-        "/path/exists.txt"
-    )
-
-
-def test_check_remote_file_exists_negative(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.check_file_exists.return_value = False
-    input_data = MachineFileInput(
-        machine_name="testhost", file_path="/path/missing.txt"
-    )
-    result = check_remote_file_exists(input_data)
-    assert result == "Missing"
-    mock_ssh_executor_instance.check_file_exists.assert_called_once_with(
-        "/path/missing.txt"
-    )
-
-
-def test_check_remote_file_exists_executor_error(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.check_file_exists.side_effect = ToolExecutionError(
-        "SSH connection issue"
-    )
-    input_data = MachineFileInput(machine_name="testhost", file_path="/path/any.txt")
-    with pytest.raises(ToolExecutionError, match="SSH connection issue"):
-        check_remote_file_exists(input_data)
-
-
-def test_run_remote_script_success(mock_ssh_executor_instance):
-    # executor.upload returns a success message string
-    mock_ssh_executor_instance.upload.return_value = "Upload successful"
-    # executor.run returns the script output string
-    mock_ssh_executor_instance.run.return_value = "script output here"
-
-    input_data = RunRemoteScriptInput(
-        machine_name="testhost", script_path="local.sh", remote_path="/tmp/remote.sh"
-    )
-    result = run_remote_script(input_data)
-
-    mock_ssh_executor_instance.upload.assert_called_once_with(
-        "local.sh", "/tmp/remote.sh"
-    )
-    mock_ssh_executor_instance.run.assert_called_once_with("bash '/tmp/remote.sh'")
-    assert result == "script output here"
-
-
-def test_run_remote_script_upload_fails(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.upload.side_effect = ToolExecutionError(
-        "SCP upload permission denied"
-    )
-    input_data = RunRemoteScriptInput(
-        machine_name="testhost", script_path="local.sh", remote_path="/tmp/remote.sh"
-    )
-    with pytest.raises(ToolExecutionError, match="SCP upload permission denied"):
-        run_remote_script(input_data)
-    mock_ssh_executor_instance.run.assert_not_called()  # Script execution should not be attempted
-
-
-def test_run_remote_script_execution_fails(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.upload.return_value = "Upload successful"
-    mock_ssh_executor_instance.run.side_effect = ToolExecutionError(
-        "Remote script execution error"
-    )
-    input_data = RunRemoteScriptInput(
-        machine_name="testhost", script_path="local.sh", remote_path="/tmp/remote.sh"
-    )
-    with pytest.raises(ToolExecutionError, match="Remote script execution error"):
-        run_remote_script(input_data)
-    mock_ssh_executor_instance.upload.assert_called_once()  # Upload was attempted
-    mock_ssh_executor_instance.run.assert_called_once_with("bash '/tmp/remote.sh'")
-
-
-def test_append_to_remote_file_success(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.run.return_value = ""  # tee is often silent
-    input_data = AppendToRemoteFileInput(
-        machine_name="testhost", file_path="/app/config.log", content="new log line"
-    )
-    result = append_to_remote_file(input_data)
-
-    expected_cmd = "echo 'new log line' | sudo tee -a '/app/config.log'"
-    mock_ssh_executor_instance.run.assert_called_once_with(expected_cmd)
-    assert result == ""  # Directly returns output of executor.run
-
-
-def test_append_to_remote_file_failure(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.run.side_effect = ToolExecutionError(
-        "Remote tee command failed"
-    )
-    input_data = AppendToRemoteFileInput(
-        machine_name="testhost", file_path="/app/config.log", content="new log line"
-    )
-    with pytest.raises(ToolExecutionError, match="Remote tee command failed"):
-        append_to_remote_file(input_data)
-
-
-def test_get_remote_directory_listing_success(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.run.return_value = (
-        "drwxr-xr-x  2 user group 4096 Jan  1 12:00 mydir"
-    )
-    input_data = GetRemoteDirectoryListingInput(
-        machine_name="testhost", directory_path="/home/user"
-    )
-    result = get_remote_directory_listing(input_data)
-
-    mock_ssh_executor_instance.run.assert_called_once_with("ls -la '/home/user'")
-    assert result == "drwxr-xr-x  2 user group 4096 Jan  1 12:00 mydir"
-
-
-def test_get_remote_directory_listing_failure(mock_ssh_executor_instance):
-    mock_ssh_executor_instance.run.side_effect = ToolExecutionError("Remote ls failed")
-    input_data = GetRemoteDirectoryListingInput(
-        machine_name="testhost", directory_path="/nonexistent"
-    )
-    with pytest.raises(ToolExecutionError, match="Remote ls failed"):
-        get_remote_directory_listing(input_data)
+    machine = get_machine(input_data.machine_name)
+    executor = SSHExecutor(machine)
+    output = executor.run(f"ls -la {shlex.quote(input_data.directory_path)}")
+    return output

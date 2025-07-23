@@ -1,0 +1,14 @@
+# tests/regression/test_llm_tool.yaml
+task:
+  prompt: >
+    Here is your task:
+    1. Use the 'invoke_llm' tool to summarize the following text: "The AEGIS framework is an autonomous agent system built on LangGraph. It uses a provider-based model to connect to various backends and has a robust tool registry."
+    2. The system prompt for the LLM should be: "You are a summarization expert."
+    3. For verification, check that the output from the tool contains the word 'LangGraph'.
+    4. If successful, finish with a status of 'success'.
+
+config: "verified_flow"
+
+execution:
+  iterations: 5
+  safe_mode: true

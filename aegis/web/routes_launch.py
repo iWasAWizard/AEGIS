@@ -6,14 +6,18 @@ The primary API route for launching agent tasks.
 import json
 import traceback
 import uuid
+from typing import Dict
 
 from fastapi import APIRouter, HTTPException
+from langgraph.pregel import GraphInterrupt, Pregel
 from pydantic import ValidationError
+from langfuse.langchain import CallbackHandler
 
 from aegis.agents.agent_graph import AgentGraph
 from aegis.agents.task_state import TaskState
 from aegis.exceptions import ConfigurationError, PlannerError, ToolError
 from aegis.schemas.agent import AgentConfig, AgentGraphConfig
+from aegis.schemas.api import HistoryStepResponse, LaunchResponse
 from aegis.schemas.launch import LaunchRequest
 from aegis.utils.config_loader import load_agent_config
 from aegis.utils.log_sinks import task_id_context
@@ -22,9 +26,13 @@ from aegis.utils.logger import setup_logger
 router = APIRouter()
 logger = setup_logger(__name__)
 
+# In-memory store for interrupted graph states.
+# In a production system, this should be a more persistent store like Redis.
+INTERRUPTED_STATES: Dict[str, Dict] = {}
 
-@router.post("/launch", response_model=dict)
-async def launch_task(payload: LaunchRequest) -> dict:
+
+@router.post("/launch", response_model=LaunchResponse)
+async def launch_task(payload: LaunchRequest) -> LaunchResponse:
     """Handles an agent task launch request.
 
     This is the main entry point for running an agent task via the API. It
@@ -73,44 +81,50 @@ async def launch_task(payload: LaunchRequest) -> dict:
             condition_node=preset_config.condition_node,
             condition_map=preset_config.condition_map,
             middleware=preset_config.middleware,
+            interrupt_nodes=preset_config.interrupt_nodes,
         )
 
         agent_graph = AgentGraph(graph_structure).build_graph()
-        final_state_dict = await agent_graph.ainvoke(initial_state.model_dump())
+
+        # Initialize LangFuse handler for tracing
+        langfuse_handler = CallbackHandler()
+        # Pass user_id and session_id via metadata in the config
+        invocation_config = {
+            "callbacks": [langfuse_handler],
+            "metadata": {"user_id": "aegis-user", "session_id": task_id},
+        }
+
+        final_state_dict = await agent_graph.ainvoke(
+            initial_state.model_dump(), config=invocation_config
+        )
         final_state = TaskState(**final_state_dict)
 
         logger.info(f"✅ Task {task_id} completed successfully.")
 
-        logger.info(
-            f"🕵️  Inspecting final agent state for task {task_id} before serialization..."
-        )
-        logger.info(
-            f"Final summary type: {type(final_state.final_summary)}, value: {repr(final_state.final_summary)}"
-        )
-        for i, entry in enumerate(final_state.history):
-            logger.info(f"--- History Entry {i} ---")
-            logger.info(f"Plan: {repr(entry.plan)}")
-            logger.info(
-                f"Observation type: {type(entry.observation)}, value: {repr(entry.observation)}"
-            )
-        logger.info(f"🕵️  State inspection for task {task_id} complete.")
-
-        return {
-            "task_id": task_id,
-            "summary": final_state.final_summary,
-            "history": [
-                {
-                    "thought": entry.plan.thought,
-                    "tool_name": entry.plan.tool_name,
-                    "tool_args": json.loads(
-                        json.dumps(entry.plan.tool_args, default=str)
-                    ),
-                    "tool_output": str(entry.observation),
-                }
+        return LaunchResponse(
+            task_id=task_id,
+            summary=final_state.final_summary,
+            history=[
+                HistoryStepResponse(
+                    thought=entry.plan.thought,
+                    tool_name=entry.plan.tool_name,
+                    tool_args=entry.plan.tool_args,
+                    tool_output=entry.observation,
+                )
                 for entry in final_state.history
             ],
-        }
+        )
 
+    except GraphInterrupt as e:
+        logger.info(f"⏸️  Task {task_id} has been paused for human input.")
+        # Store the compiled graph and the interrupted state for later resumption.
+        INTERRUPTED_STATES[task_id] = {"graph": agent_graph, "state": e.values}
+        return LaunchResponse(
+            task_id=task_id,
+            summary="Task paused for human input. Use the /api/resume endpoint to continue.",
+            status="PAUSED",
+            history=[],
+        )
     except ValidationError as e:
         logger.error(f"Pydantic validation failed during task launch: {e}")
         error_details = "\n".join(

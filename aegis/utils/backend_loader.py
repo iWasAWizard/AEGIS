@@ -13,6 +13,7 @@ from aegis.schemas.backend import (
     BendBackendConfig,
     OpenAIBackendConfig,
     OllamaBackendConfig,
+    VllmBackendConfig,
     BaseBackendConfig,
 )
 from aegis.schemas.settings import settings
@@ -77,6 +78,8 @@ def get_backend_config(profile_name: str) -> Any:
             return OpenAIBackendConfig(**backend_config_raw)
         elif backend_type == "ollama":
             return OllamaBackendConfig(**backend_config_raw)
+        elif backend_type == "vllm":
+            return VllmBackendConfig(**backend_config_raw)
         else:
             raise ConfigurationError(
                 f"Unknown backend type '{backend_type}' in profile '{profile_name}'."

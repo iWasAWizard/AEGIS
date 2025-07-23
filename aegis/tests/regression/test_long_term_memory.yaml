@@ -1,0 +1,14 @@
+# tests/regression/test_long_term_memory.yaml
+task:
+  prompt: >
+    Here is your task:
+    1. Use the 'save_to_memory' tool to remember a fact. The key should be 'secret_code' and the value should be 'alpha-gamma-7'.
+    2. After saving, use the 'recall_from_memory' tool to retrieve the value associated with the key 'secret_code'.
+    3. For verification, check that the output from the recall tool is exactly 'alpha-gamma-7'.
+    4. If the value is correct, finish with a status of 'success'.
+
+config: "verified_flow"
+
+execution:
+  iterations: 6
+  safe_mode: true

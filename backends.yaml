@@ -1,3 +1,4 @@
+# backends.yaml
 backends:
 - profile_name: bend_local
   type: bend
@@ -9,6 +10,16 @@ backends:
   max_tokens_to_generate: 1536
   top_p: 0.9
   top_k: 40
+  repetition_penalty: 1.1
+
+- profile_name: vllm_local
+  type: vllm
+  llm_url: http://vllm:8000/v1/chat/completions
+  model: aegis-agent-model
+  temperature: 0.2
+  max_tokens_to_generate: 2048
+  top_p: 0.95
+  top_k: -1
   repetition_penalty: 1.1
 
 - profile_name: openai_gpt4

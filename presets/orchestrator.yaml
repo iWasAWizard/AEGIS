@@ -1,0 +1,30 @@
+# presets/orchestrator.yaml
+# An agent designed to delegate tasks to other agents.
+name: "Orchestrator Agent"
+description: "A high-level agent that decomposes tasks and delegates them to specialists using the 'dispatch_subtask_to_agent' tool."
+state_type: "aegis.agents.task_state.TaskState"
+entrypoint: "plan"
+
+nodes:
+  - id: "plan"
+    tool: "reflect_and_plan"
+  - id: "execute"
+    tool: "execute_tool"
+  - id: "summarize"
+    tool: "summarize_result"
+
+edges:
+  - ["plan", "execute"]
+  - ["summarize", "__end__"]
+
+condition_node: "execute"
+condition_map:
+  continue: "plan"
+  end: "summarize"
+
+# This preset's runtime configuration. It uses a powerful model by default
+# to handle the complex reasoning required for task decomposition.
+runtime:
+  backend_profile: "vllm_local" # Assumes a powerful local model is served via vLLM
+  llm_model_name: "hermes" # Hint for prompt formatting
+  iterations: 5 # The orchestrator should have fewer, more powerful steps.

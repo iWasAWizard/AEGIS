@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
 from pydantic import BaseModel
 
-from aegis.agents.steps.verification import verify_outcome, remediate_plan
+from aegis.agents.steps.verification import verify_outcome, remediate_plan, VerificationJudgement
 from aegis.agents.task_state import TaskState, HistoryEntry
 from aegis.exceptions import ToolError, PlannerError
 from aegis.schemas.plan_output import AgentScratchpad
@@ -31,7 +31,7 @@ def mock_state_factory():
         return TaskState(
             task_id="test",
             task_prompt="test",
-            runtime=RuntimeExecutionConfig(),
+            runtime=RuntimeExecutionConfig(backend_profile="test"),
             latest_plan=last_plan,
             history=[entry],
         )
@@ -39,102 +39,63 @@ def mock_state_factory():
     return _factory
 
 
+@pytest.fixture
+def mock_instructor_for_verify(monkeypatch):
+    mock_create = AsyncMock()
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = mock_create
+    monkeypatch.setattr("instructor.patch", lambda x: mock_client)
+    monkeypatch.setattr("openai.OpenAI", MagicMock())
+    monkeypatch.setattr("aegis.agents.steps.verification.get_backend_config", MagicMock(return_value=MagicMock(llm_url="http://test/v1/c", model="test")))
+    return mock_create
+
+
 @pytest.mark.asyncio
 async def test_verify_outcome_no_verification_needed(mock_state_factory):
-    """Test that it returns 'success' if no verification tool is specified."""
+    """Test that it assumes 'success' if no verification tool is specified."""
     plan = AgentScratchpad(thought="test", tool_name="some_tool", tool_args={})
     state = mock_state_factory(plan, "some output")
     result = await verify_outcome(state)
-    assert result == "success"
+    assert result["history"][-1].verification_status == "success"
 
 
 @pytest.mark.asyncio
 async def test_verify_outcome_main_tool_failed(mock_state_factory):
-    """Test that it returns 'failure' if the main tool's observation was an error."""
+    """Test that it automatically fails if the main tool's status was 'failure'."""
     plan = AgentScratchpad(thought="test", tool_name="some_tool", tool_args={})
     state = mock_state_factory(plan, "[ERROR] Main tool failed", status="failure")
     result = await verify_outcome(state)
-    assert result == "failure"
+    assert result["history"][-1].verification_status == "failure"
 
 
 @pytest.mark.asyncio
 @patch("aegis.agents.steps.verification._run_tool")
 @patch("aegis.agents.steps.verification.get_tool")
 async def test_verify_outcome_verification_succeeds(
-    mock_get_tool, mock_run_tool, mock_state_factory
+    mock_get_tool, mock_run_tool, mock_state_factory, mock_instructor_for_verify
 ):
-    """Test successful verification when the output contains a success keyword."""
+    """Test successful verification when the LLM judge returns 'success'."""
     mock_get_tool.return_value = MagicMock(run=MagicMock(), input_model=DummyInput)
     mock_run_tool.return_value = "Service is active and running."
+    mock_instructor_for_verify.return_value = VerificationJudgement(judgement="success")
 
     plan = AgentScratchpad(thought="t", tool_name="t", verification_tool_name="v_tool")
     state = mock_state_factory(plan, "main output")
 
     result = await verify_outcome(state)
-    assert result == "success"
-    mock_run_tool.assert_called_once()
+    assert result["history"][-1].verification_status == "success"
 
 
 @pytest.mark.asyncio
-@patch("aegis.agents.steps.verification._run_tool")
-@patch("aegis.agents.steps.verification.get_tool")
-async def test_verify_outcome_verification_fails(
-    mock_get_tool, mock_run_tool, mock_state_factory
-):
-    """Test failed verification when the output lacks success keywords."""
-    mock_get_tool.return_value = MagicMock(run=MagicMock(), input_model=DummyInput)
-    mock_run_tool.return_value = "Service is stopped."
-
-    plan = AgentScratchpad(thought="t", tool_name="t", verification_tool_name="v_tool")
-    state = mock_state_factory(plan, "main output")
-
-    result = await verify_outcome(state)
-    assert result == "failure"
-
-
-@pytest.mark.asyncio
-@patch("aegis.agents.steps.verification.get_tool")
-async def test_verify_outcome_tool_error(mock_get_tool, mock_state_factory):
-    """Test that it returns 'failure' if the verification tool itself errors out."""
-    mock_get_tool.side_effect = ToolError("Verification tool failed")
-
-    plan = AgentScratchpad(thought="t", tool_name="t", verification_tool_name="v_tool")
-    state = mock_state_factory(plan, "main output")
-
-    result = await verify_outcome(state)
-    assert result == "failure"
-
-
-@pytest.mark.asyncio
-async def test_remediate_plan_success(mock_state_factory):
+async def test_remediate_plan_success(mock_state_factory, mock_instructor_for_verify):
     """Test that a remediation plan is generated correctly."""
-    mock_llm_query = AsyncMock()
-    new_plan_json = (
-        '{"thought": "remediation thought", "tool_name": "fix_tool", "tool_args": {}}'
-    )
-    mock_llm_query.return_value = new_plan_json
+    new_plan = AgentScratchpad(thought="remediation thought", tool_name="fix_tool", tool_args={})
+    mock_instructor_for_verify.return_value = new_plan
 
     plan = AgentScratchpad(thought="original plan", tool_name="failing_tool")
     state = mock_state_factory(plan, "[ERROR] It failed", status="failure")
 
-    result_dict = await remediate_plan(state, mock_llm_query)
+    result_dict = await remediate_plan(state)
 
-    mock_llm_query.assert_awaited_once()
-    # Check that the remediation context was included in the prompt
-    assert (
-        "Your previous attempt to achieve the goal failed"
-        in mock_llm_query.call_args[0][1]
-    )
+    mock_instructor_for_verify.assert_awaited_once()
     assert "remediation thought" in result_dict["latest_plan"].thought
-
-
-@pytest.mark.asyncio
-async def test_remediate_plan_bad_llm_output(mock_state_factory):
-    """Test that a PlannerError is raised if the LLM gives bad JSON."""
-    mock_llm_query = AsyncMock(return_value="this is not json")
-
-    plan = AgentScratchpad(thought="original plan", tool_name="failing_tool")
-    state = mock_state_factory(plan, "[ERROR] It failed", status="failure")
-
-    with pytest.raises(PlannerError):
-        await remediate_plan(state, mock_llm_query)

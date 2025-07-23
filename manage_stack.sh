@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# AEGIS/manage_stack.sh
 # A simple management script for the entire AEGIS+BEND stack.
 
 # --- Colors ---
@@ -35,7 +35,7 @@ usage() {
     echo "  rebuild [service] - Force rebuild and start stacks (or a specific service)."
     echo "  pull              - Pull the latest versions of any pre-built images."
     echo "  status            - Show the status of all containers in both stacks."
-    echo "  logs [service]    - Tail logs from a specific service (e.g., 'agent', 'koboldcpp'). Defaults to 'agent'."
+    echo "  logs [service]    - Tail logs from a specific service (e.g., 'agent', 'vllm'). Defaults to 'agent'."
     echo "  exec <service> <cmd> - Execute a command in a running service container (e.g., 'exec agent bash')."
     echo "  restart [service] - Restart all stacks (or a specific service)."
     echo "  prune             - Stop and remove all containers, networks, AND volumes. DANGEROUS."
@@ -63,7 +63,8 @@ shift 2
 EXEC_CMD="$@"
 
 AEGIS_SERVICES=("agent")
-BEND_SERVICES=("koboldcpp" "openwebui" "whisper" "piper" "glances" "qdrant" "retriever" "voiceproxy")
+# Updated list of all BEND services
+BEND_SERVICES=("vllm" "redis" "langfuse-server" "langfuse-db" "nemoguardrails" "openwebui" "whisper" "piper" "glances" "qdrant" "retriever" "voiceproxy")
 
 TARGET_DIR=""
 if [[ " ${AEGIS_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
@@ -76,8 +77,26 @@ case "$COMMAND" in
     up)
         print_info "Starting BEND stack..."
         (cd "${BEND_DIR}" && ./scripts/manage.sh up)
+
+        print_info "Checking for shared Docker network..."
+        if ! docker network ls | grep -q "bend_bend-net"; then
+            print_error "The 'bend_bend-net' network was not found. Please ensure the BEND stack is running correctly before starting AEGIS."
+            exit 1
+        fi
+        print_success "Shared network found."
+
         print_info "Starting AEGIS stack..."
-        (cd "${AEGIS_DIR}" && docker compose up --build -d)
+        # Source the .env file to pass all variables to the docker compose command
+        if [ -f "${AEGIS_DIR}/.env" ]; then
+            set -a # Automatically export all variables
+            source "${AEGIS_DIR}/.env"
+            set +a
+            (cd "${AEGIS_DIR}" && docker compose up --build -d)
+        else
+            print_warn "AEGIS .env file not found. Starting without it."
+            (cd "${AEGIS_DIR}" && docker compose up --build -d)
+        fi
+
         print_success "All stacks started."
         print_info "Cleaning up old images..."
         docker image prune -f
@@ -94,14 +113,17 @@ case "$COMMAND" in
     rebuild)
         print_info "Force rebuilding images..."
         if [ -n "${SERVICE}" ]; then
+            if [ -z "${TARGET_DIR}" ]; then
+                print_error "Unknown service '$SERVICE'."
+                exit 1
+            fi
             print_info "Rebuilding service: ${SERVICE}"
             (cd "${TARGET_DIR}" && docker compose build --no-cache "${SERVICE}")
             print_info "Restarting service: ${SERVICE}"
             (cd "${TARGET_DIR}" && docker compose up -d --force-recreate "${SERVICE}")
         else
             print_info "Rebuilding BEND stack..."
-            (cd "${BEND_DIR}" && docker compose build --no-cache)
-            (cd "${BEND_DIR}" && docker compose up -d --force-recreate)
+            (cd "${BEND_DIR}" && ./scripts/manage.sh rebuild)
             print_info "Rebuilding AEGIS stack..."
             (cd "${AEGIS_DIR}" && docker compose build --no-cache)
             (cd "${AEGIS_DIR}" && docker compose up -d --force-recreate)
@@ -159,10 +181,14 @@ case "$COMMAND" in
     restart)
         print_info "Restarting stacks..."
         if [ -n "$SERVICE" ]; then
+             if [ -z "$TARGET_DIR" ]; then
+                print_error "Unknown service '$SERVICE'."
+                exit 1
+            fi
              (cd "$TARGET_DIR" && docker compose restart "$SERVICE")
         else
             (cd "${AEGIS_DIR}" && docker compose restart)
-            (cd "${BEND_DIR}" && docker compose restart)
+            (cd "${BEND_DIR}" && ./scripts/manage.sh restart)
         fi
         print_success "Restart complete."
         ;;

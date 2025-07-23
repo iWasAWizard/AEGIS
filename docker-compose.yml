@@ -1,3 +1,4 @@
+# docker-compose.yml
 version: "3.9"
 
 networks:
@@ -25,6 +26,9 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
       - BEND_API_KEY=${BEND_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
     restart: unless-stopped
     volumes:
       - ./reports:/app/reports

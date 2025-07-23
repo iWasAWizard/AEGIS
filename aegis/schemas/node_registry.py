@@ -13,6 +13,7 @@ from typing import Dict, Callable, Any
 
 from aegis.agents.steps.check_termination import check_termination
 from aegis.agents.steps.execute_tool import execute_tool
+from aegis.agents.steps.interaction import process_human_feedback
 from aegis.agents.steps.reflect_and_plan import reflect_and_plan
 from aegis.agents.steps.summarize_result import summarize_result
 from aegis.agents.steps.verification import (
@@ -42,6 +43,8 @@ AGENT_NODE_REGISTRY: Dict[str, Callable[..., Any]] = {
     "remediate_plan": remediate_plan,
     # The new central router for the verification flow.
     "route_after_verification": route_after_verification,
+    # The step that processes human feedback after an interruption.
+    "process_human_feedback": process_human_feedback,
 }
 
 logger.info(

@@ -14,10 +14,6 @@ from pydantic import BaseModel, Field
 from aegis.executors.ssh import SSHExecutor
 from aegis.registry import register_tool
 from aegis.schemas.common_inputs import MachineTargetInput
-from aegis.tools.primitives.primitive_system import (
-    run_local_command,
-    RunLocalCommandInput,
-)
 from aegis.utils.logger import setup_logger
 from aegis.utils.machine_loader import get_machine
 
@@ -42,16 +38,6 @@ class RunScriptIfAbsentInput(MachineTargetInput):
     remote_script_path: str = Field(
         description="Path to place script on remote system."
     )
-
-
-class SafeShellInput(BaseModel):
-    """Input model for the safe local shell execution tool.
-
-    :ivar command: Shell command to execute locally.
-    :vartype command: str
-    """
-
-    command: str = Field(description="Shell command to execute locally.")
 
 
 class RunRemoteBackgroundCommandInput(MachineTargetInput):
@@ -161,40 +147,3 @@ def run_script_if_absent(input_data: RunScriptIfAbsentInput) -> str:
     # If upload was successful, run the script. executor.run will raise if script fails.
     script_output = executor.run(f"bash {shlex.quote(input_data.remote_script_path)}")
     return script_output
-
-
-@register_tool(
-    name="safe_shell_execute",
-    input_model=SafeShellInput,
-    tags=["shell", "wrapper", "local", "safe"],
-    description="Run a local shell command after validating it for safety.",
-    safe_mode=True,
-    purpose="Safely run local shell commands with basic validation.",
-    category="system",
-)
-def safe_shell_execute(input_data: SafeShellInput) -> str:
-    """A wrapper to run local commands with a basic safety check.
-
-    This tool maintains a blocklist of dangerous commands (`rm -rf`, `shutdown`, etc.)
-    and will refuse to execute them, providing a guardrail against accidental or
-    malicious plans from the LLM.
-
-    :param input_data: An object containing the command to execute.
-    :type input_data: SafeShellInput
-    :return: The result of the command or a '[BLOCKED]' message.
-    :rtype: str
-    """
-    dangerous = ["rm -rf", "shutdown", "halt", "reboot", ":(){", "mkfs", "dd "]
-    lowered = input_data.command.lower()
-    if any(term in lowered for term in dangerous):
-        logger.warning(
-            f"Blocking potentially dangerous command: '{input_data.command}'"
-        )
-        return "[BLOCKED] Command contains potentially dangerous operations."
-    logger.info(f"Executing safe local shell command: {input_data.command}")
-    # run_local_command itself might raise ToolExecutionError, or return error string
-    # For consistency, we should ensure it also raises ToolExecutionError.
-    # For now, assuming it returns a string which might contain error info.
-    return run_local_command(
-        RunLocalCommandInput(command=input_data.command, shell=True)
-    )

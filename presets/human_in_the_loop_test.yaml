@@ -1,0 +1,34 @@
+# presets/human_in_the_loop.yaml
+# An agent flow that can pause to ask for human input.
+name: "Human-in-the-Loop Flow"
+description: "A flow that can pause execution to ask for human input before proceeding."
+state_type: "aegis.agents.task_state.TaskState"
+entrypoint: "plan"
+
+nodes:
+  - id: "plan"
+    tool: "reflect_and_plan"
+  - id: "execute"
+    tool: "execute_tool"
+  - id: "summarize"
+    tool: "summarize_result"
+  - id: "human_checkpoint"
+    tool: "process_human_feedback" # Changed from no_op
+
+edges:
+  - ["plan", "execute"]
+  - ["summarize", "__end__"]
+  # After the human provides input and it's processed, go back to planning.
+  - ["human_checkpoint", "plan"]
+
+condition_node: "execute"
+condition_map:
+  continue: "plan"
+  end: "summarize"
+  interrupt: "human_checkpoint"
+
+# This tells the graph to pause *before* executing the 'human_checkpoint' node.
+interrupt_nodes:
+  - "human_checkpoint"
+
+runtime: {}

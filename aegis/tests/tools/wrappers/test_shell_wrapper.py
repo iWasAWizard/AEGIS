@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from aegis.exceptions import ToolExecutionError
-from aegis.tools.primitives.primitive_system import RunLocalCommandInput
 from aegis.tools.wrappers.shell import (
     run_remote_background_command,
     RunRemoteBackgroundCommandInput,
@@ -15,8 +14,6 @@ from aegis.tools.wrappers.shell import (
     RunRemotePythonSnippetInput,
     run_script_if_absent,
     RunScriptIfAbsentInput,
-    safe_shell_execute,
-    SafeShellInput,
 )
 
 
@@ -36,14 +33,6 @@ def mock_ssh_executor_instance(monkeypatch):
     )
     monkeypatch.setattr("aegis.tools.wrappers.shell.get_machine", MagicMock())
     return mock_instance
-
-
-@pytest.fixture
-def mock_run_local_command_primitive(monkeypatch):
-    """Mocks the run_local_command primitive used by safe_shell_execute."""
-    mock = MagicMock(return_value="local command output from primitive")
-    monkeypatch.setattr("aegis.tools.wrappers.shell.run_local_command", mock)
-    return mock
 
 
 # --- Tests ---
@@ -197,38 +186,3 @@ def test_run_script_if_absent_script_execution_fails(mock_ssh_executor_instance)
         "local.sh", "/tmp/remote.sh"
     )
     mock_ssh_executor_instance.run.assert_called_once_with("bash '/tmp/remote.sh'")
-
-
-def test_safe_shell_execute_blocks_dangerous_command(mock_run_local_command_primitive):
-    input_data = SafeShellInput(
-        command="sudo rm -rf /some/path"
-    )  # Example dangerous command
-    result = safe_shell_execute(input_data)
-    assert "[BLOCKED] Command contains potentially dangerous operations." in result
-    mock_run_local_command_primitive.assert_not_called()
-
-
-def test_safe_shell_execute_allows_safe_command_and_success(
-    mock_run_local_command_primitive,
-):
-    mock_run_local_command_primitive.return_value = "safe command output"
-    input_data = SafeShellInput(command="echo 'hello'")
-    result = safe_shell_execute(input_data)
-
-    mock_run_local_command_primitive.assert_called_once()
-    call_arg_input = mock_run_local_command_primitive.call_args[0][0]
-    assert isinstance(call_arg_input, RunLocalCommandInput)
-    assert call_arg_input.command == "echo 'hello'"
-    assert call_arg_input.shell is True
-    assert result == "safe command output"
-
-
-def test_safe_shell_execute_primitive_call_fails(mock_run_local_command_primitive):
-    mock_run_local_command_primitive.side_effect = ToolExecutionError(
-        "Local primitive execution failed"
-    )
-    input_data = SafeShellInput(command="a_safe_command_that_will_fail_in_primitive")
-
-    with pytest.raises(ToolExecutionError, match="Local primitive execution failed"):
-        safe_shell_execute(input_data)
-    mock_run_local_command_primitive.assert_called_once()

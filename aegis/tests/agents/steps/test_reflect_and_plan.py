@@ -2,7 +2,7 @@
 """
 Unit tests for the reflect_and_plan agent step.
 """
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -26,9 +26,21 @@ def populated_state() -> TaskState:
     return TaskState(
         task_id="plan-test",
         task_prompt="This is the main goal.",
-        runtime=RuntimeExecutionConfig(),
+        runtime=RuntimeExecutionConfig(backend_profile="test_backend"),
         history=[entry],
     )
+
+
+@pytest.fixture
+def mock_instructor_client(monkeypatch):
+    """Mocks the instructor-patched OpenAI client."""
+    mock_create = AsyncMock()
+    mock_client_instance = MagicMock()
+    mock_client_instance.chat.completions.create = mock_create
+    monkeypatch.setattr("instructor.patch", lambda x: mock_client_instance)
+    monkeypatch.setattr("openai.OpenAI", MagicMock())
+    monkeypatch.setattr("aegis.agents.steps.reflect_and_plan.get_backend_config", MagicMock(return_value=MagicMock(llm_url="http://test/v1/c", model="test")))
+    return mock_create
 
 
 def test_construct_planning_prompt(populated_state):
@@ -36,7 +48,7 @@ def test_construct_planning_prompt(populated_state):
     system_prompt, user_prompt = construct_planning_prompt(populated_state)
 
     # Test system prompt
-    assert "You are AEGIS, an autonomous agent." in system_prompt
+    assert "You are an autonomous agent" in system_prompt
     assert "## Available Tools" in system_prompt
     assert (
         "finish(reason: string, status: string)" in system_prompt
@@ -51,19 +63,16 @@ def test_construct_planning_prompt(populated_state):
 
 
 @pytest.mark.asyncio
-async def test_reflect_and_plan_success():
+async def test_reflect_and_plan_success(mock_instructor_client):
     """Verify the step correctly parses a valid LLM response."""
-    mock_llm_query = AsyncMock()
-    valid_plan_json = (
-        '{"thought": "test thought", "tool_name": "test_tool", "tool_args": {"a": 1}}'
-    )
-    mock_llm_query.return_value = valid_plan_json
+    valid_plan = AgentScratchpad(thought="test thought", tool_name="test_tool", tool_args={"a": 1})
+    mock_instructor_client.return_value = valid_plan
 
-    state = TaskState(task_id="t1", task_prompt="p", runtime=RuntimeExecutionConfig())
+    state = TaskState(task_id="t1", task_prompt="p", runtime=RuntimeExecutionConfig(backend_profile="test"))
 
-    result_dict = await reflect_and_plan(state, mock_llm_query)
+    result_dict = await reflect_and_plan(state)
 
-    mock_llm_query.assert_awaited_once()
+    mock_instructor_client.assert_awaited_once()
     assert "latest_plan" in result_dict
     plan = result_dict["latest_plan"]
     assert isinstance(plan, AgentScratchpad)
@@ -72,10 +81,10 @@ async def test_reflect_and_plan_success():
 
 
 @pytest.mark.asyncio
-async def test_reflect_and_plan_raises_planner_error_on_bad_json():
+async def test_reflect_and_plan_raises_planner_error_on_bad_json(mock_instructor_client):
     """Verify the step raises a PlannerError if the LLM response is not valid JSON."""
-    mock_llm_query = AsyncMock(return_value="I am not JSON")
-    state = TaskState(task_id="t2", task_prompt="p", runtime=RuntimeExecutionConfig())
+    mock_instructor_client.side_effect = PlannerError("LLM failed to produce valid JSON")
+    state = TaskState(task_id="t2", task_prompt="p", runtime=RuntimeExecutionConfig(backend_profile="test"))
 
-    with pytest.raises(PlannerError, match="LLM returned malformed plan"):
-        await reflect_and_plan(state, mock_llm_query)
+    with pytest.raises(PlannerError):
+        await reflect_and_plan(state)

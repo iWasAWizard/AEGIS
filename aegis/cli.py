@@ -19,6 +19,8 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 from typing_extensions import Annotated
+from langgraph.pregel import GraphInterrupt
+from langfuse.langchain import CallbackHandler
 
 from aegis.agents.agent_graph import AgentGraph
 from aegis.agents.task_state import TaskState
@@ -111,38 +113,61 @@ async def execute_graph(payload: LaunchRequest) -> None:
     task_id = payload.task.task_id or str(uuid.uuid4())
     task_id_context.set(task_id)
 
-    preset_config: AgentConfig = load_agent_config(
-        profile=payload.config if isinstance(payload.config, str) else "default"
-    )
+    try:
+        preset_config: AgentConfig = load_agent_config(
+            profile=payload.config if isinstance(payload.config, str) else "default"
+        )
 
-    runtime_config = preset_config.runtime
-    if payload.iterations is not None:
-        runtime_config.iterations = payload.iterations
+        runtime_config = preset_config.runtime
+        if payload.execution:
+            runtime_config = runtime_config.model_copy(
+                update=payload.execution.model_dump(exclude_unset=True)
+            )
+        if payload.iterations is not None:
+            runtime_config.iterations = payload.iterations
 
-    initial_state = TaskState(
-        task_id=task_id, task_prompt=payload.task.prompt, runtime=runtime_config
-    )
+        initial_state = TaskState(
+            task_id=task_id, task_prompt=payload.task.prompt, runtime=runtime_config
+        )
 
-    graph_structure = AgentGraphConfig(
-        state_type=preset_config.state_type,
-        entrypoint=preset_config.entrypoint,
-        nodes=preset_config.nodes,
-        edges=preset_config.edges,
-        condition_node=preset_config.condition_node,
-        condition_map=preset_config.condition_map,
-        middleware=preset_config.middleware,
-    )
+        graph_structure = AgentGraphConfig(
+            state_type=preset_config.state_type,
+            entrypoint=preset_config.entrypoint,
+            nodes=preset_config.nodes,
+            edges=preset_config.edges,
+            condition_node=preset_config.condition_node,
+            condition_map=preset_config.condition_map,
+            middleware=preset_config.middleware,
+            interrupt_nodes=preset_config.interrupt_nodes,
+        )
 
-    agent_graph = AgentGraph(graph_structure).build_graph()
+        agent_graph = AgentGraph(graph_structure).build_graph()
 
-    console.print("\n[yellow]--- Agent Execution Starting ---[/yellow]")
-    final_state_dict = await agent_graph.ainvoke(initial_state.model_dump())
-    console.print("\n[green]--- Agent Execution Complete ---[/green]")
+        # Set up LangFuse tracing for the CLI run
+        langfuse_handler = CallbackHandler()
+        invocation_config = {
+            "callbacks": [langfuse_handler],
+            "metadata": {"user_id": "aegis-cli-user", "session_id": task_id},
+        }
 
-    final_state = TaskState(**final_state_dict)
+        console.print("\n[yellow]--- Agent Execution Starting ---[/yellow]")
+        final_state_dict = await agent_graph.ainvoke(
+            initial_state.model_dump(), config=invocation_config
+        )
+        console.print("\n[green]--- Agent Execution Complete ---[/green]")
 
-    console.print("\n[bold]Final Summary:[/bold]")
-    console.print(final_state.final_summary or "[No summary was generated]")
+        final_state = TaskState(**final_state_dict)
+
+        console.print("\n[bold]Final Summary:[/bold]")
+        console.print(final_state.final_summary or "[No summary was generated]")
+
+    except GraphInterrupt:
+        console.print(
+            f"\n[bold yellow]⏸️ TASK PAUSED:[/bold yellow] Agent has paused for human input."
+        )
+        console.print(
+            "To resume, you must use the API's /resume endpoint. Halting CLI execution."
+        )
 
 
 @app.command(name="list-tools")
@@ -165,6 +190,39 @@ def list_tools() -> None:
         table.add_row(name, tool.category or "N/A", tool.description, safe_str)
 
     console.print(table)
+
+
+@app.command(name="run-evals")
+def run_evals(
+    dataset_name: Annotated[
+        str, typer.Argument(help="The name of the dataset in LangFuse to run.")
+    ],
+    judge_model: Annotated[
+        str,
+        typer.Option(
+            help="The model profile to use as the judge (e.g., 'openai_gpt4' or a vLLM profile)."
+        ),
+    ] = "openai_gpt4",
+) -> None:
+    """
+    Runs an evaluation suite against a LangFuse dataset.
+    """
+    console.print(
+        f"🧪 Starting evaluation run for dataset: [bold cyan]{dataset_name}[/bold cyan]"
+    )
+    try:
+        from aegis.evaluation.eval_runner import main as run_eval_main
+
+        asyncio.run(run_eval_main(dataset_name, judge_model))
+    except ImportError as e:
+        console.print(
+            f"[bold red]Error:[/bold red] Failed to import evaluation module: {e}"
+        )
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[bold red]EVALUATION FAILED:[/bold red] {e}")
+        console.print_exception(show_locals=True)
+        raise typer.Exit(code=1)
 
 
 @app.command(name="validate-tool")
