@@ -8,7 +8,7 @@ execution time. It is a data container; default values are populated by
 the config_loader from config.yaml and presets.
 """
 
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -79,6 +79,10 @@ class RuntimeExecutionConfig(BaseModel):
     iterations: Optional[int] = Field(
         None,
         description="Maximum number of planning/execution steps before forced termination.",
+    )
+    tool_allowlist: List[str] = Field(
+        default_factory=list,
+        description="If provided, the agent will only be able to see and use tools from this list.",
     )
 
     class Config:

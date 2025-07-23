@@ -48,8 +48,8 @@ if [ -z "$1" ]; then
 fi
 
 # Define paths relative to the script's execution directory.
-AEGIS_DIR="."
-BEND_DIR="../BEND"
+AEGIS_DIR=".."
+BEND_DIR="../../BEND"
 
 if [ ! -d "${AEGIS_DIR}" ] || [ ! -d "${BEND_DIR}" ]; then
     print_error "Couldn't find the folders!\nMake sure that the 'aegis' and 'BEND' directories are present."

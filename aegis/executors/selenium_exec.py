@@ -1,4 +1,4 @@
-# aegis/executors/selenium.py
+# aegis/executors/selenium_exec.py
 """
 Provides a client for performing Selenium-based browser operations.
 """

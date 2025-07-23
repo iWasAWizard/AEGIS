@@ -1,4 +1,4 @@
-# aegis/tools/wrappers/scapy.py
+# aegis/tools/wrappers/scapy_exec.py
 """
 Wrapper tools for leveraging the 'scapy' library for network packet
 crafting, sending, and analysis.
@@ -13,7 +13,7 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 from aegis.exceptions import ToolExecutionError
-from aegis.executors.scapy import ScapyExecutor, SCAPY_AVAILABLE
+from aegis.executors.scapy_exec import ScapyExecutor, SCAPY_AVAILABLE
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 

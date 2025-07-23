@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from aegis.executors.ssh import SSHExecutor
+from aegis.executors.ssh_exec import SSHExecutor
 from aegis.schemas.machine import MachineManifest
 
 

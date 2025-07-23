@@ -6,8 +6,7 @@ from typing import List, Dict, Any
 
 from aegis.exceptions import ConfigurationError
 from aegis.providers.base import BackendProvider
-from aegis.providers.bend_provider import BendProvider
-from aegis.providers.ollama_provider import OllamaProvider
+from aegis.providers.koboldcpp_provider import KoboldcppProvider
 from aegis.providers.openai_provider import OpenAIProvider
 from aegis.providers.vllm_provider import VllmProvider
 from aegis.schemas.runtime import RuntimeExecutionConfig
@@ -23,12 +22,10 @@ def get_provider_for_profile(profile_name: str) -> BackendProvider:
     """
     backend_config = get_backend_config(profile_name)
 
-    if backend_config.type == "bend":
-        return BendProvider(config=backend_config)
+    if backend_config.type == "koboldcpp":
+        return KoboldcppProvider(config=backend_config)
     elif backend_config.type == "openai":
         return OpenAIProvider(config=backend_config)
-    elif backend_config.type == "ollama":
-        return OllamaProvider(config=backend_config)
     elif backend_config.type == "vllm":
         return VllmProvider(config=backend_config)
     else:

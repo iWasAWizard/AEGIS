@@ -18,7 +18,7 @@ router = APIRouter(prefix="/editor", tags=["Config Editor"])
 logger = setup_logger(__name__)
 
 # Safelist of editable files and directories to prevent arbitrary file access
-ALLOWED_FILES = ["config.yaml", "backends.yaml", "machines.yaml", "models.yaml"]
+ALLOWED_FILES = ["config.yaml", "backends.yaml", "machines.yaml"]
 ALLOWED_DIRS = ["presets", "themes"]
 
 

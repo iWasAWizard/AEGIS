@@ -1,4 +1,4 @@
-# aegis/executors/local.py
+# aegis/executors/local_exec.py
 """
 Provides a client for executing local shell commands.
 """

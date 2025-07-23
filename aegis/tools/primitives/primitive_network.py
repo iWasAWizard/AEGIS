@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 
 from aegis.exceptions import ToolExecutionError
-from aegis.executors.http import HttpExecutor
+from aegis.executors.http_exec import HttpExecutor
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 

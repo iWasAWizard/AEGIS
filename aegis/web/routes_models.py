@@ -16,7 +16,7 @@ logger = setup_logger(__name__)
 @router.get("/models", tags=["Configuration"])
 def list_models() -> List[ModelEntry]:
     """
-    Returns a list of available abstract models from AEGIS's models.yaml.
+    Returns a list of available abstract models from AEGIS's model list.
     """
     logger.info("Request received to list abstract models.")
     try:

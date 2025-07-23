@@ -13,7 +13,7 @@ import shlex
 
 from pydantic import BaseModel, Field
 
-from aegis.executors.ssh import SSHExecutor
+from aegis.executors.ssh_exec import SSHExecutor
 from aegis.registry import register_tool
 from aegis.schemas.common_inputs import MachineFileInput, MachineTargetInput
 from aegis.tools.primitives.primitive_system import (

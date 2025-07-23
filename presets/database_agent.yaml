@@ -1,0 +1,32 @@
+# presets/database_agent.yaml
+# A specialist agent that can only interact with a database.
+name: "Database Specialist Agent"
+description: "A specialist agent that can only see and use database-related tools."
+state_type: "aegis.agents.task_state.TaskState"
+entrypoint: "plan"
+
+nodes:
+  - id: "plan"
+    tool: "reflect_and_plan"
+  - id: "execute"
+    tool: "execute_tool"
+  - id: "summarize"
+    tool: "summarize_result"
+
+edges:
+  - ["plan", "execute"]
+  - ["summarize", "__end__"]
+
+condition_node: "execute"
+condition_map:
+  continue: "plan"
+  end: "summarize"
+
+# This agent's runtime configuration specifies a tool allow-list.
+# It will only see these tools in its prompt, making it more focused and reliable.
+runtime:
+  tool_allowlist:
+    - "run_remote_command" # A proxy for a real 'run_sql_query' tool
+    - "read_remote_file" # A proxy for a real 'get_table_schema' tool
+    - "get_remote_directory_listing" # A proxy for a real 'list_tables' tool
+    - "invoke_llm" # For summarizing results

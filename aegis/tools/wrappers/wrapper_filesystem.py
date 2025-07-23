@@ -14,7 +14,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from aegis.exceptions import ToolExecutionError
-from aegis.executors.ssh import SSHExecutor
+from aegis.executors.ssh_exec import SSHExecutor
 from aegis.registry import register_tool
 from aegis.schemas.common_inputs import MachineFileInput
 from aegis.utils.logger import setup_logger

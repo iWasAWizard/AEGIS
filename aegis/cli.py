@@ -24,7 +24,7 @@ from langfuse.langchain import CallbackHandler
 
 from aegis.agents.agent_graph import AgentGraph
 from aegis.agents.task_state import TaskState
-from aegis.exceptions import AegisError
+from aegis.exceptions import AegisError, ConfigurationError
 from aegis.registry import TOOL_REGISTRY
 from aegis.schemas.agent import AgentConfig, AgentGraphConfig
 from aegis.schemas.launch import LaunchRequest
@@ -32,6 +32,9 @@ from aegis.utils.config_loader import load_agent_config
 from aegis.utils.log_sinks import task_id_context
 from aegis.utils.logger import setup_logger
 from aegis.utils.tool_loader import import_all_tools
+from aegis.utils.backend_loader import get_backend_config
+from aegis.utils.machine_loader import get_machine
+from aegis.utils.config import get_config
 
 # Initialize Typer app, Rich console, and logger
 app = typer.Typer(
@@ -54,16 +57,16 @@ def main_callback() -> None:
 
 @app.command(name="run-task")
 def run_task(
-    task_file: Annotated[
-        Path,
-        typer.Argument(
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            readable=True,
-            help="Path to the YAML file containing the task request.",
-        ),
-    ],
+        task_file: Annotated[
+            Path,
+            typer.Argument(
+                exists=True,
+                file_okay=True,
+                dir_okay=False,
+                readable=True,
+                help="Path to the YAML file containing the task request.",
+            ),
+        ],
 ) -> None:
     """
     Runs a single agent task from a specified YAML file.
@@ -194,15 +197,15 @@ def list_tools() -> None:
 
 @app.command(name="run-evals")
 def run_evals(
-    dataset_name: Annotated[
-        str, typer.Argument(help="The name of the dataset in LangFuse to run.")
-    ],
-    judge_model: Annotated[
-        str,
-        typer.Option(
-            help="The model profile to use as the judge (e.g., 'openai_gpt4' or a vLLM profile)."
-        ),
-    ] = "openai_gpt4",
+        dataset_name: Annotated[
+            str, typer.Argument(help="The name of the dataset in LangFuse to run.")
+        ],
+        judge_model: Annotated[
+            str,
+            typer.Option(
+                help="The model profile to use as the judge (e.g., 'openai_gpt4' or a vLLM profile)."
+            ),
+        ] = "openai_gpt4",
 ) -> None:
     """
     Runs an evaluation suite against a LangFuse dataset.
@@ -225,18 +228,82 @@ def run_evals(
         raise typer.Exit(code=1)
 
 
+@app.command(name="validate-config")
+def validate_config() -> None:
+    """
+    Proactively loads and validates all key configuration files.
+    """
+    console.rule("[bold blue]AEGIS Configuration Validator[/bold blue]")
+    errors_found = 0
+
+    def check(name, action):
+        nonlocal errors_found
+        try:
+            console.print(f"🔍 Validating [cyan]{name}[/cyan]...", end="")
+            action()
+            console.print(f" [green]✅ OK[/green]")
+        except (ConfigurationError, FileNotFoundError, Exception) as e:
+            console.print(f" [bold red]❌ FAILED[/bold red]")
+            console.print(f"   [red]└─ Reason: {e}[/red]")
+            errors_found += 1
+
+    # 1. Validate main config.yaml
+    check("config.yaml", get_config)
+
+    # 2. Validate all backend profiles
+    try:
+        backends_path = Path("backends.yaml")
+        if backends_path.is_file():
+            backend_profiles = yaml.safe_load(backends_path.read_text()).get("backends", [])
+            for profile in backend_profiles:
+                profile_name = profile.get("profile_name")
+                if profile_name:
+                    check(f"Backend Profile: {profile_name}", lambda: get_backend_config(profile_name))
+    except Exception as e:
+        console.print(f" [bold red]❌ FAILED[/bold red]")
+        console.print(f"   [red]└─ Could not parse backends.yaml: {e}[/red]")
+        errors_found += 1
+
+    # 3. Validate all machine profiles
+    try:
+        machines_path = Path("machines.yaml")
+        if machines_path.is_file():
+            machine_profiles = yaml.safe_load(machines_path.read_text())
+            for machine_name in machine_profiles:
+                check(f"Machine Profile: {machine_name}", lambda name=machine_name: get_machine(name))
+    except Exception as e:
+        console.print(f" [bold red]❌ FAILED[/bold red]")
+        console.print(f"   [red]└─ Could not parse machines.yaml: {e}[/red]")
+        errors_found += 1
+
+    # 4. Validate all presets
+    presets_dir = Path("presets")
+    if presets_dir.is_dir():
+        for preset_file in presets_dir.glob("*.yaml"):
+            profile_name = preset_file.stem
+            check(f"Preset: {preset_file.name}", lambda name=profile_name: load_agent_config(profile=name))
+
+    console.rule()
+    if errors_found == 0:
+        console.print("[bold green]✅ All configurations validated successfully![/bold green]")
+    else:
+        console.print(
+            f"[bold red]❌ Found {errors_found} configuration error(s). Please review the output above.[/bold red]")
+        raise typer.Exit(code=1)
+
+
 @app.command(name="validate-tool")
 def validate_tool(
-    file_path: Annotated[
-        Path,
-        typer.Argument(
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            readable=True,
-            help="Path to the Python file containing the tool to validate.",
-        ),
-    ],
+        file_path: Annotated[
+            Path,
+            typer.Argument(
+                exists=True,
+                file_okay=True,
+                dir_okay=False,
+                readable=True,
+                help="Path to the Python file containing the tool to validate.",
+            ),
+        ],
 ) -> None:
     """
     Validates a single tool file by attempting to import it.
@@ -273,32 +340,32 @@ def _to_pascal_case(snake_str: str) -> str:
 
 @app.command(name="new-tool")
 def new_tool(
-    name: Annotated[
-        str,
-        typer.Option(
-            prompt=True, help="The callable name of the tool (e.g., 'get_weather')."
-        ),
-    ],
-    description: Annotated[
-        str,
-        typer.Option(
-            prompt=True, help="A short, one-sentence description of the tool."
-        ),
-    ],
-    category: Annotated[
-        str,
-        typer.Option(
-            prompt=True,
-            default="custom",
-            help="A high-level category (e.g., 'network', 'file').",
-        ),
-    ],
-    is_safe: Annotated[
-        bool,
-        typer.Option(
-            prompt=True, help="Is this tool safe to run without user confirmation?"
-        ),
-    ] = True,
+        name: Annotated[
+            str,
+            typer.Option(
+                prompt=True, help="The callable name of the tool (e.g., 'get_weather')."
+            ),
+        ],
+        description: Annotated[
+            str,
+            typer.Option(
+                prompt=True, help="A short, one-sentence description of the tool."
+            ),
+        ],
+        category: Annotated[
+            str,
+            typer.Option(
+                prompt=True,
+                default="custom",
+                help="A high-level category (e.g., 'network', 'file').",
+            ),
+        ],
+        is_safe: Annotated[
+            bool,
+            typer.Option(
+                prompt=True, help="Is this tool safe to run without user confirmation?"
+            ),
+        ] = True,
 ) -> None:
     """
     Creates a new boilerplate tool file in the 'plugins/' directory.

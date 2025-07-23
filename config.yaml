@@ -1,4 +1,4 @@
-# config.yaml
+# aegis/config.yaml
 # Central configuration for the AEGIS framework.
 
 # System-wide default settings.
@@ -6,10 +6,9 @@
 # specific launch request.
 defaults:
   # The default backend profile from backends.yaml to use if none is specified.
-  backend_profile: "bend_local"
+  backend_profile: "vllm_local"
 
-  # The default abstract model name from models.yaml. This is used to look up
-  # the correct prompt formatter.
+  # The default abstract model name.
   llm_model_name: "hermes"
 
   # The default maximum number of plan-execute steps an agent can take before

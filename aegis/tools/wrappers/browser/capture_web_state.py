@@ -12,7 +12,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 
 from aegis.exceptions import ToolExecutionError
-from aegis.executors.selenium import SeleniumExecutor
+from aegis.executors.selenium_exec import SeleniumExecutor
 from aegis.registry import register_tool
 from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from aegis.exceptions import ToolExecutionError
-from aegis.executors.pwntools import PwntoolsExecutor
+from aegis.executors.pwntools_exec import PwntoolsExecutor
 from aegis.tools.wrappers.pwn import (
     pwn_remote_connect,
     PwnRemoteConnectInput,

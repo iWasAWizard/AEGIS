@@ -11,7 +11,7 @@ from typing import Optional, Tuple
 from pydantic import BaseModel, Field
 
 from aegis.exceptions import ToolExecutionError
-from aegis.executors.ssh import SSHExecutor
+from aegis.executors.ssh_exec import SSHExecutor
 from aegis.registry import register_tool
 from aegis.tools.wrappers.gui import gui_action, GuiActionInput
 from aegis.utils.logger import setup_logger

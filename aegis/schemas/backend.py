@@ -17,7 +17,7 @@ class BaseBackendConfig(BaseModel):
 
 
 class KoboldcppBackendConfig(BaseBackendConfig):
-    """Configuration specific to a KoboldCPP backend."""
+    """Configuration for a KoboldCPP backend, potentially with full BEND stack services."""
 
     type: Literal["koboldcpp"] = "koboldcpp"
     llm_url: str = Field(
@@ -28,12 +28,6 @@ class KoboldcppBackendConfig(BaseBackendConfig):
     top_p: float = Field(0.9)
     top_k: int = Field(40)
     repetition_penalty: float = Field(1.1)
-
-
-class BendBackendConfig(KoboldcppBackendConfig):
-    """Configuration for a full BEND stack, extending KoboldCPP with other services."""
-
-    type: Literal["bend"] = "bend"
     voice_proxy_url: Optional[str] = Field(
         None, description="URL for the BEND voice proxy service (TTS/STT)."
     )
@@ -43,20 +37,6 @@ class BendBackendConfig(KoboldcppBackendConfig):
     api_key: Optional[str] = Field(
         None, description="API key for securing BEND services."
     )
-
-
-class OllamaBackendConfig(BaseBackendConfig):
-    """Configuration specific to an Ollama backend."""
-
-    type: Literal["ollama"] = "ollama"
-    llm_url: str = Field(
-        ..., description="The full URL to the Ollama /api/generate endpoint."
-    )
-    temperature: float = Field(0.5)
-    max_tokens_to_generate: int = Field(2048)
-    top_p: float = Field(0.9)
-    top_k: int = Field(40)
-    repetition_penalty: float = Field(1.1)
 
 
 class VllmBackendConfig(BaseBackendConfig):

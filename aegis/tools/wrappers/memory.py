@@ -9,7 +9,7 @@ a simple database.
 from pydantic import BaseModel, Field
 
 from aegis.exceptions import ToolExecutionError
-from aegis.executors.redis_exc import RedisExecutor
+from aegis.executors.redis_exec import RedisExecutor
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 

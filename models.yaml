@@ -1,34 +1,35 @@
 # aegis/models.yaml
 # Centralized LLM model definitions for AEGIS's prompt formatter.
+# This file can be run standalone or synced with BEND's manifest
+# using the `scripts/sync_models.sh` utility.
 
 models:
-  - key: "hf.co/NousResearch/Nous-Hermes-2-Mistral-7B-DPO-GGUF:Q4_K_M"
-    name: "Nous Hermes 2 - Mistral 7B (Ollama)"
+  - key: "hermes"
+    name: "Nous Hermes 2 Mistral 7B"
     formatter_hint: "chatml"
-    notes: "A strong 7B model for agentic tasks. Pull with 'ollama pull nous-hermes2:mistral'."
+    notes: "A strong 7B model for agentic tasks. A good default choice."
 
   - key: "mythomax"
     name: "MythoMax-L2-13B"
     formatter_hint: "alpaca"
+    notes: "A creative model, good for roleplay and lore-heavy tasks."
 
-  - key: "mistral-openorca:gguf"
-    name: "Mistral-7B-OpenOrca (GGUF)"
+  - key: "mistral-openorca"
+    name: "Mistral-7B-OpenOrca"
     formatter_hint: "chatml"
+    notes: "A fast and capable general-purpose chat and coding model."
 
   - key: "deepseek-coder"
     name: "DeepSeek-Coder-33B"
     formatter_hint: "codellama-instruct"
+    notes: "A powerful model specialized in software development tasks."
 
-  - key: "llama3:gguf"
-    name: "Llama 3 Instruct Family (GGUF)"
+  - key: "llama3"
+    name: "Llama 3 Instruct Family"
     formatter_hint: "llama3"
+    notes: "The primary model for high-performance agentic tasks."
 
-  - key: "llama3:8b-instruct"
-    name: "Llama 3 8B Instruct (Ollama)"
-    formatter_hint: "llama3"
-    notes: "For use with the Ollama backend. Model must be pulled via 'ollama pull llama3:8b-instruct'."
-
-  - key: "mistral-openorca:latest"
-    name: "Mistral OpenOrca (Ollama)"
+  - key: "granite"
+    name: "IBM Granite 3.3 8B Instruct"
     formatter_hint: "chatml"
-    notes: "For use with the Ollama backend. Model must be pulled via 'ollama pull mistral-openorca'."
+    notes: "A fast and capable coding model from IBM."

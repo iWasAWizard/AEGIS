@@ -12,7 +12,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from aegis.exceptions import ToolExecutionError
-from aegis.executors.pwntools import PWNTOOLS_AVAILABLE_FOR_EXECUTOR, PwntoolsExecutor
+from aegis.executors.pwntools_exec import PWNTOOLS_AVAILABLE_FOR_EXECUTOR, PwntoolsExecutor
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 

@@ -1,7 +1,7 @@
-# backends.yaml
+# aegis/backends.yaml
 backends:
-- profile_name: bend_local
-  type: bend
+- profile_name: koboldcpp_local
+  type: koboldcpp
   llm_url: http://koboldcpp:5001/api/generate
   voice_proxy_url: http://voiceproxy:8001
   rag_url: http://retriever:8000
@@ -32,15 +32,3 @@ backends:
   tts_model: tts-1
   tts_voice: alloy
   stt_model: whisper-1
-
-- profile_name: ollama_default
-  type: ollama
-  llm_url: http://ollama:11434/api/generate
-  voice_proxy_url: http://voiceproxy:8001
-  rag_url: http://retriever:8000
-  api_key: ${BEND_API_KEY}
-  temperature: 0.2
-  max_tokens_to_generate: 1536
-  top_p: 0.9
-  top_k: 40
-  repetition_penalty: 1.1

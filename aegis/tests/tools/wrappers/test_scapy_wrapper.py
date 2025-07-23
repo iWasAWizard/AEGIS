@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from aegis.executors.scapy import ScapyExecutor
+from aegis.executors.scapy_exec import ScapyExecutor
 from aegis.tools.wrappers.scapy import (
     scapy_ping,
     ScapyPingInput,

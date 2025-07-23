@@ -29,15 +29,20 @@ except ImportError:
 logger = setup_logger(__name__)
 
 
-def get_tool_schemas(safe_mode_active: bool) -> str:
+def get_tool_schemas(safe_mode_active: bool, tool_allowlist: List[str]) -> str:
     """Gets formatted schema descriptions for all available tools, indicating safety."""
     tool_signatures: List[str] = []
     excluded_tags = {"internal"}
-    for tool_name, tool_entry in sorted(TOOL_REGISTRY.items()):
-        if (
-            any(tag in tool_entry.tags for tag in excluded_tags)
-            and tool_name != "query_knowledge_base"
-        ):
+
+    # If an allow-list is provided, filter the tools to be shown.
+    tools_to_show = (
+        {name: tool for name, tool in TOOL_REGISTRY.items() if name in tool_allowlist}
+        if tool_allowlist
+        else TOOL_REGISTRY
+    )
+
+    for tool_name, tool_entry in sorted(tools_to_show.items()):
+        if any(tag in tool_entry.tags for tag in excluded_tags):
             continue
 
         safety_indicator = ""
@@ -66,7 +71,7 @@ def get_tool_schemas(safe_mode_active: bool) -> str:
             logger.warning(f"Could not generate signature for tool '{tool_name}': {e}")
 
     finish_desc = "Call this tool ONLY when the user's entire request has been fully completed or is impossible to complete. Provide a final summary in the 'reason' argument."
-    # Finish tool is always considered safe in its operation by the agent.
+    # The 'finish' tool is always available, regardless of the allow-list.
     tool_signatures.append(
         f"- finish(reason: string, status: string): [SAFE] {finish_desc}"
     )
@@ -109,7 +114,7 @@ def construct_planning_prompt(state: TaskState) -> tuple[str, str]:
 5.  **Adhere to Schema:** The `tool_args` must be a valid JSON object matching the tool's arguments.
 
 ## Available Tools
-{get_tool_schemas(safe_mode_active=bool(state.runtime.safe_mode))}
+{get_tool_schemas(safe_mode_active=bool(state.runtime.safe_mode), tool_allowlist=state.runtime.tool_allowlist)}
 
 ## Main Goal
 `{state.task_prompt}`
@@ -133,17 +138,13 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
     system_prompt, user_prompt = construct_planning_prompt(state)
 
     if not state.runtime.backend_profile:
-        raise ConfigurationError(
-            "Backend profile is not set in the current task state."
-        )
+        raise ConfigurationError("Backend profile is not set in the current task state.")
 
     try:
         backend_config = get_backend_config(state.runtime.backend_profile)
         backend_url = getattr(backend_config, "llm_url", None)
         if not backend_url:
-            raise ConfigurationError(
-                f"Backend profile '{state.runtime.backend_profile}' has no 'llm_url'."
-            )
+            raise ConfigurationError(f"Backend profile '{state.runtime.backend_profile}' has no 'llm_url'.")
 
         base_url = backend_url.rsplit("/", 1)[0]
         model_name = getattr(backend_config, "model", "default-model")

@@ -20,7 +20,7 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 from aegis.exceptions import ToolExecutionError
 
 # Import SeleniumExecutor
-from aegis.executors.selenium import SeleniumExecutor
+from aegis.executors.selenium_exec import SeleniumExecutor
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 

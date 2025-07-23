@@ -13,8 +13,8 @@ from typing import Optional
 import psutil
 from pydantic import BaseModel, Field
 
-from aegis.executors.local import LocalExecutor
-from aegis.executors.ssh import SSHExecutor
+from aegis.executors.local_exec import LocalExecutor
+from aegis.executors.ssh_exec import SSHExecutor
 from aegis.exceptions import ToolExecutionError
 from aegis.registry import register_tool
 from aegis.schemas.common_inputs import MachineTargetInput
