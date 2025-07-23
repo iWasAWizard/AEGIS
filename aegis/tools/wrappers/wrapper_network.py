@@ -118,3 +118,32 @@ def upload_to_grafana(input_data: GrafanaUploadInput) -> str:
         timeout=input_data.timeout,
     )
     return http_request(http_input)
+
+
+class NmapScanInput(BaseModel):
+    """Input for running a targeted Nmap port scan."""
+    targets: List[str] = Field(..., description="List of target IPs, hostnames, or CIDR ranges.")
+    ports: str = Field("1-1024", description="Ports to scan (e.g., '22,80,443', '1-1000').")
+    scan_type_flag: str = Field("-sV", description="Nmap scan type flag (e.g., -sS, -sT, -sV).")
+    extra_flags: str = Field("", description="Optional extra flags for the Nmap command.")
+
+
+@register_tool(
+    name="nmap_port_scan",
+    input_model=NmapScanInput,
+    tags=["network", "scan", "nmap", "wrapper"],
+    description="Performs a port scan on specified targets using Nmap.",
+    safe_mode=False,
+    purpose="Scan target hosts for open ports and services.",
+    category="network",
+)
+def nmap_port_scan(input_data: NmapScanInput) -> str:
+    """A wrapper for the 'nmap' command-line utility."""
+    from aegis.tools.primitives.primitive_system import run_local_command, RunLocalCommandInput
+
+    targets_str = " ".join(input_data.targets)
+    command = f"nmap {input_data.scan_type_flag} -p {input_data.ports} {input_data.extra_flags} {targets_str}"
+
+    # We must use the RunLocalCommandInput model for the primitive
+    cmd_input = RunLocalCommandInput(command=command, shell=True)
+    return run_local_command(cmd_input)
