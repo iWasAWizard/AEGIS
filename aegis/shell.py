@@ -3,33 +3,18 @@
 An interactive shell interface for the AEGIS framework, built with cmd2.
 
 This module provides a cohesive, line-oriented command processor for interacting
-with the AEGIS agent, replacing the previous Typer-based CLI. It offers a more
-fluid and persistent session for operators.
+with the AEGIS agent, using a noun-verb sub-command paradigm.
 """
-import asyncio
-import importlib
-import sys
-import uuid
 from pathlib import Path
 
 import cmd2
-import yaml
 from rich.console import Console
-from rich.table import Table
 
-from aegis.agents.agent_graph import AgentGraph
-from aegis.agents.task_state import TaskState
-from aegis.exceptions import AegisError
 from aegis.registry import TOOL_REGISTRY
-from aegis.schemas.agent import AgentConfig, AgentGraphConfig
-from aegis.schemas.launch import LaunchRequest
-from aegis.utils.cli_helpers import create_new_tool, validate_all_configs
-from aegis.utils.config_loader import load_agent_config
-from aegis.utils.log_sinks import task_id_context
-from aegis.utils.logger import setup_logger
 from aegis.utils.tool_loader import import_all_tools
 
 
+@cmd2.with_default_category("AEGIS Shell")
 class AegisShell(cmd2.Cmd):
     """The main class for the AEGIS interactive shell."""
 
@@ -40,8 +25,10 @@ class AegisShell(cmd2.Cmd):
             "Welcome to the AEGIS Agentic Framework Shell. Type 'help' for a list of commands.",
             bold=True,
         )
-        # Keep rich console for its excellent table formatting
         self.console = Console()
+        # Session-specific settings
+        self.session_backend = None
+        self.session_preset = None
 
     def startup(self):
         """This method is called once at the start of the application."""
@@ -53,224 +40,156 @@ class AegisShell(cmd2.Cmd):
             )
         )
 
-    # --- Argument Parsers ---
-    run_task_parser = cmd2.Cmd2ArgumentParser()
-    run_task_parser.add_argument(
-        "task_file", type=Path, help="Path to the YAML file with the task request."
+    # --- Noun: task ---
+    task_parser = cmd2.Cmd2ArgumentParser(description="Run and manage agent tasks.")
+    task_subparsers = task_parser.add_subparsers(title="sub-commands", help="Task actions")
+
+    parser_run = task_subparsers.add_parser("run", help="Run a task from a YAML file.")
+    parser_run.add_argument("task_file", type=Path, help="Path to the task YAML file.")
+
+    parser_resume = task_subparsers.add_parser("resume", help="Resume a paused task.")
+    parser_resume.add_argument("task_id", help="The ID of the paused task.")
+
+    @cmd2.with_argparser(task_parser)
+    async def do_task(self, args):
+        if hasattr(args, "func"):
+            await args.func(self, args)
+
+    # --- Noun: tool ---
+    tool_parser = cmd2.Cmd2ArgumentParser(description="Manage agent tools.")
+    tool_subparsers = tool_parser.add_subparsers(title="sub-commands", help="Tool actions")
+
+    parser_list_tools = tool_subparsers.add_parser("list", help="List all registered tools.")
+    parser_validate_tool = tool_subparsers.add_parser("validate", help="Validate a single tool file.")
+    parser_validate_tool.add_argument("file_path", type=Path, help="Path to the Python tool file.")
+    parser_new_tool = tool_subparsers.add_parser("new", help="Create a new boilerplate tool file.")
+    parser_view_tool = tool_subparsers.add_parser("view", help="View details for a specific tool.")
+    parser_view_tool.add_argument("tool_name", help="The name of the tool to view.")
+
+    @cmd2.with_argparser(tool_parser)
+    def do_tool(self, args):
+        if hasattr(args, "func"):
+            args.func(self, args)
+
+    # --- Noun: config ---
+    config_parser = cmd2.Cmd2ArgumentParser(description="Manage system configurations.")
+    config_subparsers = config_parser.add_subparsers(title="sub-commands", help="Config actions")
+
+    parser_validate_config = config_subparsers.add_parser("validate", help="Validate all .yaml config files.")
+    parser_view_config = config_subparsers.add_parser("view", help="View a configuration file.")
+    parser_view_config.add_argument("filename", help="The name of the config file (e.g., 'backends.yaml').")
+    parser_edit_config = config_subparsers.add_parser("edit", help="Edit a configuration file in $EDITOR.")
+    parser_edit_config.add_argument("filename", help="The name of the config file to edit.")
+
+    @cmd2.with_argparser(config_parser)
+    def do_config(self, args):
+        if hasattr(args, "func"):
+            args.func(self, args)
+
+    # --- Noun: artifact ---
+    artifact_parser = cmd2.Cmd2ArgumentParser(description="Manage task artifacts.")
+    artifact_subparsers = artifact_parser.add_subparsers(title="sub-commands", help="Artifact actions")
+
+    parser_list_artifacts = artifact_subparsers.add_parser("list", help="List all completed task artifacts.")
+    parser_view_artifact = artifact_subparsers.add_parser("view", help="View the summary and provenance for a task.")
+    parser_view_artifact.add_argument("task_id", help="The ID of the task to view.")
+    parser_delete_artifact = artifact_subparsers.add_parser("delete", help="Delete the artifacts for a task.")
+    parser_delete_artifact.add_argument("task_id", help="The ID of the task artifacts to delete.")
+
+    @cmd2.with_argparser(artifact_parser)
+    def do_artifact(self, args):
+        if hasattr(args, "func"):
+            args.func(self, args)
+
+    # --- Noun: preset ---
+    preset_parser = cmd2.Cmd2ArgumentParser(description="Manage agent presets.")
+    preset_subparsers = preset_parser.add_subparsers(title="sub-commands", help="Preset actions")
+
+    parser_list_presets = preset_subparsers.add_parser("list", help="List available agent presets.")
+    parser_view_preset = preset_subparsers.add_parser("view", help="View a specific preset file.")
+    parser_view_preset.add_argument("preset_id", help="The ID of the preset to view (filename without .yaml).")
+    parser_delete_preset = preset_subparsers.add_parser("delete", help="Delete a preset file.")
+    parser_delete_preset.add_argument("preset_id", help="The ID of the preset to delete.")
+
+    @cmd2.with_argparser(preset_parser)
+    def do_preset(self, args):
+        if hasattr(args, "func"):
+            args.func(self, args)
+
+    # --- Noun: eval ---
+    eval_parser = cmd2.Cmd2ArgumentParser(description="Manage and run evaluations.")
+    eval_subparsers = eval_parser.add_subparsers(title="sub-commands", help="Evaluation actions")
+
+    parser_run_evals = eval_subparsers.add_parser("run", help="Run an evaluation suite against a LangFuse dataset.")
+    parser_run_evals.add_argument("dataset_name", help="The name of the dataset in LangFuse.")
+    parser_run_evals.add_argument("--judge-model", default="openai_gpt4", help="The model profile for the judge LLM.")
+
+    parser_list_datasets = eval_subparsers.add_parser("list-datasets", help="List all available datasets in LangFuse.")
+    parser_view_dataset = eval_subparsers.add_parser("view", help="View the items in a LangFuse dataset.")
+    parser_view_dataset.add_argument("dataset_name", help="The name of the dataset to view.")
+
+    @cmd2.with_argparser(eval_parser)
+    async def do_eval(self, args):
+        if hasattr(args, "func"):
+            await args.func(self, args)
+
+    # --- Noun: backend ---
+    backend_parser = cmd2.Cmd2ArgumentParser(description="Manage backend configurations.")
+    backend_subparsers = backend_parser.add_subparsers(title="sub-commands", help="Backend actions")
+
+    parser_list_backends = backend_subparsers.add_parser("list", help="List available backend profiles.")
+
+    @cmd2.with_argparser(backend_parser)
+    def do_backend(self, args):
+        if hasattr(args, "func"):
+            args.func(self, args)
+
+    # --- Noun: session ---
+    session_parser = cmd2.Cmd2ArgumentParser(description="Manage shell session settings.")
+    session_subparsers = session_parser.add_subparsers(title="sub-commands", help="Session actions")
+
+    parser_set_session = session_subparsers.add_parser("set", help="Set a default for the current session.")
+    parser_set_session.add_argument("key", choices=["backend", "preset"], help="The setting to change.")
+    parser_set_session.add_argument("value", help="The new default value.")
+
+    parser_view_session = session_subparsers.add_parser("view", help="View current session defaults.")
+
+    @cmd2.with_argparser(session_parser)
+    def do_session(self, args):
+        if hasattr(args, "func"):
+            args.func(self, args)
+
+    # --- Handler Implementations ---
+    from aegis._shell_handlers import (
+        _task_run_handler, _task_resume_handler, _execute_graph,
+        _tool_list_handler, _tool_validate_handler, _tool_new_handler, _tool_view_handler,
+        _config_validate_handler, _config_view_handler, _config_edit_handler,
+        _artifact_list_handler, _artifact_view_handler, _artifact_delete_handler,
+        _preset_list_handler, _preset_view_handler, _preset_delete_handler,
+        _eval_run_handler, _eval_list_datasets_handler, _eval_view_dataset_handler,
+        _backend_list_handler,
+        _session_set_handler, _session_view_handler
     )
 
-    run_evals_parser = cmd2.Cmd2ArgumentParser()
-    run_evals_parser.add_argument(
-        "dataset_name", help="The name of the dataset in LangFuse to run."
-    )
-    run_evals_parser.add_argument(
-        "--judge-model",
-        default="openai_gpt4",
-        help="The model profile for the judge LLM.",
-    )
-
-    validate_tool_parser = cmd2.Cmd2ArgumentParser()
-    validate_tool_parser.add_argument(
-        "file_path", type=Path, help="Path to the Python tool file to validate."
-    )
-
-    # --- Core Commands ---
-
-    @cmd2.with_argparser(run_task_parser)
-    async def do_run_task(self, args):
-        """Runs a single agent task from a specified YAML file."""
-        task_file: Path = args.task_file
-        if not task_file.is_file():
-            self.perror(f"ERROR: Task file not found at '{task_file}'")
-            return
-
-        self.poutput(
-            f"📄 Loading task from: {cmd2.ansi.style(str(task_file), cyan=True, bold=True)}"
-        )
-        try:
-            launch_payload = LaunchRequest.model_validate(
-                yaml.safe_load(task_file.read_text())
-            )
-        except (yaml.YAMLError, ValueError) as e:
-            self.perror(f"ERROR: Failed to parse or validate task file: {e}")
-            return
-
-        self.poutput(
-            f"🚀 Launching task: {cmd2.ansi.style(launch_payload.task.prompt, magenta=True, bold=True)}"
-        )
-
-        try:
-            await self._execute_graph(launch_payload)
-        except AegisError as e:
-            self.perror(f"\nAGENT FAILED: A critical error occurred during execution.")
-            self.perror(f"Type: {e.__class__.__name__}")
-            self.perror(f"Reason: {e}")
-        except Exception as e:
-            self.perror(f"\nUNEXPECTED FATAL ERROR: {e}")
-            self.pfeedback(
-                "An unexpected error occurred. See the full traceback above."
-            )
-        finally:
-            self.poutput(
-                f"\n{cmd2.ansi.style('--- Execution Finished ---', blue=True, bold=True)}"
-            )
-
-    async def _execute_graph(self, payload: LaunchRequest):
-        """The core async logic for running the agent graph, adapted for cmd2."""
-        task_id = payload.task.task_id or str(uuid.uuid4())
-        task_id_context.set(task_id)
-
-        preset_config: AgentConfig = load_agent_config(
-            profile=payload.config if isinstance(payload.config, str) else "default"
-        )
-        runtime_config = preset_config.runtime
-        if payload.execution:
-            runtime_config = runtime_config.model_copy(
-                update=payload.execution.model_dump(exclude_unset=True)
-            )
-        if payload.iterations is not None:
-            runtime_config.iterations = payload.iterations
-
-        initial_state = TaskState(
-            task_id=task_id, task_prompt=payload.task.prompt, runtime=runtime_config
-        )
-        graph_structure = AgentGraphConfig(**preset_config.model_dump())
-        agent_graph = AgentGraph(graph_structure).build_graph()
-
-        langfuse_handler = CallbackHandler()
-        invocation_config = {
-            "callbacks": [langfuse_handler],
-            "metadata": {"user_id": "aegis-shell-user", "session_id": task_id},
-        }
-
-        self.poutput(f"\n{cmd2.ansi.style('--- Agent Execution Starting ---', yellow=True)}")
-        try:
-            final_state_dict = await agent_graph.ainvoke(
-                initial_state.model_dump(), config=invocation_config
-            )
-            self.poutput(f"\n{cmd2.ansi.style('--- Agent Execution Complete ---', green=True)}")
-            final_state = TaskState(**final_state_dict)
-            self.poutput(f"\n{cmd2.ansi.style('Final Summary:', bold=True)}")
-            self.poutput(final_state.final_summary or "[No summary was generated]")
-        except GraphInterrupt:
-            self.poutput(
-                f"\n{cmd2.ansi.style('⏸️ TASK PAUSED:', yellow=True, bold=True)} Agent has paused for human input."
-            )
-            self.poutput(
-                "To resume, you must use the API's /resume endpoint. Halting shell execution."
-            )
-
-    @cmd2.with_argparser(run_evals_parser)
-    async def do_run_evals(self, args):
-        """Runs an evaluation suite against a LangFuse dataset."""
-        self.poutput(
-            f"🧪 Starting evaluation run for dataset: {cmd2.ansi.style(args.dataset_name, cyan=True, bold=True)}"
-        )
-        try:
-            from aegis.evaluation.eval_runner import main as run_eval_main
-
-            await run_eval_main(args.dataset_name, args.judge_model)
-        except ImportError as e:
-            self.perror(f"ERROR: Failed to import evaluation module: {e}")
-        except Exception as e:
-            self.perror(f"EVALUATION FAILED: {e}")
-
-    def do_list_tools(self, _):
-        """Lists all registered tools available to the agent."""
-        table = Table(title="🛠️ AEGIS Registered Tools")
-        table.add_column("Name", style="cyan", no_wrap=True)
-        table.add_column("Category", style="magenta")
-        table.add_column("Description", style="white")
-        table.add_column("Safe Mode", style="yellow")
-
-        if not TOOL_REGISTRY:
-            self.pwarning("No tools are registered.")
-            return
-
-        for name, tool in sorted(TOOL_REGISTRY.items()):
-            safe_str = "✅" if tool.safe_mode else "❌"
-            table.add_row(name, tool.category or "N/A", tool.description, safe_str)
-
-        self.console.print(table)
-
-    def do_validate_config(self, _):
-        """Proactively loads and validates all key configuration files."""
-        self.poutput(
-            cmd2.ansi.style(
-                "--- AEGIS Configuration Validator ---", blue=True, bold=True
-            )
-        )
-        results = validate_all_configs()
-        errors_found = 0
-        for res in results:
-            if res["status"] == "OK":
-                self.poutput(
-                    f"🔍 Validating {cmd2.ansi.style(res['name'], cyan=True)}... {cmd2.ansi.style('✅ OK', green=True)}")
-            else:
-                self.poutput(
-                    f"🔍 Validating {cmd2.ansi.style(res['name'], cyan=True)}... {cmd2.ansi.style('❌ FAILED', red=True, bold=True)}")
-                self.poutput(f"   {cmd2.ansi.style(f'└─ Reason: ' + {res['reason']}, red=True)}")
-                errors_found += 1
-
-                self.poutput(cmd2.ansi.style("---", blue=True))
-                if errors_found == 0:
-                    self.poutput(
-                        cmd2.ansi.style(
-                            "✅ All configurations validated successfully!", green=True, bold=True
-                        )
-                    )
-                else:
-                    self.perror(f"❌ Found {errors_found} configuration error(s).") \
- \
-                    @ cmd2.with_argparser(validate_tool_parser)
-
-    def do_validate_tool(self, args):
-        """Validates a single tool file by attempting to import it."""
-        file_path: Path = args.file_path
-        self.poutput(
-            f"🔎 Validating tool file: {cmd2.ansi.style(str(file_path), cyan=True, bold=True)}"
-        )
-
-        module_dir = file_path.parent.resolve()
-        if str(module_dir) not in sys.path:
-            sys.path.insert(0, str(module_dir))
-
-        module_name = file_path.stem
-
-        try:
-            importlib.import_module(module_name)
-            self.poutput(
-                cmd2.ansi.style("✅ Validation Successful!", green=True, bold=True)
-            )
-            self.poutput(f"Tool(s) in '{file_path.name}' registered without errors.")
-        except Exception as e:
-            self.perror("❌ Validation Failed!")
-            self.perror(f"An error occurred while trying to register the tool:")
-            self.perror(f"{type(e).__name__}: {e}")
-        finally:
-            if str(module_dir) in sys.path:
-                sys.path.remove(str(module_dir))
-
-    def do_new_tool(self, _):
-        """Creates a new boilerplate tool file in the 'plugins/' directory."""
-        self.poutput("⚙️ Scaffolding new tool...")
-        try:
-            name = self.read_input("Tool Name (e.g., 'get_weather') > ")
-            description = self.read_input("Description > ")
-            category = self.read_input("Category (e.g., 'network') > ") or "custom"
-            is_safe_str = self.read_input("Is this tool safe? (yes/no) > ") or "yes"
-            is_safe = is_safe_str.lower().startswith("y")
-
-            if not name or not description:
-                self.perror("Tool name and description cannot be empty.")
-                return
-
-            file_path = create_new_tool(name, description, category, is_safe)
-
-            self.poutput(
-                cmd2.ansi.style(
-                    f"✅ Success! New tool created at: {file_path}", green=True, bold=True
-                )
-            )
-        except (FileExistsError, Exception) as e:
-            self.perror(f"ERROR: {e}")
+    # Bind handlers to their parsers
+    parser_run.set_defaults(func=_task_run_handler)
+    parser_resume.set_defaults(func=_task_resume_handler)
+    parser_list_tools.set_defaults(func=lambda self, args: self._tool_list_handler())
+    parser_validate_tool.set_defaults(func=lambda self, args: self._tool_validate_handler(args))
+    parser_new_tool.set_defaults(func=lambda self, args: self._tool_new_handler())
+    parser_view_tool.set_defaults(func=lambda self, args: self._tool_view_handler(args))
+    parser_validate_config.set_defaults(func=lambda self, args: self._config_validate_handler())
+    parser_view_config.set_defaults(func=lambda self, args: self._config_view_handler(args))
+    parser_edit_config.set_defaults(func=lambda self, args: self._config_edit_handler(args))
+    parser_list_artifacts.set_defaults(func=lambda self, args: self._list_artifacts_handler())
+    parser_view_artifact.set_defaults(func=lambda self, args: self._artifact_view_handler(args))
+    parser_delete_artifact.set_defaults(func=lambda self, args: self._artifact_delete_handler(args))
+    parser_list_presets.set_defaults(func=lambda self, args: self._list_presets_handler())
+    parser_view_preset.set_defaults(func=lambda self, args: self._preset_view_handler(args))
+    parser_delete_preset.set_defaults(func=lambda self, args: self._preset_delete_handler(args))
+    parser_run_evals.set_defaults(func=lambda self, args: self._eval_run_handler(args))
+    parser_list_datasets.set_defaults(func=lambda self, args: self._eval_list_datasets_handler())
+    parser_view_dataset.set_defaults(func=lambda self, args: self._eval_view_dataset_handler(args))
+    parser_list_backends.set_defaults(func=lambda self, args: self._backend_list_handler())
+    parser_set_session.set_defaults(func=lambda self, args: self._session_set_handler(args))
+    parser_view_session.set_defaults(func=lambda self, args: self._session_view_handler())

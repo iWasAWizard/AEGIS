@@ -60,7 +60,7 @@ AEGIS is a standalone framework that acts as a client to an intelligence backend
 
 The best way to run AEGIS is by connecting it to the **BEND** backend stack. For a complete walkthrough, please see the **[Combined BEND + AEGIS Quickstart Guide](./docs/Combined_Quickstart.md)**.
 
-If you want to run AEGIS standalone against a commercial API like OpenAI, please see the **[AEGIS Standalone Quickstart Guide](./docs/AEGIS_Quickstart.md)**.
+If you want to run AEGIS standalone against a commercial API like OpenAI, please see the **[AEGIS Standalone Quickstart Guide](./docs/Quickstart_Guide.md)**.
 
 The basic steps are:
 
