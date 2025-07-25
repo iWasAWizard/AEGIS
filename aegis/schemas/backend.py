@@ -60,6 +60,22 @@ class VllmBackendConfig(BaseBackendConfig):
     repetition_penalty: float = Field(1.1)
 
 
+class OllamaBackendConfig(BaseBackendConfig):
+    """Configuration for an Ollama backend."""
+
+    type: Literal["ollama"] = "ollama"
+    llm_url: str = Field(..., description="The base URL for the Ollama API.")
+    model: str = Field(
+        ...,
+        description="The name of the model to use from Ollama (e.g., 'llama3:instruct').",
+    )
+    temperature: float = Field(0.2)
+    max_tokens_to_generate: int = Field(1536)
+    top_p: float = Field(0.9)
+    top_k: int = Field(40)
+    repetition_penalty: float = Field(1.1)
+
+
 class OpenAIBackendConfig(BaseModel):
     """Configuration specific to an OpenAI-compatible API backend."""
 

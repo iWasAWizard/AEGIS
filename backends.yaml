@@ -13,6 +13,16 @@ backends:
   top_k: 40
   repetition_penalty: 1.1
 
+- profile_name: ollama_local
+  type: ollama
+  llm_url: http://ollama:11434/api
+  model: "llama3:instruct"
+  temperature: 0.2
+  max_tokens_to_generate: 2048
+  top_p: 0.9
+  top_k: 40
+  repetition_penalty: 1.1
+
 - profile_name: vllm_local
   type: vllm
   llm_url: http://vllm:8000/v1/chat/completions
