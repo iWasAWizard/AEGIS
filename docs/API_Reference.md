@@ -1,14 +1,3 @@
-Of course. Here is the next file, `docs/API_Reference.md`.
-
-*   **TL;DR:**
-    *   This is the complete, correct version of `docs/API_Reference.md`.
-    *   All mentions of LangFuse have been removed.
-
-```markdown
-docs/API_Reference.md
-```
-
-```markdown
 # AEGIS API Reference
 
 The AEGIS API provides a set of RESTful endpoints for launching and managing autonomous agent tasks. It is served by a FastAPI application and uses Pydantic for strict data validation and serialization.
