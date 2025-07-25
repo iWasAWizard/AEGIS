@@ -429,7 +429,7 @@ async def _execute_graph(self: cmd2.Cmd, payload: LaunchRequest):
 
     try:
         preset_config = load_agent_config(
-            profile=payload.config if isinstance(payload.config, str) else "default"
+            profile=payload.config if isinstance(payload.config, str) else None
         )
         runtime_config = preset_config.runtime
         if payload.execution:
