@@ -16,7 +16,6 @@ Instead of just responding to prompts, AEGIS agents can think step-by-step, use 
 -   **Complex Workflows:** Built on LangGraph, AEGIS lets you design agents that can loop, branch, and self-correct to solve multi-step problems.
 -   **Connect to Any Backend:** A flexible "Provider" system lets you easily switch between different AI backends (like the **BEND** stack, a local vLLM server, or commercial APIs like OpenAI) just by changing a config file.
 -   **Reliable AI Responses:** Uses **Instructor** to force the AI's output into a clean, predictable format. This guarantees the agent's plans are always valid, eliminating a major source of errors.
--   **See Every Thought:** With **LangFuse** integration, you get a detailed, visual trace of every thought and action the agent takes, making it much easier to debug and understand.
 -   **Persistent Memory:** An agent can save and recall specific facts (like a user's name or a previous result) using a **Redis** backend, giving it a persistent "notebook."
 -   **Hierarchical Agents (MoE):** Supports building a "manager" agent that can delegate tasks to a team of "specialist" agents, allowing you to solve more complex problems.
 -   **Human-in-the-Loop:** Includes a built-in way for agents to pause and ask for your input or approval before continuing with a task.
@@ -71,7 +70,7 @@ The basic steps are:
     ```
 
 2.  **Configure Your Environment:**
-    Copy the example environment file and fill in your details, such as your LangFuse and backend API keys.
+    Copy the example environment file and fill in your details.
     ```bash
     cp .env.example .env
     # Now, edit the .env file

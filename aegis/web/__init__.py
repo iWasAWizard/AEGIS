@@ -16,7 +16,6 @@ from aegis.web.routes_backends import router as backends_router
 from aegis.web.routes_compare import router as compare_router
 from aegis.web.routes_config_editor import router as config_editor_router
 from aegis.web.routes_dev import router as dev_router
-from aegis.web.routes_evals import router as evals_router
 from aegis.web.routes_fuzz import router as fuzz_router
 from aegis.web.routes_graphs import router as graphs_router
 from aegis.web.routes_inventory import router as inventory_router
@@ -48,5 +47,4 @@ router.include_router(models_router)
 router.include_router(themes_router)
 router.include_router(backends_router)
 router.include_router(dev_router)
-router.include_router(evals_router)
 router.include_router(log_streamer_router, prefix="/ws")

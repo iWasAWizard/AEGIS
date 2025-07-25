@@ -18,9 +18,7 @@ async def test_invoke_llm_success():
     mock_provider = AsyncMock()
     mock_provider.get_completion.return_value = "LLM response"
 
-    state = TaskState(
-        task_id="t1", task_prompt="p", runtime=RuntimeExecutionConfig()
-    )
+    state = TaskState(task_id="t1", task_prompt="p", runtime=RuntimeExecutionConfig())
     input_data = InvokeLlmInput(
         system_prompt="You are a helpful assistant.", user_prompt="What is AI?"
     )
@@ -29,7 +27,9 @@ async def test_invoke_llm_success():
 
     mock_provider.get_completion.assert_awaited_once()
     call_args, _ = mock_provider.get_completion.call_args
-    assert "You are a sub-module" in call_args[0][0]["content"] # Check for prompt wrapping
+    assert (
+        "You are a sub-module" in call_args[0][0]["content"]
+    )  # Check for prompt wrapping
     assert call_args[0][1]["content"] == "What is AI?"
     assert call_args[1] == state.runtime
     assert result == "LLM response"
@@ -41,9 +41,7 @@ async def test_invoke_llm_provider_fails():
     mock_provider = AsyncMock()
     mock_provider.get_completion.side_effect = Exception("Backend connection failed")
 
-    state = TaskState(
-        task_id="t1", task_prompt="p", runtime=RuntimeExecutionConfig()
-    )
+    state = TaskState(task_id="t1", task_prompt="p", runtime=RuntimeExecutionConfig())
     input_data = InvokeLlmInput(system_prompt="sys", user_prompt="usr")
 
     with pytest.raises(ToolExecutionError, match="Direct LLM invocation failed"):

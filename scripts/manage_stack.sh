@@ -29,7 +29,7 @@ print_error() {
 }
 
 usage() {
-    echo "Usage: $0 {up|down|rebuild|pull|status|logs|exec|restart|prune} [service]"
+    echo "Usage: $0 {up|down|rebuild|pull|status|logs|exec|restart|prune} [options] [service] [command...]"
     echo
     echo "Commands:"
     echo "  up                - Start both AEGIS and BEND stacks."
@@ -41,6 +41,16 @@ usage() {
     echo "  exec <service> <cmd> - Execute a command in a running service container (e.g., 'exec agent bash')."
     echo "  restart [service] - Restart all stacks (or a specific service)."
     echo "  prune             - Stop and remove all containers, networks, AND volumes. DANGEROUS."
+    echo
+    echo "Options:"
+    echo "  --gpu             - Pass the --gpu flag to the BEND stack."
+    echo "  --lite [profile]  - Use the lite configuration for BEND. Optionally specify a profile ('vllm' or 'koboldcpp')."
+    echo "                    If no profile is given, both LLM backends are started."
+    echo
+    echo "Examples:"
+    echo "  ./manage_stack.sh up --gpu"
+    echo "  ./manage_stack.sh up --lite vllm --gpu"
+    echo "  ./manage_stack.sh up --lite"
     exit 1
 }
 
@@ -58,15 +68,52 @@ if [ ! -d "${AEGIS_DIR}" ] || [ ! -d "${BEND_DIR}" ]; then
     exit 1
 fi
 
-# --- Command Logic ---
+# --- Argument Parsing ---
 COMMAND=$1
-SERVICE=$2
-shift 2
-EXEC_CMD="$@"
+shift # The first argument is the command
 
+# Parse remaining arguments for flags and service names
+LITE_ARGS=""
+GPU_ARGS=""
+SERVICE=""
+EXEC_CMD=""
+OTHER_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --lite)
+      if [[ -n "$2" && ("$2" == "vllm" || "$2" == "koboldcpp") ]]; then
+        LITE_ARGS="--lite $2"
+        shift 2
+      else
+        LITE_ARGS="--lite"
+        shift
+      fi
+      ;;
+    --gpu)
+      GPU_ARGS="--gpu"
+      shift
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      OTHER_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# The first non-flag argument is the service, the rest is the exec command
+if [ ${#OTHER_ARGS[@]} -gt 0 ]; then
+    SERVICE=${OTHER_ARGS[0]}
+    EXEC_CMD="${OTHER_ARGS[@]:1}"
+fi
+
+
+# --- Command Logic ---
 AEGIS_SERVICES=("agent")
-# Updated list of all BEND services
-BEND_SERVICES=("vllm" "redis" "langfuse-server" "langfuse-db" "nemoguardrails" "openwebui" "whisper" "piper" "glances" "qdrant" "retriever" "voiceproxy" "koboldcpp")
+BEND_SERVICES=("vllm" "redis" "nemoguardrails" "openwebui" "whisper" "piper" "glances" "qdrant" "retriever" "voiceproxy" "koboldcpp")
 
 TARGET_DIR=""
 if [[ " ${AEGIS_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
@@ -75,10 +122,14 @@ elif [[ " ${BEND_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
     TARGET_DIR=${BEND_DIR}
 fi
 
+
 case "$COMMAND" in
     up)
         print_info "Starting BEND stack..."
-        (cd "${BEND_DIR}" && ./scripts/manage.sh up)
+        # Dynamically construct and execute the BEND manage command
+        BEND_CMD_ARGS="up $LITE_ARGS $GPU_ARGS"
+        (cd "${BEND_DIR}" && ./scripts/manage.sh ${BEND_CMD_ARGS})
+        print_success "BEND stack started."
 
         print_info "Checking for shared Docker network..."
         # Source the .env file to get the network name
@@ -98,7 +149,6 @@ case "$COMMAND" in
         print_success "Shared network '$NETWORK_NAME' found."
 
         print_info "Starting AEGIS stack..."
-        # The .env file is already sourced, so docker compose will pick it up
         (cd "${AEGIS_DIR}" && docker compose up --build -d)
 
         print_success "All stacks started."
@@ -110,6 +160,7 @@ case "$COMMAND" in
         print_info "Stopping AEGIS stack..."
         (cd "${AEGIS_DIR}" && docker compose down)
         print_info "Stopping BEND stack..."
+        # The down command in BEND is smart enough to handle all configs
         (cd "${BEND_DIR}" && ./scripts/manage.sh down)
         print_success "All stacks stopped."
         ;;
@@ -127,7 +178,7 @@ case "$COMMAND" in
             (cd "${TARGET_DIR}" && docker compose up -d --force-recreate "${SERVICE}")
         else
             print_info "Rebuilding BEND stack..."
-            (cd "${BEND_DIR}" && ./scripts/manage.sh rebuild)
+            (cd "${BEND_DIR}" && ./scripts/manage.sh rebuild $GPU_ARGS) # Pass GPU flag to BEND rebuild
             print_info "Rebuilding AEGIS stack..."
             (cd "${AEGIS_DIR}" && docker compose build --no-cache)
             (cd "${AEGIS_DIR}" && docker compose up -d --force-recreate)
@@ -139,7 +190,7 @@ case "$COMMAND" in
 
     pull)
         print_info "Pulling latest images for BEND stack..."
-        (cd "${BEND_DIR}" && docker compose pull)
+        (cd "${BEND_DIR}" && ./scripts/manage.sh pull)
         print_info "Pulling latest images for AEGIS stack..."
         (cd "${AEGIS_DIR}" && docker compose pull)
         print_success "Image pull complete."
@@ -147,7 +198,7 @@ case "$COMMAND" in
 
     status)
         print_info "--- BEND Stack Status ---"
-        (cd "${BEND_DIR}" && ./scripts/manage.sh status)
+        (cd "${BEND_DIR}" && ./scripts/manage.sh status $LITE_ARGS $GPU_ARGS)
         echo ""
         print_info "--- AEGIS Stack Status ---"
         (cd "${AEGIS_DIR}" && docker compose ps)
@@ -159,14 +210,13 @@ case "$COMMAND" in
 
         # Determine target directory based on service name
         if [[ " ${AEGIS_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
-            TARGET_DIR=${AEGIS_DIR}
+            (cd "$AEGIS_DIR" && docker compose logs -f "$SERVICE")
         elif [[ " ${BEND_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
-            TARGET_DIR=${BEND_DIR}
+            (cd "$BEND_DIR" && ./scripts/manage.sh logs $LITE_ARGS $GPU_ARGS "$SERVICE")
         else
              print_error "Unknown service '$SERVICE'."
              exit 1
         fi
-        (cd "$TARGET_DIR" && docker compose logs -f "$SERVICE")
         ;;
 
     exec)
@@ -192,7 +242,7 @@ case "$COMMAND" in
              (cd "$TARGET_DIR" && docker compose restart "$SERVICE")
         else
             (cd "${AEGIS_DIR}" && docker compose restart)
-            (cd "${BEND_DIR}" && ./scripts/manage.sh restart)
+            (cd "${BEND_DIR}" && ./scripts/manage.sh restart $LITE_ARGS $GPU_ARGS)
         fi
         print_success "Restart complete."
         ;;
@@ -205,7 +255,7 @@ case "$COMMAND" in
             print_info "Pruning AEGIS stack..."
             (cd "${AEGIS_DIR}" && docker compose down -v)
             print_info "Pruning BEND stack..."
-            (cd "${BEND_DIR}" && ./scripts/manage.sh down -v)
+            (cd "${BEND_DIR}" && ./scripts/manage.sh down -v) # BEND's down command is smart enough
             print_success "All stacks and data have been pruned."
         else
             print_info "Prune operation cancelled."

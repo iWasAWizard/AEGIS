@@ -45,7 +45,7 @@ def load_agent_config(
         # 1. Start with system-wide defaults from config.yaml
         system_defaults = get_system_config().get("defaults", {})
         merged_config = system_defaults.copy()
-        
+
         # 2. Load preset and merge its settings
         preset_data = {}
         if profile:
@@ -54,31 +54,37 @@ def load_agent_config(
             # Merge runtime settings from preset
             if "runtime" in preset_data:
                 merged_config.update(preset_data["runtime"])
-        
+
         # 3. Load from file or raw dict and merge on top
         final_config_data = {}
         if config_file:
             logger.info(f"Loading config from file: '{config_file}'")
-            final_config_data = yaml.safe_load(Path(config_file).read_text(encoding="utf-8"))
+            final_config_data = yaml.safe_load(
+                Path(config_file).read_text(encoding="utf-8")
+            )
         elif raw_config:
             logger.info("Loading from inline raw config dict.")
             final_config_data = raw_config
 
         # Merge the highest-precedence runtime settings
         if "runtime" in final_config_data:
-             merged_config.update(final_config_data["runtime"])
+            merged_config.update(final_config_data["runtime"])
 
         # Construct the final config object
         # Graph structure comes from preset or file/raw, runtime comes from merged data
         graph_structure_source = final_config_data or preset_data
-        
+
         # Ensure 'runtime' key exists before assigning to it
         if "runtime" not in graph_structure_source:
-             graph_structure_source["runtime"] = {}
+            graph_structure_source["runtime"] = {}
         graph_structure_source["runtime"] = merged_config
 
-        if "state_type" in graph_structure_source and isinstance(graph_structure_source["state_type"], str):
-            graph_structure_source["state_type"] = resolve_dotted_type(graph_structure_source["state_type"])
+        if "state_type" in graph_structure_source and isinstance(
+            graph_structure_source["state_type"], str
+        ):
+            graph_structure_source["state_type"] = resolve_dotted_type(
+                graph_structure_source["state_type"]
+            )
 
         validate_node_names(graph_structure_source)
 

@@ -32,7 +32,9 @@ def mock_aiohttp_post(monkeypatch):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
     # Mock an async context manager for the response
-    mock_response.__aenter__.return_value.json = AsyncMock(return_value={"messages": [{"content": "proceed"}]})
+    mock_response.__aenter__.return_value.json = AsyncMock(
+        return_value={"messages": [{"content": "proceed"}]}
+    )
 
     mock_session = MagicMock()
     # Mock an async context manager for the session's post method

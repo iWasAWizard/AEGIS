@@ -166,9 +166,10 @@ if __name__ == "__main__":
         config = get_config()
         log_level_str = config.get("logging", {}).get("level", "info").lower()
     except (FileNotFoundError, Exception):
-        log_level_str = "info" # Fallback if config is missing or broken
-        logger.warning("config.yaml not found or broken, falling back to log level 'info'.")
-
+        log_level_str = "info"  # Fallback if config is missing or broken
+        logger.warning(
+            "config.yaml not found or broken, falling back to log level 'info'."
+        )
 
     numeric_log_level = getattr(logging, log_level_str.upper(), logging.INFO)
     logging.getLogger().setLevel(numeric_log_level)

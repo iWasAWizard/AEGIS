@@ -73,7 +73,9 @@ def test_extract_structured_data_instructor_fails(
     """Verify a failure during the LLM call is raised as a ToolExecutionError."""
     mock_instructor_client.side_effect = Exception("LLM call failed")
     schema = {"properties": {"name": {"type": "string"}}}
-    input_data = ExtractStructuredDataInput(text_to_parse="text", extraction_schema=schema)
+    input_data = ExtractStructuredDataInput(
+        text_to_parse="text", extraction_schema=schema
+    )
     state = TaskState(
         task_id="t1",
         task_prompt="p",

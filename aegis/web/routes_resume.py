@@ -5,7 +5,6 @@ API route for resuming an interrupted agent task.
 import json
 
 from fastapi import APIRouter, HTTPException
-from langfuse.langchain import CallbackHandler
 from pydantic import BaseModel
 
 from aegis.agents.task_state import TaskState
@@ -35,23 +34,14 @@ async def resume_task(payload: ResumeRequest):
         raise HTTPException(status_code=404, detail="Paused task not found.")
 
     agent_graph = interrupted_session["graph"]
-    saved_state = interrupted_session["state"]
+    saved_state_dict = interrupted_session["state"]
 
-    # Inject the human feedback into the state
-    saved_state["human_feedback"] = payload.human_feedback
-
-    # Set up tracing for the resumed part of the execution
-    langfuse_handler = CallbackHandler()
-    invocation_config = {
-        "callbacks": [langfuse_handler],
-        "metadata": {"user_id": "aegis-user", "session_id": task_id},
-    }
+    # Inject the human feedback into the state dictionary
+    saved_state_dict["human_feedback"] = payload.human_feedback
 
     try:
         # Continue the graph execution from the saved state
-        final_state_dict = await agent_graph.ainvoke(
-            saved_state, config=invocation_config
-        )
+        final_state_dict = await agent_graph.ainvoke(saved_state_dict)
         final_state = TaskState(**final_state_dict)
         logger.info(f"✅ Resumed task {task_id} completed successfully.")
 

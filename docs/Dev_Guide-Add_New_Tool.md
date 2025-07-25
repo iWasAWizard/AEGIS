@@ -170,7 +170,7 @@ You don't need to run the full agent to make sure your tool is working.
         mock_response = MagicMock()
         mock_response.text = "123.45.67.89"
         mock_instance.request.return_value = mock_response
-        
+
         mock_class = MagicMock(return_value=mock_instance)
         monkeypatch.setattr("plugins.get_public_ip.HttpExecutor", mock_class)
         return mock_instance
@@ -202,7 +202,7 @@ Now, your tool is ready to be used by the agent.
         > `What is my public IP address?`
     -   Launch the task.
 
-The agent will see your new tool in its list of capabilities and correctly choose it to solve the task. You can watch its progress in the live logs and see the final trace in LangFuse.
+The agent will see your new tool in its list of capabilities and correctly choose it to solve the task.
 
 ---
 

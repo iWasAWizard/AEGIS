@@ -9,9 +9,8 @@ import uuid
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException
-from langgraph.pregel import GraphInterrupt
+from langgraph.errors import GraphInterrupt
 from pydantic import ValidationError
-from langfuse.langchain import CallbackHandler
 
 from aegis.agents.agent_graph import AgentGraph
 from aegis.agents.task_state import TaskState
@@ -86,18 +85,27 @@ async def launch_task(payload: LaunchRequest) -> LaunchResponse:
 
         agent_graph = AgentGraph(graph_structure).build_graph()
 
-        # Initialize LangFuse handler for tracing
-        langfuse_handler = CallbackHandler()
-        # Pass user_id and session_id via metadata in the config
-        invocation_config = {
-            "callbacks": [langfuse_handler],
-            "metadata": {"user_id": "aegis-user", "session_id": task_id},
-        }
-
-        final_state_dict = await agent_graph.ainvoke(
-            initial_state.model_dump(), config=invocation_config
-        )
+        final_state_dict = await agent_graph.ainvoke(initial_state.model_dump())
         final_state = TaskState(**final_state_dict)
+
+        # After the graph has run, check if the last action was an interruption
+        if (
+            final_state.history
+            and final_state.history[-1].plan.tool_name == "ask_human_for_input"
+        ):
+            logger.info(f"⏸️  Task {task_id} has been paused for human input.")
+            # Store the compiled graph and the interrupted state for later resumption.
+            INTERRUPTED_STATES[task_id] = {
+                "graph": agent_graph,
+                "state": final_state.model_dump(),
+            }
+            last_observation = final_state.history[-1].observation
+            return LaunchResponse(
+                task_id=task_id,
+                summary=last_observation,
+                status="PAUSED",
+                history=[],
+            )
 
         logger.info(f"✅ Task {task_id} completed successfully.")
 
@@ -115,18 +123,6 @@ async def launch_task(payload: LaunchRequest) -> LaunchResponse:
             ],
         )
 
-    except GraphInterrupt as e:
-        logger.info(f"⏸️  Task {task_id} has been paused for human input.")
-        # Store the compiled graph and the interrupted state for later resumption.
-        INTERRUPTED_STATES[task_id] = {"graph": agent_graph, "state": e.values}
-        # The observation from the 'ask_human_for_input' tool contains the question.
-        last_observation = e.values.get("history", [])[-1].observation
-        return LaunchResponse(
-            task_id=task_id,
-            summary=last_observation,
-            status="PAUSED",
-            history=[],
-        )
     except ValidationError as e:
         logger.error(f"Pydantic validation failed during task launch: {e}")
         error_details = "\n".join(

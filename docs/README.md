@@ -1,6 +1,3 @@
-docs/README.md```
-
-```markdown
 # AEGIS & BEND Documentation
 
 Welcome to the central documentation hub for the AEGIS and BEND frameworks.
@@ -41,4 +38,8 @@ Welcome to the central documentation hub for the AEGIS and BEND frameworks.
 ## ⚙️ Operational Guides
 
 -   **[Operational Guide: Observability & Debugging](./Observability_and_Debugging.md)**
-    *   *Learn how to use LangFuse to trace and debug your agent'
+    *   *Learn how to use the built-in logging and provenance reports to trace and debug your agent's behavior.*
+-   **[Functional Testing Checklist](./Functional_Testing_Checklist.md)**
+    *   *A checklist for operators to manually verify the functionality of all core system components.*
+-   **[Requirements Traceability Matrix (RVTM)](./RVTM.md)**
+    *   *A formal matrix tracing system requirements to their verification methods.*

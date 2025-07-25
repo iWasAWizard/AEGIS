@@ -7,7 +7,11 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
 from pydantic import BaseModel
 
-from aegis.agents.steps.verification import verify_outcome, remediate_plan, VerificationJudgement
+from aegis.agents.steps.verification import (
+    verify_outcome,
+    remediate_plan,
+    VerificationJudgement,
+)
 from aegis.agents.task_state import TaskState, HistoryEntry
 from aegis.exceptions import ToolError, PlannerError
 from aegis.schemas.plan_output import AgentScratchpad
@@ -45,9 +49,14 @@ def mock_instructor_client(monkeypatch):
     mock_create = AsyncMock()
     mock_client = MagicMock()
     mock_client.chat.completions.create = mock_create
-    monkeypatch.setattr("aegis.agents.steps.verification.instructor.patch", lambda x: mock_client)
+    monkeypatch.setattr(
+        "aegis.agents.steps.verification.instructor.patch", lambda x: mock_client
+    )
     monkeypatch.setattr("aegis.agents.steps.verification.OpenAI", MagicMock())
-    monkeypatch.setattr("aegis.agents.steps.verification.get_backend_config", MagicMock(return_value=MagicMock(llm_url="http://test/v1/c", model="test")))
+    monkeypatch.setattr(
+        "aegis.agents.steps.verification.get_backend_config",
+        MagicMock(return_value=MagicMock(llm_url="http://test/v1/c", model="test")),
+    )
     return mock_create
 
 
@@ -90,7 +99,9 @@ async def test_verify_outcome_verification_succeeds(
 @pytest.mark.asyncio
 async def test_remediate_plan_success(mock_state_factory, mock_instructor_client):
     """Test that a remediation plan is generated correctly."""
-    new_plan = AgentScratchpad(thought="remediation thought", tool_name="fix_tool", tool_args={})
+    new_plan = AgentScratchpad(
+        thought="remediation thought", tool_name="fix_tool", tool_args={}
+    )
     mock_instructor_client.return_value = new_plan
 
     plan = AgentScratchpad(thought="original plan", tool_name="failing_tool")

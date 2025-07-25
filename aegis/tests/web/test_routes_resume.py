@@ -40,7 +40,9 @@ def test_resume_task_success():
     assert data["summary"] == "Resumed and completed."
     mock_graph.ainvoke.assert_awaited_once()
     # Check that the feedback was injected
-    assert mock_graph.ainvoke.call_args.args[0]["human_feedback"] == "Proceed as planned."
+    assert (
+        mock_graph.ainvoke.call_args.args[0]["human_feedback"] == "Proceed as planned."
+    )
 
 
 def test_resume_task_not_found():

@@ -28,7 +28,7 @@ This is the most important tab—it's the agent's control panel. Here's how to u
 
 1.  **Agent Preset:** Choose the agent's "personality" or workflow from this dropdown. The `Verified Agent Flow`, for example, is a robust workflow that double-checks its own work.
 2.  **Backend Profile:** Select which AI backend you want the agent to use for this task (e.g., `vllm_local` to use your BEND stack, or `openai_gpt4` to use OpenAI).
-3.  **Agent Model:** Choose which specific model you want the agent to use. This list is synchronized with the model manifest.
+3.  **Agent Model:** Choose which specific model you want the agent to use. This list is dynamically populated from the selected backend.
 4.  **Task Prompt:** This is where you give the agent its high-level goal. Be as descriptive as you need to be.
 5.  **Enable Safe Mode:** A checkbox that, when enabled, prevents the agent from using any tools marked as "unsafe" (like `run_local_command`).
 6.  **Advanced: Execution Overrides:** An optional text box where you can provide a JSON object to override runtime settings for this specific task (e.g., `{"iterations": 20}`).
@@ -65,13 +65,13 @@ This tab is an archive of all past task runs. You can see a list of every task a
 
 ---
 
-## Part 2: The Command-Line Interface (CLI)
+## Part 2: The Interactive Shell
 
-The CLI is a powerful tool for scripting, automation, and running tests. All commands are run from the AEGIS repository root.
+The interactive shell is a powerful tool for scripting and automation. Launch it with `python -m aegis`. All commands use a `noun verb` structure.
 
-### `run-task`
+### `task run <file.yaml>`
 
-This is the CLI equivalent of the "Launch" tab. It runs an agent task based on a YAML file.
+Runs an agent task based on a YAML file.
 
 1.  **Create a Task File:**
     Create a file named `my_task.yaml` with the following structure:
@@ -85,50 +85,24 @@ This is the CLI equivalent of the "Launch" tab. It runs an agent task based on a
     execution:
       backend_profile: "vllm_local" # The backend to use
       llm_model_name: "llama3" # The model to use
-      iterations: 5
+      iterations": 5
     ```
 
 2.  **Run the Task:**
-    ```bash
-    python -m aegis.cli run-task my_task.yaml
-    ```The agent will execute the task, printing its progress to the console.
+    ```    (aegis) > task run my_task.yaml
+    ```
 
-### `list-tools`
+### `task resume <task_id>`
+
+Resumes a task that was paused for human input within the current shell session.
+
+### `tool list`
 
 Lists all available tools in a clean table format.
 
-```bash
-python -m aegis.cli list-tools
-```
+### `config validate`
 
-### `validate-config`
+A crucial safety check. This command proactively loads and validates all of your YAML configuration files and reports any errors.
 
-A crucial safety check. This command proactively loads and validates all of your YAML configuration files (`backends.yaml`, `machines.yaml`, all presets, etc.) and reports any errors. Run this after making changes to your configuration to ensure everything is correct before starting the server.
-
-```bash
-python -m aegis.cli validate-config
-```
-
-### `run-evals`
-
-Runs the automated evaluation suite against a LangFuse dataset. This is used to test the agent's performance and catch regressions.
-
-```bash
-# Example: Run the 'file_ops_tests' dataset using gpt-4 as the judge
-python -m aegis.cli run-evals file_ops_tests --judge-model openai_gpt4
-```
-
-### `new-tool`
-
-An interactive command to create a boilerplate Python file for a new tool in the `plugins/` directory.
-
-```bash
-python -m aegis.cli new-tool
-```
-
-### `validate-tool`
-
-Checks a single tool file for syntax errors and ensures its registration metadata is correct.
-
-```bash
-python -m aegis.cli validate-tool plugins/my_new_tool.py```
+### Other Commands
+The shell includes many other commands for managing presets, artifacts, and configuration. Use `help` to see them all, or `help <command>` for details on a specific command.

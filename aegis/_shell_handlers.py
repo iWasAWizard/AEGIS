@@ -15,8 +15,6 @@ from pathlib import Path
 import cmd2
 import requests
 import yaml
-from langfuse import Langfuse
-from langgraph.pregel import GraphInterrupt
 from rich.json import JSON
 from rich.markdown import Markdown
 from rich.table import Table
@@ -75,25 +73,38 @@ async def _task_run_handler(self: cmd2.Cmd, args):
 
 
 async def _task_resume_handler(self: cmd2.Cmd, args):
-    """Handles the 'task resume' sub-command."""
+    """Handles the 'task resume' sub-command for the CLI."""
     task_id = args.task_id
     self.poutput(f"▶️  Attempting to resume task: {cmd2.ansi.style(task_id, cyan=True)}")
+
+    interrupted_session = self.interrupted_tasks.pop(task_id, None)
+    if not interrupted_session:
+        self.perror(
+            f"ERROR: Paused task with ID '{task_id}' not found in this shell session."
+        )
+        return
+
     feedback = self.read_input("Provide your feedback for the agent > ")
 
+    agent_graph = interrupted_session["graph"]
+    saved_state_dict = interrupted_session["state"]
+    saved_state_dict["human_feedback"] = feedback
+
     try:
-        response = requests.post(
-            "http://localhost:8000/api/resume",
-            json={"task_id": task_id, "human_feedback": feedback},
-        )
-        response.raise_for_status()
-        result = response.json()
         self.poutput(
-            cmd2.ansi.style("✅ Task resumed and completed successfully.", green=True)
+            f"\n{cmd2.ansi.style('--- Agent Execution Resuming ---', yellow=True)}"
         )
+        final_state_dict = await agent_graph.ainvoke(saved_state_dict)
+
+        self.poutput(
+            f"\n{cmd2.ansi.style('--- Agent Execution Complete ---', green=True)}"
+        )
+        final_state = TaskState(**final_state_dict)
         self.poutput(f"\n{cmd2.ansi.style('Final Summary:', bold=True)}")
-        self.console.print(Markdown(result.get("summary", "No summary provided.")))
-    except requests.exceptions.RequestException as e:
-        self.perror(f"ERROR: Failed to call resume API: {e}")
+        self.console.print(
+            Markdown(final_state.final_summary or "[No summary was generated]")
+        )
+
     except Exception as e:
         self.perror(f"An unexpected error occurred during resumption: {e}")
 
@@ -359,55 +370,6 @@ def _preset_delete_handler(self: cmd2.Cmd, args):
         self.poutput("Deletion cancelled.")
 
 
-# --- Eval Handlers ---
-
-
-async def _eval_run_handler(self: cmd2.Cmd, args):
-    self.poutput(
-        f"🧪 Starting evaluation run for dataset: {cmd2.ansi.style(args.dataset_name, cyan=True, bold=True)}"
-    )
-    try:
-        from aegis.evaluation.eval_runner import main as run_eval_main
-
-        await run_eval_main(args.dataset_name, args.judge_model)
-    except ImportError as e:
-        self.perror(f"ERROR: Failed to import evaluation module: {e}")
-    except Exception as e:
-        self.perror(f"EVALUATION FAILED: {e}")
-
-
-def _eval_list_datasets_handler(self: cmd2.Cmd):
-    try:
-        langfuse = Langfuse()
-        datasets = langfuse.get_datasets()
-        table = Table(title="📊 Available LangFuse Datasets", expand=True)
-        table.add_column("Name", style="cyan")
-        table.add_column("Items", style="white")
-        for dataset in datasets:
-            table.add_row(dataset.name, str(len(dataset.items)))
-        self.console.print(table)
-    except Exception as e:
-        self.perror(f"Failed to fetch datasets from LangFuse: {e}")
-
-
-def _eval_view_dataset_handler(self: cmd2.Cmd, args):
-    try:
-        langfuse = Langfuse()
-        dataset = langfuse.get_dataset(name=args.dataset_name)
-        self.poutput(
-            f"--- Items in Dataset: {cmd2.ansi.style(dataset.name, cyan=True)} ---"
-        )
-        for item in dataset.items:
-            prompt = (item.input or {}).get("task", {}).get("prompt", "N/A")
-            self.poutput(f"- Item ID: {item.id}")
-            self.poutput(
-                f"  Prompt: {(prompt[:100] + '...') if len(prompt) > 100 else prompt}"
-            )
-            self.poutput(f"  Expected Output: {item.expected_output}")
-    except Exception as e:
-        self.perror(f"Failed to fetch dataset '{args.dataset_name}': {e}")
-
-
 # --- Backend Handlers ---
 
 
@@ -483,32 +445,39 @@ async def _execute_graph(self: cmd2.Cmd, payload: LaunchRequest):
         graph_structure = AgentGraphConfig(**preset_config.model_dump())
         agent_graph = AgentGraph(graph_structure).build_graph()
 
-        langfuse_handler = CallbackHandler()
-        invocation_config = {
-            "callbacks": [langfuse_handler],
-            "metadata": {"user_id": "aegis-shell-user", "session_id": task_id},
-        }
-
         self.poutput(
             f"\n{cmd2.ansi.style('--- Agent Execution Starting ---', yellow=True)}"
         )
-        final_state_dict = await agent_graph.ainvoke(
-            initial_state.model_dump(), config=invocation_config
-        )
-        self.poutput(
-            f"\n{cmd2.ansi.style('--- Agent Execution Complete ---', green=True)}"
-        )
+        final_state_dict = await agent_graph.ainvoke(initial_state.model_dump())
         final_state = TaskState(**final_state_dict)
-        self.poutput(f"\n{cmd2.ansi.style('Final Summary:', bold=True)}")
-        self.console.print(
-            Markdown(final_state.final_summary or "[No summary was generated]")
-        )
 
-    except GraphInterrupt:
-        self.poutput(
-            f"\n{cmd2.ansi.style('⏸️ TASK PAUSED:', yellow=True, bold=True)} Agent has paused for human input."
-        )
-        self.poutput("To resume, use the 'task resume <task_id>' command.")
+        if (
+            final_state.history
+            and final_state.history[-1].plan.tool_name == "ask_human_for_input"
+        ):
+            self.interrupted_tasks[task_id] = {
+                "graph": agent_graph,
+                "state": final_state.model_dump(),
+                "preset_config": preset_config,
+            }
+            self.poutput(
+                f"\n{cmd2.ansi.style('⏸️ TASK PAUSED:', yellow=True, bold=True)} Agent has paused for human input."
+            )
+            self.poutput(
+                f"Task ID for resumption: {cmd2.ansi.style(task_id, cyan=True)}"
+            )
+            self.poutput("To resume, use the 'task resume <task_id>' command.")
+        else:
+            self.poutput(
+                f"\n{cmd2.ansi.style('--- Agent Execution Complete ---', green=True)}"
+            )
+            self.poutput(f"\n{cmd2.ansi.style('Final Summary:', bold=True)}")
+            self.console.print(
+                Markdown(final_state.final_summary or "[No summary was generated]")
+            )
+
+    except Exception as e:
+        self.perror(f"An unexpected error occurred during task execution: {e}")
 
 
 # --- Tab Completion Choice Providers ---
@@ -550,12 +519,7 @@ def _provide_backend_choices(self):
 
 
 def _provide_dataset_choices(self):
-    try:
-        langfuse = Langfuse()
-        datasets = langfuse.get_datasets()
-        return sorted([d.name for d in datasets])
-    except Exception:
-        return []
+    return []
 
 
 def _session_set_value_completer(self, text, line, begidx, endidx):

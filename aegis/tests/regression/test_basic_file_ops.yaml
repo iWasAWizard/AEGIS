@@ -7,6 +7,11 @@ task:
     3. The verification is successful if the tool output is exactly 'hello world'.
     4. After successful verification, use the 'delete_file' tool to clean up 'test_file.tmp'.
     5. Finally, use the 'finish' tool with a status of 'success'.
+  expected_output: >
+    The task was to create a file named 'test_file.tmp' with the content 'hello world', verify its contents, and then delete it.
+    I successfully used the `write_to_file` tool to create the file.
+    I then used the `read_file` tool and confirmed the content was 'hello world'.
+    Finally, I cleaned up by deleting the file with the `delete_file` tool. The task is complete.
 
 config: "verified_flow"
 

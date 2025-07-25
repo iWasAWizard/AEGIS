@@ -37,9 +37,15 @@ def mock_instructor_client(monkeypatch):
     mock_create = AsyncMock()
     mock_client_instance = MagicMock()
     mock_client_instance.chat.completions.create = mock_create
-    monkeypatch.setattr("aegis.agents.steps.reflect_and_plan.instructor.patch", lambda x: mock_client_instance)
+    monkeypatch.setattr(
+        "aegis.agents.steps.reflect_and_plan.instructor.patch",
+        lambda x: mock_client_instance,
+    )
     monkeypatch.setattr("aegis.agents.steps.reflect_and_plan.OpenAI", MagicMock())
-    monkeypatch.setattr("aegis.agents.steps.reflect_and_plan.get_backend_config", MagicMock(return_value=MagicMock(llm_url="http://test/v1/c", model="test")))
+    monkeypatch.setattr(
+        "aegis.agents.steps.reflect_and_plan.get_backend_config",
+        MagicMock(return_value=MagicMock(llm_url="http://test/v1/c", model="test")),
+    )
     return mock_create
 
 
@@ -65,10 +71,16 @@ def test_construct_planning_prompt(populated_state):
 @pytest.mark.asyncio
 async def test_reflect_and_plan_success(mock_instructor_client):
     """Verify the step correctly parses a valid LLM response."""
-    valid_plan = AgentScratchpad(thought="test thought", tool_name="test_tool", tool_args={"a": 1})
+    valid_plan = AgentScratchpad(
+        thought="test thought", tool_name="test_tool", tool_args={"a": 1}
+    )
     mock_instructor_client.return_value = valid_plan
 
-    state = TaskState(task_id="t1", task_prompt="p", runtime=RuntimeExecutionConfig(backend_profile="test"))
+    state = TaskState(
+        task_id="t1",
+        task_prompt="p",
+        runtime=RuntimeExecutionConfig(backend_profile="test"),
+    )
 
     result_dict = await reflect_and_plan(state)
 
@@ -81,10 +93,18 @@ async def test_reflect_and_plan_success(mock_instructor_client):
 
 
 @pytest.mark.asyncio
-async def test_reflect_and_plan_raises_planner_error_on_bad_json(mock_instructor_client):
+async def test_reflect_and_plan_raises_planner_error_on_bad_json(
+    mock_instructor_client,
+):
     """Verify the step raises a PlannerError if the LLM response is not valid JSON."""
-    mock_instructor_client.side_effect = PlannerError("LLM failed to produce valid JSON")
-    state = TaskState(task_id="t2", task_prompt="p", runtime=RuntimeExecutionConfig(backend_profile="test"))
+    mock_instructor_client.side_effect = PlannerError(
+        "LLM failed to produce valid JSON"
+    )
+    state = TaskState(
+        task_id="t2",
+        task_prompt="p",
+        runtime=RuntimeExecutionConfig(backend_profile="test"),
+    )
 
     with pytest.raises(PlannerError):
         await reflect_and_plan(state)

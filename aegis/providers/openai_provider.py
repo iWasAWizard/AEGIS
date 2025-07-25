@@ -2,16 +2,23 @@
 """
 A concrete implementation of the BackendProvider for OpenAI's API.
 """
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Type
 import io
 
 import openai
+from pydantic import BaseModel
 
 from aegis.exceptions import PlannerError, ToolExecutionError
 from aegis.providers.base import BackendProvider
 from aegis.schemas.backend import OpenAIBackendConfig
 from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.utils.logger import setup_logger
+
+try:
+    import instructor
+except ImportError:
+    instructor = None
+
 
 logger = setup_logger(__name__)
 
@@ -24,6 +31,12 @@ class OpenAIProvider(BackendProvider):
     def __init__(self, config: OpenAIBackendConfig):
         self.config = config
         self.client = openai.AsyncOpenAI(api_key=self.config.api_key)
+        if instructor:
+            self.structured_client = instructor.patch(
+                openai.AsyncOpenAI(api_key=self.config.api_key)
+            )
+        else:
+            self.structured_client = None
 
     async def get_completion(
         self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig
@@ -50,6 +63,23 @@ class OpenAIProvider(BackendProvider):
         except Exception as e:
             logger.exception("An unexpected error occurred while querying OpenAI.")
             raise PlannerError(f"Unexpected error during OpenAI query: {e}")
+
+    async def get_structured_completion(
+        self, system_prompt: str, user_prompt: str, response_model: Type[BaseModel]
+    ) -> BaseModel:
+        if not self.structured_client:
+            raise ToolExecutionError(
+                "The 'instructor' library is required for structured completion."
+            )
+        response = await self.structured_client.chat.completions.create(
+            model=self.config.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_model=response_model,
+        )
+        return response
 
     async def get_speech(self, text: str) -> bytes:
         """Generates speech using OpenAI's TTS-1 model."""

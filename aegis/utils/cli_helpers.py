@@ -7,6 +7,8 @@ like configuration validation and tool scaffolding. By centralizing the
 logic here, we ensure that both the interactive shell (shell.py) and the
 FastAPI server (routes_dev.py) have consistent behavior.
 """
+import importlib.util
+import sys
 from pathlib import Path
 
 import yaml
@@ -61,9 +63,41 @@ def validate_all_configs() -> list:
     presets_dir = Path("presets")
     if presets_dir.is_dir():
         for preset_file in presets_dir.glob("*.yaml"):
-            check(f"Preset: {preset_file.name}", lambda p=preset_file.stem: load_agent_config(profile=p))
+            check(
+                f"Preset: {preset_file.name}",
+                lambda p=preset_file.stem: load_agent_config(profile=p),
+            )
 
     return results
+
+
+def validate_tool_file(file_path: Path):
+    """
+    Validates a single tool file by attempting to import it.
+    This checks for syntax errors and ensures that the file is importable,
+    which is a prerequisite for tool registration to occur.
+    """
+    if not file_path.is_file():
+        raise FileNotFoundError(f"Tool file not found at: {file_path}")
+
+    module_name = f"aegis.tool_validation.{file_path.stem}"
+
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if not spec or not spec.loader:
+        raise ImportError(f"Could not create module spec for {file_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+
+    try:
+        spec.loader.exec_module(module)
+        logger.info(f"Successfully validated and imported tool file: {file_path}")
+    except Exception as e:
+        logger.error(f"Validation failed for {file_path}. Error: {e}")
+        raise e
+    finally:
+        if module_name in sys.modules:
+            del sys.modules[module_name]
 
 
 def _to_pascal_case(snake_str: str) -> str:

@@ -5,9 +5,10 @@ A concrete implementation of the BackendProvider for the BEND stack using Kobold
 import asyncio
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Type
 
 import aiohttp
+from pydantic import BaseModel
 
 from aegis.exceptions import PlannerError, ToolExecutionError
 from aegis.providers.base import BackendProvider
@@ -94,6 +95,13 @@ class KoboldcppProvider(BackendProvider):
             raise PlannerError("Query to KoboldCPP timed out.") from e
         except aiohttp.ClientError as e:
             raise PlannerError(f"Network error while querying KoboldCPP: {e}") from e
+
+    async def get_structured_completion(
+        self, system_prompt: str, user_prompt: str, response_model: Type[BaseModel]
+    ) -> BaseModel:
+        raise NotImplementedError(
+            "KoboldCPP provider does not support structured completion."
+        )
 
     async def get_speech(self, text: str) -> bytes:
         """Generates speech by calling the BEND voice proxy."""

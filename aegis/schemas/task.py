@@ -24,6 +24,8 @@ class TaskRequest(BaseModel):
     :vartype task_id: Optional[str]
     :ivar model: An optional override for the LLM model to be used for this specific task.
     :vartype model: Optional[str]
+    :ivar expected_output: The 'golden answer' for this task, used for evaluation.
+    :vartype expected_output: Optional[str]
     """
 
     prompt: str = Field(..., description="Natural language input to the agent.")
@@ -34,4 +36,8 @@ class TaskRequest(BaseModel):
     model: Optional[str] = Field(
         default=None,
         description="Optional override for model used in execution.",
+    )
+    expected_output: Optional[str] = Field(
+        default=None,
+        description="The 'golden answer' for this task, used for evaluation.",
     )

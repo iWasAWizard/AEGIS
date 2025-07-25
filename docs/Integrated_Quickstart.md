@@ -1,9 +1,3 @@
-Understood. Here is the expanded version of the **Combined BEND + AEGIS Quickstart Guide**.
-
-This guide now includes more context on how the two systems connect, clearer instructions for each step, and a more detailed verification process to ensure users have a smooth and successful setup experience.
-
----
-
 # Quickstart Guide (BEND + AEGIS)
 
 Welcome! This guide will walk you through setting up and running the complete, self-hosted AEGIS and BEND stack. By running both projects together, you get a powerful, fully autonomous agentic system that runs entirely on your own hardware, with no reliance on external cloud services.
@@ -32,26 +26,33 @@ Before you start, you'll need to have a few things installed on your machine:
 
 First, we need to get the BEND intelligence stack up and running. This will be the "power source" for AEGIS.
 
-1.  **Clone and Prepare BEND:**
-    Find a good place for your projects, then clone the BEND repository.
+1.  **Clone, Configure Auth:**
+    Clone the BEND repository, enter the directory, and create your `.env` file.
     ```bash
     git clone https://github.com/your-username/BEND.git
     cd BEND
+    cp .env.example .env
+    ```
+    Now, **edit the `.env` file** and add your Hugging Face token if you plan to use gated models like Llama 3.
+
+2.  **Download Your Models:**
+    Download both the full repository for vLLM and the single GGUF file for KoboldCPP.
+    ```bash
+    # Download the full Llama 3 repository for vLLM
+    ./scripts/download-hf-model.sh "meta-llama/Meta-Llama-3-8B-Instruct"
+
+    # Download the Llama 3 GGUF file for KoboldCPP
+    ./scripts/download-gguf-model.sh llama3
     ```
 
-2.  **Download and Configure a Model:**
-    BEND needs to know which language model to serve. We'll use the recommended `llama3` model.
+3.  **Configure the Stack:**
+    Run the `switch-model.sh` script to configure all services to use the model you just downloaded.
     ```bash
-    # Download the GGUF version needed for the KoboldCPP service
-    ./scripts/download-model.sh llama3
-    
-    # Configure the .env file for both vLLM and KoboldCPP
     ./scripts/switch-model.sh llama3
     ```
-    This creates the crucial `.env` file that tells Docker Compose which models to load.
 
-3.  **Start the BEND Stack:**
-    Now, launch all the BEND services. This command will create the shared Docker network (`bend_bend-net`) that AEGIS will join later.
+4.  **Start the BEND Stack:**
+    Launch all the BEND services.
     -   **For CPU-only:**
         ```bash
         ./scripts/manage.sh up
@@ -61,21 +62,18 @@ First, we need to get the BEND intelligence stack up and running. This will be t
         ./scripts/manage.sh up --gpu
         ```
 
-4.  **Verify BEND:**
-    In a new terminal, run the healthcheck to ensure all services are running correctly. **It is important to wait for this step to succeed before starting AEGIS.**
+5.  **Verify BEND:**
+    In a new terminal, run the healthcheck. **Wait for all services to report `[ OK ]` before proceeding.**
     ```bash
-    # Make sure you are in the BEND directory
-    cd /path/to/your/BEND
     ./scripts/manage.sh healthcheck
     ```
-    vLLM can sometimes take a minute or two to download its model and become healthy. If the healthcheck fails at first, wait a moment and try again. Once all services show `[ OK ]`, your backend is ready.
 
 ## Step 2: Set Up the AEGIS Agent Framework
 
 Now, we'll set up AEGIS and connect it to our running BEND instance.
 
 1.  **Clone AEGIS:**
-    Navigate back to your main projects folder (the parent directory of BEND) and clone the AEGIS repository. It's important that BEND and AEGIS are in the same parent folder for the scripts to work correctly.
+    Navigate back to your main projects folder (the parent directory of BEND) and clone the AEGIS repository.
     ```bash
     cd ..
     git clone https://github.com/your-username/AEGIS.git
@@ -83,19 +81,9 @@ Now, we'll set up AEGIS and connect it to our running BEND instance.
     ```
 
 2.  **Configure the Environment:**
-    AEGIS needs its own `.env` file to know how to connect to BEND's services and your LangFuse instance.
+    AEGIS needs its own `.env` file for secrets. The only secrets used by default are for machine passwords, but you may add your own.
     ```bash
     cp .env.example .env
-    ```
-    Now, open the new `.env` file. The only thing you **must** do is get your **LangFuse API keys** from the LangFuse UI running at `http://localhost:12012`. Follow the on-screen setup, create a project named `AEGIS`, go to "Project Settings" -> "API Keys", and copy the keys into your `.env` file. It should look something like this:
-    ```env
-    # AEGIS/.env
-    LANGFUSE_PUBLIC_KEY=pk-lf-...your-public-key...
-    LANGFUSE_SECRET_KEY=sk-lf-...your-secret-key...
-    
-    # The BEND_NETWORK_NAME should be correct by default if your BEND
-    # folder is named 'BEND'. If you renamed it, update this value.
-    BEND_NETWORK_NAME=bend_bend-net
     ```
 
 3.  **Synchronize Model Definitions:**
@@ -103,7 +91,6 @@ Now, we'll set up AEGIS and connect it to our running BEND instance.
     ```bash
     ./scripts/sync_models.sh
     ```
-    This reads `BEND/models.yaml` and updates the local `AEGIS/models.yaml`, creating a single source of truth and preventing configuration mismatches.
 
 ## Step 3: Start AEGIS
 
@@ -111,9 +98,6 @@ With both repositories configured, you can now start the AEGIS service.
 
 ```bash
 # Make sure you are in the AEGIS directory
-cd /path/to/your/AEGIS
-
-# This command will build the agent and connect it to BEND's network
 docker compose up --build -d
 ```
 
@@ -126,24 +110,24 @@ You now have the complete, self-hosted stack running.
 
 2.  **Configure the Task:**
     -   **Agent Preset:** Choose `Verified Agent Flow`.
-    -   **Backend Profile:** Choose `vllm_local`. This tells AEGIS to send its requests to the vLLM service running in your BEND stack.
+    -   **Backend Profile:** Choose `vllm_local`.
     -   **Agent Model:** Choose `Llama 3 Instruct Family`.
     -   **Task Prompt:** Give it a task that uses its tools. For example:
         > `Use your long-term memory to remember that the secret key is 'blue-banana'. Then, recall the key and finish the task, stating the key in your reason.`
 
 3.  **Launch and Observe:**
     -   Click **"Launch Task"**.
-    -   Watch the logs in the AEGIS UI.
-    -   For a highly detailed, step-by-step view of the agent's thoughts, open the **LangFuse UI** at `http://localhost:12012`. You will see a new trace appear for your task, allowing you to inspect every tool call and LLM prompt.
+    -   Watch the logs in the AEGIS UI's **Live Task Logs** panel.
+    -   When complete, view the detailed results in the **Artifacts** tab.
 
 ## Next Steps
 
-You have now successfully set up and run a fully autonomous, fully self-hosted agentic framework! You can now experiment with more complex prompts, build specialist agents with the MoE pattern, or start developing your own custom tools.
+You have now successfully set up and run a fully autonomous, fully self-hosted agentic framework!
 
 To stop the entire stack, you can run the `down` command in both repositories:
 ```bash
 # In the AEGIS directory
-docker compose down
+./manage_stack.sh down
 
 # In the BEND directory
 ./scripts/manage.sh down

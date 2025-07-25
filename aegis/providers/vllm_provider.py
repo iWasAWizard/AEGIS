@@ -4,15 +4,23 @@ A concrete implementation of the BackendProvider for a vLLM backend.
 """
 import asyncio
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Type
 
 import aiohttp
+from pydantic import BaseModel
 
 from aegis.exceptions import PlannerError, ToolExecutionError
 from aegis.providers.base import BackendProvider
 from aegis.schemas.backend import VllmBackendConfig
 from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.utils.logger import setup_logger
+
+try:
+    import instructor
+    from openai import OpenAI
+except ImportError:
+    instructor = None
+    OpenAI = None
 
 logger = setup_logger(__name__)
 
@@ -102,6 +110,26 @@ class VllmProvider(BackendProvider):
             raise PlannerError("Query to vLLM timed out.") from e
         except aiohttp.ClientError as e:
             raise PlannerError(f"Network error while querying vLLM: {e}") from e
+
+    async def get_structured_completion(
+        self, system_prompt: str, user_prompt: str, response_model: Type[BaseModel]
+    ) -> BaseModel:
+        if not instructor or not OpenAI:
+            raise ToolExecutionError(
+                "The 'instructor' and 'openai' libraries are required for structured completion."
+            )
+        base_url = self.config.llm_url.rsplit("/", 1)[0]
+        client = instructor.patch(OpenAI(base_url=base_url, api_key="not-needed"))
+
+        response = await client.chat.completions.create(
+            model=self.config.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_model=response_model,
+        )
+        return response
 
     async def get_speech(self, text: str) -> bytes:
         raise NotImplementedError("vLLM provider does not support speech synthesis.")

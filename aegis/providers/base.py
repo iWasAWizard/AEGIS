@@ -3,8 +3,9 @@
 Defines the abstract base class for all backend providers.
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Type
 
+from pydantic import BaseModel
 from aegis.schemas.runtime import RuntimeExecutionConfig
 
 
@@ -25,6 +26,15 @@ class BackendProvider(ABC):
         :param messages: A list of message dictionaries, following the standard {'role': ..., 'content': ...} format.
         :param runtime_config: The runtime configuration for this specific request.
         :return: The string content of the model's response.
+        """
+        pass
+
+    @abstractmethod
+    async def get_structured_completion(
+        self, system_prompt: str, user_prompt: str, response_model: Type[BaseModel]
+    ) -> BaseModel:
+        """
+        Gets a structured completion from the backend's language model.
         """
         pass
 

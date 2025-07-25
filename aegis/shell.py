@@ -29,6 +29,7 @@ class AegisShell(cmd2.Cmd):
         # Session-specific settings
         self.session_backend = None
         self.session_preset = None
+        self.interrupted_tasks = {}
 
     def startup(self):
         """This method is called once at the start of the application."""
@@ -53,7 +54,7 @@ class AegisShell(cmd2.Cmd):
     parser_resume.add_argument(
         "task_id",
         help="The ID of the paused task.",
-        choices_provider=lambda self: self._provide_artifact_choices(),
+        choices_provider=lambda self: sorted(self.interrupted_tasks.keys()),
     )
 
     @cmd2.with_argparser(task_parser)
@@ -186,43 +187,6 @@ class AegisShell(cmd2.Cmd):
         if hasattr(args, "func"):
             args.func(self, args)
 
-    # --- Noun: eval ---
-    eval_parser = cmd2.Cmd2ArgumentParser(description="Manage and run evaluations.")
-    eval_subparsers = eval_parser.add_subparsers(
-        title="sub-commands", help="Evaluation actions"
-    )
-
-    parser_run_evals = eval_subparsers.add_parser(
-        "run", help="Run an evaluation suite against a LangFuse dataset."
-    )
-    parser_run_evals.add_argument(
-        "dataset_name",
-        help="The name of the dataset in LangFuse.",
-        choices_provider=lambda self: self._provide_dataset_choices(),
-    )
-    parser_run_evals.add_argument(
-        "--judge-model",
-        default="openai_gpt4",
-        help="The model profile for the judge LLM.",
-    )
-
-    parser_list_datasets = eval_subparsers.add_parser(
-        "list-datasets", help="List all available datasets in LangFuse."
-    )
-    parser_view_dataset = eval_subparsers.add_parser(
-        "view", help="View the items in a LangFuse dataset."
-    )
-    parser_view_dataset.add_argument(
-        "dataset_name",
-        help="The name of the dataset to view.",
-        choices_provider=lambda self: self._provide_dataset_choices(),
-    )
-
-    @cmd2.with_argparser(eval_parser)
-    async def do_eval(self, args):
-        if hasattr(args, "func"):
-            await args.func(self, args)
-
     # --- Noun: backend ---
     backend_parser = cmd2.Cmd2ArgumentParser(
         description="Manage backend configurations."
@@ -289,9 +253,6 @@ class AegisShell(cmd2.Cmd):
         _list_presets_handler,
         _preset_view_handler,
         _preset_delete_handler,
-        _eval_run_handler,
-        _eval_list_datasets_handler,
-        _eval_view_dataset_handler,
         _backend_list_handler,
         _session_set_handler,
         _session_view_handler,
@@ -339,13 +300,6 @@ class AegisShell(cmd2.Cmd):
     )
     parser_delete_preset.set_defaults(
         func=lambda self, args: self._preset_delete_handler(args)
-    )
-    parser_run_evals.set_defaults(func=lambda self, args: self._eval_run_handler(args))
-    parser_list_datasets.set_defaults(
-        func=lambda self, args: self._eval_list_datasets_handler()
-    )
-    parser_view_dataset.set_defaults(
-        func=lambda self, args: self._eval_view_dataset_handler(args)
     )
     parser_list_backends.set_defaults(
         func=lambda self, args: self._backend_list_handler()

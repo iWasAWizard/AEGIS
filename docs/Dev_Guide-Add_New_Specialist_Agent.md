@@ -96,7 +96,7 @@ You can test your specialist directly from the AEGIS UI.
 4.  **Task Prompt:** Give it a prompt that is specific to its domain:
     > `"Find out the schema of the 'users' table on the 'ubuntu-qemu' machine."`
 
-When you launch this task, you can look at the trace in LangFuse. When you inspect the `reflect_and_plan` step, you will see that the "Available Tools" section of the prompt is now very short—it only contains the four tools from your allow-list. This makes it much easier for the agent to succeed.
+When you launch this task, you can inspect the `reflect_and_plan` step in the provenance report in the Artifacts tab. You will see that the "Available Tools" section of the prompt is now very short—it only contains the four tools from your allow-list. This makes it much easier for the agent to succeed.
 
 ### B. Delegation from an Orchestrator (The MoE Pattern)
 

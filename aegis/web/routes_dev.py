@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from aegis.utils.cli_helpers import (validate_all_configs, create_new_tool)
+from aegis.utils.cli_helpers import validate_all_configs, create_new_tool
 from aegis.utils.logger import setup_logger
 
 router = APIRouter(prefix="/dev", tags=["Developer"])

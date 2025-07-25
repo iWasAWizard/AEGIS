@@ -1,3 +1,14 @@
+Of course. Here is the next file, `docs/API_Reference.md`.
+
+*   **TL;DR:**
+    *   This is the complete, correct version of `docs/API_Reference.md`.
+    *   All mentions of LangFuse have been removed.
+
+```markdown
+docs/API_Reference.md
+```
+
+```markdown
 # AEGIS API Reference
 
 The AEGIS API provides a set of RESTful endpoints for launching and managing autonomous agent tasks. It is served by a FastAPI application and uses Pydantic for strict data validation and serialization.
@@ -10,7 +21,7 @@ The base URL for all endpoints described below is `http://localhost:8000/api`.
 
 ### `POST /launch`
 
-This is the main endpoint for initiating a new agent task. It accepts a comprehensive JSON payload that defines the agent's goal and its complete configuration for the run. The request is synchronous and will hold the connection open until the agent has finished its task, returning the final result.
+This is the main endpoint for initiating a new agent task. It accepts a comprehensive JSON payload that defines the agent's goal and its complete configuration for the run. The request is synchronous and will hold the connection open until the agent has finished its task (or paused for human input), returning the final result.
 
 #### Request Body
 
@@ -51,7 +62,7 @@ The request body must be a JSON object conforming to the `LaunchRequest` schema.
 -   **`200 OK`**: The task completed successfully (or was successfully paused). The response body will be a `LaunchResponse` object.
 
     -   **`task_id`** `(string)`: The unique ID for the completed task.
-    -   **`summary`** `(string)`: A human-readable, Markdown-formatted summary of the entire task.
+    -   **`summary`** `(string)`: A human-readable, Markdown-formatted summary of the entire task. For a paused task, this will contain the agent's question to the human.
     -   **`status`** `(string)`: The final status. Will be `"COMPLETED"` for a normal run, or `"PAUSED"` if the agent is waiting for human input.
     -   **`history`** `(array of objects)`: A step-by-step log of the agent's execution. Each object in the array represents one step and contains:
         -   `thought` `(string)`: The agent's reasoning for the step.
@@ -98,7 +109,7 @@ These are `GET` endpoints used by the UI to populate its various panels.
 -   **`GET /inventory`**: Returns a list of all available tools and their metadata, including their input schemas.
 -   **`GET /presets`**: Returns a list of all available agent configuration presets.
 -   **`GET /backends`**: Returns a list of all available backend profiles from `backends.yaml`.
--   **`GET /models`**: Returns the list of all models from the synchronized `models.yaml`.
+-   **`GET /models?backend_profile=<name>`**: Returns the list of models available from the specified backend.
 -   **`GET /artifacts`**: Returns a list of all completed tasks that have generated reports or artifacts.
 -   **`GET /artifacts/{task_id}/summary`**: Returns the raw Markdown summary for a specific task.
 -   **`GET /artifacts/{task_id}/provenance`**: Returns the raw JSON provenance report for a specific task.
@@ -110,4 +121,4 @@ These are `GET` endpoints used by the UI to populate its various panels.
 Establishes a WebSocket connection for receiving real-time logs from the agent as it executes a task.
 
 -   **Protocol:** `ws` or `wss`
--   **Messages:** The server pushes plain text log messages to the client as they are generated. The connection is one-way (server-to-client).
+-   **Messages:** The server pushes plain text log messages to the client as they are generated. The connection is one-way (server-to-client).s

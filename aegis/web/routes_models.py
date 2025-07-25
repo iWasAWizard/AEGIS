@@ -43,14 +43,14 @@ async def get_available_models(backend_profile: str = Query(...)) -> List[ModelE
             served_model_ids = [backend_config.model]
 
         if not served_model_ids:
-            logger.warning(f"Backend '{backend_profile}' did not return any served models.")
+            logger.warning(
+                f"Backend '{backend_profile}' did not return any served models."
+            )
             return []
 
         # Filter the main manifest to only include models that are actively served
         available_models = [
-            model
-            for model in aegis_manifest.models
-            if model.name in served_model_ids
+            model for model in aegis_manifest.models if model.name in served_model_ids
         ]
         logger.info(
             f"Found {len(available_models)} available models served by backend '{backend_profile}'."
@@ -64,5 +64,7 @@ async def get_available_models(backend_profile: str = Query(...)) -> List[ModelE
             detail=f"Could not connect to the backend service at {getattr(backend_config, 'llm_url', 'unknown URL')}.",
         )
     except Exception as e:
-        logger.exception("An unexpected error occurred while fetching models from backend.")
+        logger.exception(
+            "An unexpected error occurred while fetching models from backend."
+        )
         raise HTTPException(status_code=500, detail=str(e))

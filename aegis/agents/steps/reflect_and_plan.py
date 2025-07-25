@@ -138,13 +138,17 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
     system_prompt, user_prompt = construct_planning_prompt(state)
 
     if not state.runtime.backend_profile:
-        raise ConfigurationError("Backend profile is not set in the current task state.")
+        raise ConfigurationError(
+            "Backend profile is not set in the current task state."
+        )
 
     try:
         backend_config = get_backend_config(state.runtime.backend_profile)
         backend_url = getattr(backend_config, "llm_url", None)
         if not backend_url:
-            raise ConfigurationError(f"Backend profile '{state.runtime.backend_profile}' has no 'llm_url'.")
+            raise ConfigurationError(
+                f"Backend profile '{state.runtime.backend_profile}' has no 'llm_url'."
+            )
 
         base_url = backend_url.rsplit("/", 1)[0]
         model_name = getattr(backend_config, "model", "default-model")

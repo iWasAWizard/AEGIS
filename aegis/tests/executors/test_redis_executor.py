@@ -74,7 +74,5 @@ def test_redis_executor_connection_fails(mock_redis_client, mock_config_with_red
 
     executor = RedisExecutor()
     assert executor.client is None
-    with pytest.raises(
-        ToolExecutionError, match="Redis client is not connected"
-    ):
+    with pytest.raises(ToolExecutionError, match="Redis client is not connected"):
         executor.set_value("k", "v")

@@ -60,7 +60,9 @@ def test_dispatch_subtask_to_agent_http_error(mock_requests_post):
         prompt="This will fail.", preset="default", backend_profile="test_backend"
     )
 
-    with pytest.raises(ToolExecutionError, match="Sub-agent task failed: Sub-agent failed."):
+    with pytest.raises(
+        ToolExecutionError, match="Sub-agent task failed: Sub-agent failed."
+    ):
         dispatch_subtask_to_agent(input_data)
 
 
