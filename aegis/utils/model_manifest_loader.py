@@ -21,6 +21,7 @@ class ModelEntry(BaseModel):
     name: str
     formatter_hint: str
     notes: Optional[str] = None
+    ollama_model_name: Optional[str] = None
 
 
 class ModelManifest(BaseModel):

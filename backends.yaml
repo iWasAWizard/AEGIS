@@ -15,7 +15,7 @@ backends:
 
 - profile_name: ollama_local
   type: ollama
-  llm_url: http://ollama:11434/api
+  llm_url: http://ollama:11434
   model: "llama3:instruct"
   temperature: 0.2
   max_tokens_to_generate: 2048

@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from aegis.exceptions import ConfigurationError
 from aegis.schemas.backend import (
-    KoboldcppBackendConfig,
+    OllamaBackendConfig,
     OpenAIBackendConfig,
     VllmBackendConfig,
     BaseBackendConfig,
@@ -71,8 +71,8 @@ def get_backend_config(profile_name: str) -> Any:
     try:
         # Determine which Pydantic model to use based on the 'type' field
         backend_type = backend_config_raw.get("type")
-        if backend_type == "koboldcpp":
-            return KoboldcppBackendConfig(**backend_config_raw)
+        if backend_type == "ollama":
+            return OllamaBackendConfig(**backend_config_raw)
         elif backend_type == "openai":
             return OpenAIBackendConfig(**backend_config_raw)
         elif backend_type == "vllm":

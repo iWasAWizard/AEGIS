@@ -7,7 +7,7 @@ import json
 from typing import List, Dict, Any, Optional, Type
 
 import aiohttp
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from aegis.exceptions import PlannerError, ToolExecutionError
 from aegis.providers.base import BackendProvider
@@ -32,7 +32,7 @@ class OllamaProvider(BackendProvider):
         """
         Gets a completion from the Ollama chat endpoint.
         """
-        url = f"{self.config.llm_url}/chat"
+        url = f"{self.config.llm_url}/api/chat"
         payload = {
             "model": self.config.model,
             "messages": messages,
@@ -100,9 +100,57 @@ class OllamaProvider(BackendProvider):
     async def get_structured_completion(
         self, system_prompt: str, user_prompt: str, response_model: Type[BaseModel]
     ) -> BaseModel:
-        raise NotImplementedError(
-            "Ollama provider does not support structured completion yet."
+        """
+        Gets a structured completion from Ollama by requesting a JSON object
+        and validating it against the provided Pydantic model.
+        """
+        url = f"{self.config.llm_url}/api/chat"
+        # We add a specific instruction to the system prompt to ensure JSON output
+        json_system_prompt = (
+            f"{system_prompt}\n\n"
+            "Your response MUST be a single, valid JSON object that conforms to the user's requested schema. "
+            "Do not include any other text, markdown, or explanations before or after the JSON object."
         )
+
+        payload = {
+            "model": self.config.model,
+            "messages": [
+                {"role": "system", "content": json_system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "format": "json",  # Explicitly request JSON output from Ollama
+            "stream": False,
+        }
+
+        logger.info(f"Sending structured prompt to Ollama backend at {url}")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=300) as response:
+                    response.raise_for_status()
+                    llm_response_text = await response.text()
+
+                    # Parse the JSON and validate against the Pydantic model
+                    json_data = json.loads(llm_response_text)
+                    # Ollama nests the actual response string inside a 'message' object
+                    content_str = json_data.get("message", {}).get("content", "")
+                    if not content_str:
+                        raise PlannerError("Ollama returned an empty message content.")
+
+                    # The content itself is a JSON string, so we parse it again
+                    final_json = json.loads(content_str)
+                    return response_model.model_validate(final_json)
+
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            raise PlannerError(
+                f"Network error during Ollama structured completion: {e}"
+            ) from e
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.error(
+                f"Failed to parse or validate Ollama's JSON response. Error: {e}"
+            )
+            raise PlannerError(
+                "Ollama returned a malformed or invalid JSON object for the structured plan."
+            ) from e
 
     async def get_speech(self, text: str) -> bytes:
         raise NotImplementedError("Ollama provider does not support speech synthesis.")

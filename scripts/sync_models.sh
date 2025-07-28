@@ -29,8 +29,18 @@ fi
 echo -e "${BLUE}Syncing model definitions from BEND to AEGIS...${NC}"
 
 # Use yq to extract only the fields AEGIS needs and create a new YAML structure.
-# This ensures AEGIS has a clean, relevant manifest without backend-specific details.
-yq e '{ "models": .models | map({ "key": .key, "name": .name, "formatter_hint": .formatter_hint, "notes": .notes }) }' "$BEND_MANIFEST" > "$AEGIS_MANIFEST"
+# This ensures AEGIS has a clean, relevant manifest. It maps BEND's 'use_case' to AEGIS's 'name'
+# for a better UI experience and correctly copies the new 'ollama_model_name'.
+yq e '{
+  "models": .models | map({
+    "key": .key,
+    "name": .use_case,
+    "formatter_hint": .formatter_hint,
+    "notes": .notes,
+    "ollama_model_name": .ollama_model_name
+  })
+}' "$BEND_MANIFEST" > "$AEGIS_MANIFEST"
+
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}SUCCESS: AEGIS models.yaml has been synchronized with the BEND manifest.${NC}"

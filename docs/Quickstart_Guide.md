@@ -1,117 +1,131 @@
-Of course. Here is the expanded version of the **AEGIS Quickstart Guide (Standalone)**.
+# Quickstart Guide (BEND + AEGIS)
 
-I've added more detail to each step, explaining the purpose of the configuration files and giving the user a better mental model of what AEGIS is doing. The goal is to make the process feel less like a set of magic commands and more like a logical workflow.
+Welcome! This guide will walk you through setting up and running the complete, self-hosted AEGIS and BEND stack. By running both projects together, you get a powerful, fully autonomous agentic system that runs entirely on your own hardware, with no reliance on external cloud services.
 
----
+This is the recommended setup for getting the most out of the framework.
 
-# AEGIS Quickstart Guide (Standalone)
+## How They Work Together
 
-Welcome to AEGIS! This guide will help you get the agentic framework up and running in a standalone capacity. In this mode, AEGIS acts as a powerful "brain" that connects to an external or commercial AI backend, like OpenAI's API.
+The two projects are designed to be a tightly integrated client-server system. Getting them to communicate is the key to this guide.
 
-This setup is perfect for users who want to leverage the power of AEGIS's agentic logic without setting up a local model-serving stack. By the end of this guide, you will be able to run a fully autonomous agent task powered by a commercial AI provider.
+-   **BEND (The Backend):** Provides the core, high-horsepower services like the LLM (vLLM), vector database (Qdrant), and agent memory (Redis). It creates a private Docker network for all of its services to talk to each other.
+-   **AEGIS (The Frontend/Brain):** Provides the autonomous agent that connects to BEND to think, plan, and execute tasks. Its Docker container is configured to **join BEND's private network**, which is how it's able to find and talk to services like `vllm` and `redis`.
 
-## How AEGIS Works
-
-AEGIS is a framework for building and running autonomous agents. It works by following a "thought cycle" that is defined by a workflow, or **Preset**. A typical workflow looks like this:
-
-1.  **Plan:** The agent looks at the main goal and its history, then asks the AI backend (e.g., GPT-4) to decide on the single next action to take.
-2.  **Execute:** The agent runs the tool it decided on (e.g., `write_to_file` or `run_local_command`).
-3.  **Observe:** The agent records the result of the tool's action.
-4.  **Repeat:** The agent loops back to the planning step, now with new information in its history, until the goal is complete.
-
-Our job in this guide is to configure AEGIS to use your chosen AI backend for that crucial "Plan" step.
+This guide will walk you through starting BEND first, then starting AEGIS and connecting it to BEND's network.
 
 ## Prerequisites
 
 Before you start, you'll need to have a few things installed on your machine:
 
--   **Docker & Docker Compose:** For running the containerized agent.
--   **`git`:** For cloning the repository.
--   **An AI Backend with an API Key:** This guide assumes you will be using a service with an OpenAI-compatible API (like OpenAI itself, Together AI, or Perplexity). You will need an API key from your chosen provider.
+-   **Docker & Docker Compose:** For running the containerized services.
+-   **`git`:** For cloning the repositories.
+-   **`yq`:** A command-line YAML processor (e.g., `brew install yq`).
+-   **(Optional) NVIDIA GPU:** For the best performance, an NVIDIA GPU with drivers and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) is highly recommended.
 
-## Step 1: Get the Code
+## Step 1: Set Up the BEND Backend
 
-First, clone the AEGIS repository to your local machine and navigate into the directory.
+First, we need to get the BEND intelligence stack up and running. This will be the "power source" for AEGIS.
 
-```bash
-git clone https://github.com/your-username/AEGIS.git
-cd AEGIS
-```
-
-## Step 2: Configure Your Backend Connection
-
-AEGIS needs to know how to connect to your chosen AI backend. All backend configurations are managed in the `backends.yaml` file.
-
-1.  **Review `backends.yaml`:**
-    Open this file to see the pre-configured profiles. The one we care about for this guide is `openai_gpt4`.
-    ```yaml
-    # aegis/backends.yaml
-    - profile_name: openai_gpt4
-      type: openai
-      model: gpt-4-turbo
-      api_key: ${OPENAI_API_KEY}
-      # ... other settings
+1.  **Clone, Configure Auth:**
+    Clone the BEND repository, enter the directory, and create your `.env` file.
+    ```bash
+    git clone https://github.com/your-username/BEND.git
+    cd BEND
+    cp .env.example .env
     ```
-    This profile tells AEGIS to use its built-in `OpenAIProvider`, which knows how to talk to OpenAI's API. The `${OPENAI_API_KEY}` is a placeholder that tells AEGIS to look for your secret key in an environment variable.
+    Now, **edit the `.env` file** and add your Hugging Face token if you plan to use gated models like Llama 3.
 
-2.  **Create Your `.env` File:**
-    This file is where you will securely store your API key. Copy the example file to create your own:
+2.  **Download Your vLLM Model:**
+    Use the `download-hf-model.sh` script with the Hugging Face repository ID.
+    ```bash
+    # Download the Llama 3 model repository
+    ./scripts/download-hf-model.sh "meta-llama/Meta-Llama-3-8B-Instruct"
+    ```
+
+3.  **Configure the Stack:**
+    Run the `switch-model.sh` script to configure all services to use the model you just downloaded.
+    ```bash
+    ./scripts/switch-model.sh llama3
+    ```
+
+4.  **Start the BEND Stack:**
+    Launch all the BEND services.
+    -   **For CPU-only:**
+        ```bash
+        ./scripts/manage.sh up
+        ```
+    -   **For NVIDIA GPU acceleration (recommended):**
+        ```bash
+        ./scripts/manage.sh up --gpu
+        ```
+
+5.  **Verify BEND:**
+    In a new terminal, run the healthcheck. **Wait for all services to report `[ OK ]` before proceeding.**
+    ```bash
+    ./scripts/manage.sh healthcheck
+    ```
+
+## Step 2: Set Up the AEGIS Agent Framework
+
+Now, we'll set up AEGIS and connect it to our running BEND instance.
+
+1.  **Clone AEGIS:**
+    Navigate back to your main projects folder (the parent directory of BEND) and clone the AEGIS repository.
+    ```bash
+    cd ..
+    git clone https://github.com/your-username/AEGIS.git
+    cd AEGIS
+    ```
+
+2.  **Configure the Environment:**
+    AEGIS needs its own `.env` file for secrets.
     ```bash
     cp .env.example .env
     ```
-    Now, open the new `.env` file with a text editor and add your API key.
-    ```env
-    # AEGIS/.env
 
-    # --- Backend API Keys ---
-    OPENAI_API_KEY=sk-youractualapikey...
+3.  **Synchronize Model Definitions:**
+    To ensure AEGIS knows about the models BEND is serving, run the sync script.
+    ```bash
+    ./scripts/sync_models.sh
     ```
-    When the AEGIS container starts, it will automatically load this file and make the secret key available to the `openai_gpt4` profile.
 
-## Step 3: Start the AEGIS Service
+## Step 3: Start AEGIS
 
-You're now ready to build and run the AEGIS container. This command reads your `docker-compose.yml` and `.env` files to start the server correctly.
+With both repositories configured, you can now start the AEGIS service.
 
 ```bash
+# Make sure you are in the AEGIS directory
 docker compose up --build -d
 ```
 
-The first time you run this, Docker will download the necessary base images and build the AEGIS application, which may take a few minutes. Subsequent starts will be much faster.
+## Step 4: Run a Fully Local Task
 
-## Step 4: Access the UI and Verify
+You now have the complete, self-hosted stack running.
 
-Once the service is running, you can access the AEGIS dashboard in your browser.
-
--   Navigate to **`http://localhost:8000`**
-
-You should see the main dashboard. To verify that the agent is ready, click on the **"Tools"** tab. You should see a long list of all the built-in capabilities the agent has, like `run_local_command`, `read_file`, and `get_public_ip`. This confirms that the application has started and the tool registry is populated.
-
-## Step 5: Run Your First Task
-
-Let's give the agent a simple, multi-step task to perform.
-
-1.  **Navigate to the "Launch" Tab:**
-    This is the main control panel for running agent tasks.
+1.  **Open the AEGIS UI:**
+    Navigate to **`http://localhost:8000`** in your browser.
 
 2.  **Configure the Task:**
-    -   **Agent Preset:** Choose `Default Agent Flow`. This is a simple and reliable plan-and-execute loop.
-    -   **Backend Profile:** This is the most important step. Choose `openai_gpt4` from the dropdown. This tells the agent to use the OpenAI backend you configured for its "thinking."
-    -   **Agent Model:** For the OpenAI provider, the model is already defined in the backend profile (`gpt-4-turbo`), so this selection is less critical.
-    -   **Task Prompt:** Enter a simple, safe goal for the agent. For example:
-        > `Write a short Python script to a file named 'hello.py' that prints 'Hello from AEGIS!', and then run the script.`
+    -   **Agent Preset:** Choose `Verified Agent Flow`.
+    -   **Backend Profile:** Choose `vllm_local`.
+    -   **Agent Model:** Choose `Llama 3 Instruct Family`.
+    -   **Task Prompt:** Give it a task that uses its tools. For example:
+        > `Use your long-term memory to remember that the secret key is 'blue-banana'. Then, recall the key and finish the task, stating the key in your reason.`
 
-3.  **Launch the Task:**
-    Click the **"Launch Task"** button.
-
-You can now watch the agent's progress in the **"Live Task Logs"** panel on the right. You will see the agent think, choose the `write_to_file` tool, then the `run_local_command` tool, and finally the `finish` tool. The agent is making live API calls to your chosen backend for each planning step.
-
-When it's done, the final result and a step-by-step history of its execution will appear on the left.
+3.  **Launch and Observe:**
+    -   Click **"Launch Task"**.
+    -   Watch the logs in the AEGIS UI's **Live Task Logs** panel.
+    -   When complete, view the detailed results in the **Artifacts** tab.
 
 ## Next Steps
 
-You have now successfully run a fully autonomous agent task using a standalone AEGIS instance! From here, you can explore the other presets, try more complex prompts, or move on to the **Combined BEND + AEGIS Quickstart Guide** to learn how to run the entire system locally without relying on external APIs.
+You have now successfully set up and run a fully autonomous, fully self-hosted agentic framework!
 
-To stop the AEGIS service at any time, run:
+To stop the entire stack, you can run the `down` command in both repositories:
 ```bash
-docker compose down
+# In the AEGIS directory
+./manage_stack.sh down
+
+# In the BEND directory
+./scripts/manage.sh down
 ```

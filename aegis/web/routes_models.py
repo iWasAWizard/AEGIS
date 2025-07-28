@@ -29,6 +29,7 @@ async def get_available_models(backend_profile: str = Query(...)) -> List[ModelE
         backend_config = get_backend_config(backend_profile)
         aegis_manifest = get_parsed_model_manifest()
         served_model_ids = []
+        available_models = []
 
         if backend_config.type in ("vllm", "openai"):
             base_url = backend_config.llm_url.rsplit("/", 2)[0]
@@ -38,20 +39,34 @@ async def get_available_models(backend_profile: str = Query(...)) -> List[ModelE
                 response.raise_for_status()
                 models_data = response.json()
                 served_model_ids = [m["id"] for m in models_data.get("data", [])]
+            # Filter the manifest by the main 'name' field for vLLM/OpenAI
+            available_models = [
+                model
+                for model in aegis_manifest.models
+                if model.name in served_model_ids
+            ]
 
-        elif backend_config.type == "koboldcpp" and backend_config.model:
-            served_model_ids = [backend_config.model]
+        elif backend_config.type == "ollama":
+            # Ollama uses the /api/tags endpoint to list local models
+            tags_url = f"{backend_config.llm_url}/api/tags"
+            async with httpx.AsyncClient() as client:
+                response = await client.get(tags_url, timeout=10)
+                response.raise_for_status()
+                models_data = response.json()
+                served_model_ids = [m["name"] for m in models_data.get("models", [])]
+            # Filter the manifest by the specific 'ollama_model_name' field
+            available_models = [
+                model
+                for model in aegis_manifest.models
+                if model.ollama_model_name in served_model_ids
+            ]
 
-        if not served_model_ids:
+        if not available_models:
             logger.warning(
-                f"Backend '{backend_profile}' did not return any served models."
+                f"Backend '{backend_profile}' did not return any served models that are also in models.yaml."
             )
             return []
 
-        # Filter the main manifest to only include models that are actively served
-        available_models = [
-            model for model in aegis_manifest.models if model.name in served_model_ids
-        ]
         logger.info(
             f"Found {len(available_models)} available models served by backend '{backend_profile}'."
         )

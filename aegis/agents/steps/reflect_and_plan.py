@@ -16,15 +16,8 @@ from aegis.agents.task_state import TaskState
 from aegis.exceptions import PlannerError, ConfigurationError
 from aegis.registry import TOOL_REGISTRY
 from aegis.schemas.plan_output import AgentScratchpad
-from aegis.utils.backend_loader import get_backend_config
+from aegis.utils.llm_query import get_provider_for_profile
 from aegis.utils.logger import setup_logger
-
-try:
-    import instructor
-    from openai import OpenAI
-except ImportError:
-    instructor = None
-    OpenAI = None
 
 logger = setup_logger(__name__)
 
@@ -128,13 +121,8 @@ Now, provide the JSON for your next action.
 
 
 async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
-    """Uses an Instructor-powered LLM call to generate a validated plan."""
-    if not instructor or not OpenAI:
-        raise ToolExecutionError(
-            "The 'instructor' and 'openai' libraries are required for planning."
-        )
-
-    logger.info("🤔 Step: Reflect and Plan (Instructor-powered)")
+    """Uses the configured backend provider to generate a validated plan."""
+    logger.info("🤔 Step: Reflect and Plan")
     system_prompt, user_prompt = construct_planning_prompt(state)
 
     if not state.runtime.backend_profile:
@@ -143,34 +131,27 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
         )
 
     try:
-        backend_config = get_backend_config(state.runtime.backend_profile)
-        backend_url = getattr(backend_config, "llm_url", None)
-        if not backend_url:
-            raise ConfigurationError(
-                f"Backend profile '{state.runtime.backend_profile}' has no 'llm_url'."
-            )
-
-        base_url = backend_url.rsplit("/", 1)[0]
-        model_name = getattr(backend_config, "model", "default-model")
-
-        client = instructor.patch(OpenAI(base_url=base_url, api_key="not-needed"))
-
-        scratchpad = await client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+        provider = get_provider_for_profile(state.runtime.backend_profile)
+        scratchpad = await provider.get_structured_completion(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
             response_model=AgentScratchpad,
-            max_retries=2,
         )
 
         logger.info(f"✅ Plan generated: Calling tool `{scratchpad.tool_name}`")
         logger.debug(f"🤔 Thought: {scratchpad.thought}")
         return {"latest_plan": scratchpad}
+
     except (ValidationError, json.JSONDecodeError) as e:
         logger.error(f"Failed to parse or validate LLM plan output. Error: {e}")
         raise PlannerError(f"LLM returned malformed plan. Error: {e}") from e
+    except NotImplementedError as e:
+        logger.error(
+            f"The configured provider does not support structured planning. Error: {e}"
+        )
+        raise PlannerError(
+            f"The backend '{state.runtime.backend_profile}' does not support the required planning features."
+        ) from e
     except Exception as e:
         logger.exception("An unexpected error occurred during planning.")
         raise PlannerError(f"An unexpected error occurred during planning: {e}") from e

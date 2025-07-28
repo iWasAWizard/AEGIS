@@ -44,7 +44,7 @@ usage() {
     echo
     echo "Options:"
     echo "  --gpu             - Pass the --gpu flag to the BEND stack."
-    echo "  --lite [profile]  - Use the lite configuration for BEND. Optionally specify a profile ('vllm' or 'koboldcpp')."
+    echo "  --lite [profile]  - Use the lite configuration for BEND. Optionally specify a profile ('vllm' or 'ollama')."
     echo "                    If no profile is given, both LLM backends are started."
     echo
     echo "Examples:"
@@ -82,7 +82,7 @@ OTHER_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --lite)
-      if [[ -n "$2" && ("$2" == "vllm" || "$2" == "koboldcpp") ]]; then
+      if [[ -n "$2" && ("$2" == "vllm" || "$2" == "ollama") ]]; then
         LITE_ARGS="--lite $2"
         shift 2
       else
@@ -113,7 +113,7 @@ fi
 
 # --- Command Logic ---
 AEGIS_SERVICES=("agent")
-BEND_SERVICES=("vllm" "redis" "nemoguardrails" "openwebui" "whisper" "piper" "glances" "qdrant" "retriever" "voiceproxy" "koboldcpp")
+BEND_SERVICES=("vllm" "redis" "nemoguardrails" "openwebui" "whisper" "piper" "glances" "qdrant" "retriever" "voiceproxy" "ollama")
 
 TARGET_DIR=""
 if [[ " ${AEGIS_SERVICES[@]} " =~ " ${SERVICE} " ]]; then
