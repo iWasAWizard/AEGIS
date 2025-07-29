@@ -96,11 +96,11 @@ class ExampleComProvider(BackendProvider):
                 async with session.post(self.config.llm_url, json=payload, headers=headers) as response:
                     response.raise_for_status() # Raise an exception for bad status codes
                     result = await response.json()
-                    
+
                     # 3. Parse the response and return the text
                     # This part is highly specific to the API's response format
                     return result["data"]["choices"][0]["text"]
-        
+
         except aiohttp.ClientError as e:
             # 4. Handle errors gracefully
             raise PlannerError(f"Network error while querying Example.com: {e}") from e
@@ -111,7 +111,7 @@ class ExampleComProvider(BackendProvider):
 
     async def get_transcription(self, audio_bytes: bytes) -> str:
         raise NotImplementedError("Example.com does not support transcription.")
-    
+
     # ... (implement other methods similarly) ...
 ```
 
@@ -128,19 +128,22 @@ The final step is to teach AEGIS's factory functions how to recognize and instan
     # ...
     from aegis.schemas.backend import (
         KoboldcppBackendConfig,
+        OllamaBackendConfig,
         OpenAIBackendConfig,
         VllmBackendConfig,
         ExampleComBackendConfig, # Add this
         BaseBackendConfig,
     )
     # ...
-    
+
     def get_backend_config(profile_name: str) -> Any:
         # ... (existing code) ...
         try:
             backend_type = backend_config_raw.get("type")
             if backend_type == "koboldcpp":
                 return KoboldcppBackendConfig(**backend_config_raw)
+            elif backend_type == "ollama":
+                return OllamaBackendConfig(**backend_config_raw)
             elif backend_type == "openai":
                 return OpenAIBackendConfig(**backend_config_raw)
             elif backend_type == "vllm":
@@ -164,7 +167,7 @@ The final step is to teach AEGIS's factory functions how to recognize and instan
     from aegis.providers.vllm_provider import VllmProvider
     from aegis.providers.example_com_provider import ExampleComProvider # Add this
     # ...
-    
+
     def get_provider_for_profile(profile_name: str) -> BackendProvider:
         backend_config = get_backend_config(profile_name)
 

@@ -31,7 +31,7 @@ class BackendProvider(ABC):
 
     @abstractmethod
     async def get_structured_completion(
-        self, system_prompt: str, user_prompt: str, response_model: Type[BaseModel]
+        self, messages: List[Dict[str, Any]], response_model: Type[BaseModel]
     ) -> BaseModel:
         """
         Gets a structured completion from the backend's language model.

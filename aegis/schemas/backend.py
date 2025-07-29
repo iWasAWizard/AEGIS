@@ -31,6 +31,12 @@ class KoboldcppBackendConfig(BaseBackendConfig):
     top_p: float = Field(0.9)
     top_k: int = Field(40)
     repetition_penalty: float = Field(1.1)
+
+
+class BendBackendConfig(KoboldcppBackendConfig):
+    """Configuration for a full BEND stack, extending KoboldCPP with other services."""
+
+    type: Literal["bend"] = "bend"
     voice_proxy_url: Optional[str] = Field(
         None, description="URL for the BEND voice proxy service (TTS/STT)."
     )
@@ -76,10 +82,9 @@ class OllamaBackendConfig(BaseBackendConfig):
     repetition_penalty: float = Field(1.1)
 
 
-class OpenAIBackendConfig(BaseModel):
+class OpenAIBackendConfig(BaseBackendConfig):
     """Configuration specific to an OpenAI-compatible API backend."""
 
-    profile_name: str = Field(..., description="Unique name for this backend profile.")
     type: Literal["openai"] = "openai"
     model: str = Field(
         default="gpt-4-turbo", description="The model name to use for completions."

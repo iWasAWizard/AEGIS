@@ -8,9 +8,10 @@ history, and uses the LLM to decide on the next action to take.
 """
 
 import json
+from pyexpat.errors import messages
 from typing import Dict, Any, List
 
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel, Field
 
 from aegis.agents.task_state import TaskState
 from aegis.exceptions import PlannerError, ConfigurationError
@@ -22,29 +23,69 @@ from aegis.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 
-def get_tool_schemas(safe_mode_active: bool, tool_allowlist: List[str]) -> str:
-    """Gets formatted schema descriptions for all available tools, indicating safety."""
-    tool_signatures: List[str] = []
-    excluded_tags = {"internal"}
+class RelevantTools(BaseModel):
+    """Schema for the LLM's tool selection decision."""
 
-    # If an allow-list is provided, filter the tools to be shown.
-    tools_to_show = (
-        {name: tool for name, tool in TOOL_REGISTRY.items() if name in tool_allowlist}
-        if tool_allowlist
-        else TOOL_REGISTRY
+    tool_names: List[str] = Field(
+        ..., description="A list of the most relevant tool names for the current task."
     )
 
-    for tool_name, tool_entry in sorted(tools_to_show.items()):
-        if any(tag in tool_entry.tags for tag in excluded_tags):
-            continue
 
-        safety_indicator = ""
-        if not tool_entry.safe_mode:
-            safety_indicator = " [UNSAFE]"
-            if safe_mode_active:
-                safety_indicator += " (BLOCKED IN CURRENT MODE)"
-        elif tool_entry.safe_mode:
-            safety_indicator = " [SAFE]"
+def get_all_tool_signatures() -> str:
+    """Gets a simple list of all available tool signatures."""
+    signatures = []
+    for name, tool in TOOL_REGISTRY.items():
+        signatures.append(f"- {name}: {tool.description}")
+    return "\n".join(signatures)
+
+
+async def _select_relevant_tools(state: TaskState) -> List[str]:
+    """Uses a preliminary LLM call to select a small subset of relevant tools."""
+    if not state.runtime.backend_profile:
+        raise ConfigurationError("Backend profile is not set.")
+
+    provider = get_provider_for_profile(state.runtime.backend_profile)
+    all_signatures = get_all_tool_signatures()
+
+    system_prompt = "You are a helpful assistant. Your task is to select the most relevant tools for the user's request from a provided list. Return your answer as a JSON object."
+    user_prompt = f"""
+    Based on the user's goal and the conversation history, which of the following tools are the most relevant?
+    Please select the top 5-7 most useful tools.
+
+    ## User's Goal
+    {state.task_prompt}
+
+    ## Conversation History
+    {"No history yet." if not state.history else json.dumps([h.model_dump() for h in state.history], default=str)}
+
+    ## Available Tools
+    {all_signatures}
+    """
+    try:
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        selected_tools_model = await provider.get_structured_completion(
+            messages, RelevantTools
+        )
+        logger.info(f"Pre-selected relevant tools: {selected_tools_model.tool_names}")
+        return selected_tools_model.tool_names
+    except Exception as e:
+        logger.warning(
+            f"Tool pre-selection failed: {e}. Falling back to using all tools."
+        )
+        return list(TOOL_REGISTRY.keys())
+
+
+def get_tool_schemas(tool_allowlist: List[str]) -> str:
+    """Gets formatted schema descriptions for a specific list of tools."""
+    tool_signatures: List[str] = []
+
+    for tool_name in sorted(tool_allowlist):
+        if tool_name not in TOOL_REGISTRY:
+            continue
+        tool_entry = TOOL_REGISTRY[tool_name]
 
         try:
             schema = tool_entry.input_model.model_json_schema()
@@ -58,83 +99,83 @@ def get_tool_schemas(safe_mode_active: bool, tool_allowlist: List[str]) -> str:
                     part += " (optional)"
                 arg_parts.append(part)
             args_signature = ", ".join(arg_parts)
-            full_signature = f"- {tool_name}({args_signature}):{safety_indicator} {tool_entry.description}"
+            full_signature = (
+                f"- {tool_name}({args_signature}): {tool_entry.description}"
+            )
             tool_signatures.append(full_signature)
         except Exception as e:
             logger.warning(f"Could not generate signature for tool '{tool_name}': {e}")
 
-    finish_desc = "Call this tool ONLY when the user's entire request has been fully completed or is impossible to complete. Provide a final summary in the 'reason' argument."
-    # The 'finish' tool is always available, regardless of the allow-list.
-    tool_signatures.append(
-        f"- finish(reason: string, status: string): [SAFE] {finish_desc}"
-    )
+    finish_desc = "Call this tool ONLY when the user's entire request has been fully completed or is impossible to complete."
+    tool_signatures.append(f"- finish(reason: string, status: string): {finish_desc}")
     return "\n".join(tool_signatures)
 
 
-def construct_planning_prompt(state: TaskState) -> tuple[str, str]:
-    """Constructs the full system and user prompts for the LLM planner."""
-    history_str = ""
-    if not state.history:
-        history_str = (
-            "This is the first step. Begin by thinking about the user's request."
-        )
-    else:
-        for i, entry in enumerate(state.history):
-            # Ensure tool_args is a dict for json.dumps; it should be from AgentScratchpad
-            tool_args_str = json.dumps(
-                entry.plan.tool_args or {}
-            )  # Handle if tool_args is None
-            history_str += (
-                f"### Step {i + 1}:\n"
-                f"**Thought:** {entry.plan.thought}\n"
-                f"**Action:** Called tool `{entry.plan.tool_name}` "
-                f"with args `{tool_args_str}`.\n"
-                f"**Observation:** `{str(entry.observation)}`\n\n"
-            )
+def construct_planning_messages(
+    state: TaskState, relevant_tools: List[str]
+) -> List[Dict[str, Any]]:
+    """Constructs the full message history for the LLM planner."""
+    system_prompt = f"""You are an autonomous agent. Your task is to achieve the user's goal by thinking step-by-step and selecting one tool at a time.
 
-    system_prompt = (
-        "You are an autonomous agent that achieves goals by selecting one tool at a time. "
-        "Your goal is to generate a valid JSON object that represents your next single action."
-        "You MUST NOT provide any other text, explanation, or markdown."
+    ## Instructions
+    1.  **Analyze Goal & History:** Review the user's goal and the history of actions taken so far.
+    2.  **Plan ONE Step:** Decide on the single next action. Your response must be a single tool call in JSON format.
+    3.  **Use Available Tools:** Select one tool from the provided list. Do not invent tools.
+    4.  **Adhere to Schema:** The `tool_args` must be a valid JSON object matching the tool's arguments precisely. The `thought` field is MANDATORY.
+
+    ## Response Format Example
+    ```json
+    {{
+    "thought": "I need to write the user's requested script to a file. The `write_to_file` tool is the most appropriate for this. I will specify the filename and the Python code to be written.",
+    "tool_name": "write_to_file",
+    "tool_args": {{
+        "path": "calculate.py",
+        "content": "print(25 * 8)"
+    }}
+    }}
+
+    Available Tools for this step
+
+    {get_tool_schemas(relevant_tools)}
+    """
+
+    messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+    messages.append(
+        {"role": "user", "content": f"Here is my request: {state.task_prompt}"}
     )
-    user_prompt = f"""You are an autonomous agent. Your task is to achieve the user's goal by thinking step-by-step and selecting one tool at a time.
 
-## Instructions
-1.  **Analyze Goal & History:** Review the user's goal and any previous steps.
-2.  **Plan ONE Step:** Decide on the single next action to take.
-3.  **Explain Your Thought:** You MUST include a `thought` key. The value must be a brief explanation of your choice.
-4.  **Choose ONE Tool:** Select one tool from the 'Available Tools' list.
-5.  **Adhere to Schema:** The `tool_args` must be a valid JSON object matching the tool's arguments.
+    for entry in state.history:
+        messages.append(
+            {"role": "assistant", "content": json.dumps(entry.plan.model_dump())}
+        )
+        messages.append({"role": "tool", "content": entry.observation})
 
-## Available Tools
-{get_tool_schemas(safe_mode_active=bool(state.runtime.safe_mode), tool_allowlist=state.runtime.tool_allowlist)}
-
-## Main Goal
-`{state.task_prompt}`
-
-## Previous Steps
-{history_str}
-
-Now, provide the JSON for your next action.
-"""
-    return system_prompt, user_prompt
+    return messages
 
 
 async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
     """Uses the configured backend provider to generate a validated plan."""
     logger.info("🤔 Step: Reflect and Plan")
-    system_prompt, user_prompt = construct_planning_prompt(state)
 
     if not state.runtime.backend_profile:
-        raise ConfigurationError(
-            "Backend profile is not set in the current task state."
-        )
+        raise ConfigurationError("Backend profile is not set.")
 
     try:
+        # 1. Select a small subset of relevant tools to reduce prompt size
+        relevant_tool_names = await _select_relevant_tools(state)
+
+        # 2. Construct the full conversational history
+        messages = construct_planning_messages(state, relevant_tool_names)
+
+        logger.debug(f"--- Full Planning Prompt ---")
+        logger.debug(json.dumps(messages, indent=2))
+        logger.debug(f"--- End Planning Prompt ---")
+
+        # 3. Call the provider with the structured messages to get the next plan
         provider = get_provider_for_profile(state.runtime.backend_profile)
+        logger.debug(f"Using provider '{provider.__class__.__name__}' for planning.")
         scratchpad = await provider.get_structured_completion(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            messages=messages,
             response_model=AgentScratchpad,
         )
 
@@ -145,13 +186,6 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
     except (ValidationError, json.JSONDecodeError) as e:
         logger.error(f"Failed to parse or validate LLM plan output. Error: {e}")
         raise PlannerError(f"LLM returned malformed plan. Error: {e}") from e
-    except NotImplementedError as e:
-        logger.error(
-            f"The configured provider does not support structured planning. Error: {e}"
-        )
-        raise PlannerError(
-            f"The backend '{state.runtime.backend_profile}' does not support the required planning features."
-        ) from e
     except Exception as e:
         logger.exception("An unexpected error occurred during planning.")
         raise PlannerError(f"An unexpected error occurred during planning: {e}") from e

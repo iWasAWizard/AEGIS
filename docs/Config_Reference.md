@@ -1,9 +1,3 @@
-Of course. Here is the Configuration Reference.
-
-This guide is designed to be the "master manual" for advanced users. It exhaustively details every key in the core YAML configuration files, explaining its purpose, its possible values, and how it affects the system's behavior.
-
----
-
 # AEGIS Configuration Reference
 
 This document provides a detailed reference for all the core YAML configuration files used by the AEGIS framework. These files give you granular control over every aspect of the agent's behavior, from its core logic to its backend connections.
@@ -75,7 +69,7 @@ This file defines all the AI backends that AEGIS can connect to. Each entry is a
 -   **`profile_name`** `(string)`: A unique, human-readable name for the profile.
     -   *Example:* `vllm_local`
 -   **`type`** `(string)`: The type of provider to use. This determines which other fields are required.
-    -   *Values:* `vllm`, `koboldcpp`, `openai`
+    -   *Values:* `vllm`, `ollama`, `openai`
 
 ### `vllm` Provider
 
@@ -85,16 +79,11 @@ This file defines all the AI backends that AEGIS can connect to. Each entry is a
     -   *Example:* `aegis-agent-model`
 -   *(...and other optional LLM parameters like `temperature`, `top_p`, etc.)*
 
-### `koboldcpp` Provider
+### `ollama` Provider
 
-This provider is designed to connect to a full BEND stack that uses KoboldCPP as the LLM.
-
--   **`llm_url`** `(string)`: The URL to the KoboldCPP `/generate` endpoint.
-    -   *Example:* `http://koboldcpp:5001/api/generate`
--   **`voice_proxy_url`** `(string, optional)`: The URL for BEND's voice proxy service.
--   **`rag_url`** `(string, optional)`: The URL for BEND's RAG retriever service.
--   **`api_key`** `(string, optional)`: A secret key for authenticating with BEND services. Can use environment variable substitution.
-    -   *Example:* `${BEND_API_KEY}`
+-   **`llm_url`** `(string)`: The base URL for the Ollama API.
+    -   *Example:* `http://ollama:11434/api/chat`
+-   **`model`** `(string)`: The name of the model to use from Ollama (e.g., 'llama3:instruct').
 -   *(...and other optional LLM parameters)*
 
 ### `openai` Provider

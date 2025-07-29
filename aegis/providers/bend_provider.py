@@ -31,7 +31,7 @@ class BendProvider(BackendProvider):
     async def get_completion(
         self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig
     ) -> str:
-        """Gets a completion from the BEND KoboldCPP /generate endpoint."""
+        """Gets a completion from the BEND Ollama /generate endpoint."""
         formatter_hint = get_formatter_hint(runtime_config.llm_model_name)
         formatted_prompt = format_prompt(formatter_hint, messages)
 
@@ -67,7 +67,7 @@ class BendProvider(BackendProvider):
         }
 
         logger.info(f"Sending prompt to BEND backend at {self.config.llm_url}")
-        logger.debug(f"BEND/KoboldCPP payload: {json.dumps(payload, indent=2)}")
+        logger.debug(f"BEND/Ollama payload: {json.dumps(payload, indent=2)}")
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(

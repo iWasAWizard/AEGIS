@@ -13,7 +13,7 @@ def test_runtime_config_defaults():
     config = RuntimeExecutionConfig()
 
     assert config.model == "llama3"
-    assert config.koboldcpp_url == "http://koboldcpp:5001/api/generate"
+    assert config.ollama_url == "http://ollama:5001/api/generate"
     assert config.safe_mode is True
     assert config.timeout == 30
     assert config.retries == 0

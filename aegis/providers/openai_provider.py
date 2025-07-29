@@ -65,7 +65,7 @@ class OpenAIProvider(BackendProvider):
             raise PlannerError(f"Unexpected error during OpenAI query: {e}")
 
     async def get_structured_completion(
-        self, system_prompt: str, user_prompt: str, response_model: Type[BaseModel]
+        self, messages: List[Dict[str, Any]], response_model: Type[BaseModel]
     ) -> BaseModel:
         if not self.structured_client:
             raise ToolExecutionError(
@@ -73,10 +73,7 @@ class OpenAIProvider(BackendProvider):
             )
         response = await self.structured_client.chat.completions.create(
             model=self.config.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            messages=messages,
             response_model=response_model,
         )
         return response

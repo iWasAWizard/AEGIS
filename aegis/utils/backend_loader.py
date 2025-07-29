@@ -56,6 +56,10 @@ def get_backend_config(profile_name: str) -> Any:
             f"Backend profile '{profile_name}' not found in backends.yaml."
         )
 
+    logger.debug(
+        f"Found raw config for backend profile '{profile_name}': {backend_config_raw}"
+    )
+
     # Resolve secret placeholders like ${BEND_API_KEY}
     for key, value in backend_config_raw.items():
         if isinstance(value, str) and value.startswith("${") and value.endswith("}"):

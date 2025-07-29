@@ -68,6 +68,12 @@ async def launch_task(payload: LaunchRequest) -> LaunchResponse:
         if payload.iterations is not None:
             runtime_config.iterations = payload.iterations
 
+        # Added detailed logging for the final runtime configuration
+        logger.debug(
+            f"Final runtime configuration for task {task_id}:\n"
+            f"{runtime_config.model_dump_json(indent=2)}"
+        )
+
         initial_state = TaskState(
             task_id=task_id, task_prompt=payload.task.prompt, runtime=runtime_config
         )

@@ -36,17 +36,14 @@ First, we need to get the BEND intelligence stack up and running. This will be t
     Now, **edit the `.env` file** and add your Hugging Face token if you plan to use gated models like Llama 3.
 
 2.  **Download Your Models:**
-    Download both the full repository for vLLM and the single GGUF file for KoboldCPP.
+    Download the full repository for vLLM. The Ollama model will be pulled by the service itself.
     ```bash
     # Download the full Llama 3 repository for vLLM
     ./scripts/download-hf-model.sh "meta-llama/Meta-Llama-3-8B-Instruct"
-
-    # Download the Llama 3 GGUF file for KoboldCPP
-    ./scripts/download-gguf-model.sh llama3
     ```
 
 3.  **Configure the Stack:**
-    Run the `switch-model.sh` script to configure all services to use the model you just downloaded.
+    Run the `switch-model.sh` script to configure all services to use the model you just downloaded. This also sets the default model for Ollama to pull.
     ```bash
     ./scripts/switch-model.sh llama3
     ```
@@ -63,7 +60,7 @@ First, we need to get the BEND intelligence stack up and running. This will be t
         ```
 
 5.  **Verify BEND:**
-    In a new terminal, run the healthcheck. **Wait for all services to report `[ OK ]` before proceeding.**
+    In a new terminal, run the healthcheck. **Wait for all services to report `[ OK ]` before proceeding.** This may take a moment the first time as Ollama pulls its model.
     ```bash
     ./scripts/manage.sh healthcheck
     ```

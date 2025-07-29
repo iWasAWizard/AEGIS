@@ -2,7 +2,7 @@
 """
 Tools for programmatic evaluation of agent performance.
 """
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from pydantic import BaseModel, Field
 
@@ -63,11 +63,6 @@ async def llm_judge(
     """
     Asks a provider to act as a judge, scoring an agent's output.
     """
-    if not instructor or not OpenAI:
-        raise ToolExecutionError(
-            "The 'instructor' and 'openai' libraries are required for this tool."
-        )
-
     logger.info("⚖️  Executing tool: llm_judge")
 
     system_prompt = (
@@ -92,12 +87,15 @@ async def llm_judge(
     A score of 5 means the agent's output perfectly matches the intent of the expected output.
     """
 
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
     try:
         # This tool is provider-aware, so it uses the provider passed into it
-        # which is determined by the runtime state's backend_profile.
         judgement = await provider.get_structured_completion(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            messages=messages,
             response_model=Judgement,
         )
         return judgement.model_dump()

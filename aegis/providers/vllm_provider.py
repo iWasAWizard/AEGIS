@@ -112,7 +112,7 @@ class VllmProvider(BackendProvider):
             raise PlannerError(f"Network error while querying vLLM: {e}") from e
 
     async def get_structured_completion(
-        self, system_prompt: str, user_prompt: str, response_model: Type[BaseModel]
+        self, messages: List[Dict[str, Any]], response_model: Type[BaseModel]
     ) -> BaseModel:
         if not instructor or not OpenAI:
             raise ToolExecutionError(
@@ -123,10 +123,7 @@ class VllmProvider(BackendProvider):
 
         response = await client.chat.completions.create(
             model=self.config.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            messages=messages,
             response_model=response_model,
         )
         return response

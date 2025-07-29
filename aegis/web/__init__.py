@@ -12,6 +12,7 @@ from fastapi import APIRouter
 
 from aegis.utils.logger import setup_logger
 from aegis.web.routes_artifacts import router as artifacts_router
+from aegis.web.routes_backend_info import router as backend_info_router
 from aegis.web.routes_backends import router as backends_router
 from aegis.web.routes_compare import router as compare_router
 from aegis.web.routes_config_editor import router as config_editor_router
@@ -46,5 +47,6 @@ router.include_router(config_editor_router)
 router.include_router(models_router)
 router.include_router(themes_router)
 router.include_router(backends_router)
+router.include_router(backend_info_router)
 router.include_router(dev_router)
 router.include_router(log_streamer_router, prefix="/ws")
