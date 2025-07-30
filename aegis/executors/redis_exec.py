@@ -1,9 +1,8 @@
-# aegis/executors/redis.py
-# I know. I hate it too. But otherwise the import would conflict with the file name.
+# aegis/executors/redis_exec.py
 """
 Provides a client for executing Redis-based operations for long-term memory.
 """
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from urllib.parse import urlparse
 
 from aegis.exceptions import ToolExecutionError
@@ -12,6 +11,13 @@ from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
+# This block is only processed by static type checkers.
+# It allows us to use 'RedisClient' as a type hint without causing a
+# runtime ImportError if the 'redis' library is not installed.
+if TYPE_CHECKING:
+    from redis.client import Redis as RedisClient
+
+# This block handles the runtime import.
 try:
     # Import the Redis client with an alias to avoid name conflicts.
     from redis.client import Redis as RedisClient
@@ -19,7 +25,8 @@ try:
     REDIS_AVAILABLE = True
 except ImportError:
     # If the library isn't installed, set the alias to None.
-    RedisClient = None
+    # The type: ignore is needed because RedisClient is conditionally defined.
+    RedisClient = None  # type: ignore
     REDIS_AVAILABLE = False
 
 
@@ -30,7 +37,9 @@ class RedisExecutor:
         if not REDIS_AVAILABLE or RedisClient is None:
             raise ToolExecutionError("The 'redis' library is not installed.")
 
-        self.client: Optional[RedisClient] = None
+        # Use a string forward reference for the type hint.
+        # This is resolved lazily and works with the TYPE_CHECKING block.
+        self.client: Optional["RedisClient"] = None  # type: ignore
         try:
             config = get_config()
             redis_url = config.get("services", {}).get("redis_url")
@@ -45,6 +54,7 @@ class RedisExecutor:
             if parsed_url.path and parsed_url.path[1:].isdigit():
                 db_num = int(parsed_url.path[1:])
 
+            # At runtime, RedisClient refers to the class imported in the try/except block.
             self.client = RedisClient(
                 host=parsed_url.hostname,
                 port=parsed_url.port,
@@ -52,13 +62,11 @@ class RedisExecutor:
                 password=parsed_url.password,
                 decode_responses=True,  # Makes the client return strings instead of bytes
             )
-            if self.client is not None:
-                self.client.ping()
-                logger.info(
-                    f"Connected to Redis at {parsed_url.hostname}:{parsed_url.port}"
-                )
-            else:
-                logger.error("Failed to initialize Redis client.")
+            self.client.ping()
+            logger.info(
+                f"Connected to Redis at {parsed_url.hostname}:{parsed_url.port}"
+            )
+
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
             # The client remains None, methods will fail gracefully.

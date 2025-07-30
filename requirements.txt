@@ -25,6 +25,9 @@ hypothesis
 python-multipart
 pwntools
 python-dotenv
+python-pptx
+docx
+pypdf
 redis
 langchain-openai
 sentence-transformers

@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Any, Callable, Awaitable, Literal, List
+from typing import Dict, Any, Callable, Awaitable, Literal, List, cast
 
 from pydantic import BaseModel, Field, ValidationError
 

@@ -30,7 +30,7 @@ def mock_config_with_redis(monkeypatch):
 
 def test_redis_executor_init_success(mock_redis_client, mock_config_with_redis):
     """Verify the executor connects and pings on successful initialization."""
-    from aegis.executors.redis import RedisExecutor
+    from aegis.executors.redis_exec import RedisExecutor
 
     executor = RedisExecutor()
     assert executor.client is not None
@@ -39,7 +39,7 @@ def test_redis_executor_init_success(mock_redis_client, mock_config_with_redis):
 
 def test_redis_executor_set_value(mock_redis_client, mock_config_with_redis):
     """Verify set_value calls the client's set method."""
-    from aegis.executors.redis import RedisExecutor
+    from aegis.executors.redis_exec import RedisExecutor
 
     executor = RedisExecutor()
     executor.set_value("my_key", "my_value")
@@ -49,7 +49,7 @@ def test_redis_executor_set_value(mock_redis_client, mock_config_with_redis):
 def test_redis_executor_get_value(mock_redis_client, mock_config_with_redis):
     """Verify get_value calls the client's get method and returns the value."""
     mock_redis_client.get.return_value = "retrieved_value"
-    from aegis.executors.redis import RedisExecutor
+    from aegis.executors.redis_exec import RedisExecutor
 
     executor = RedisExecutor()
     result = executor.get_value("my_key")
@@ -60,7 +60,7 @@ def test_redis_executor_get_value(mock_redis_client, mock_config_with_redis):
 def test_redis_executor_get_value_not_found(mock_redis_client, mock_config_with_redis):
     """Verify get_value returns a 'not found' message if the key doesn't exist."""
     mock_redis_client.get.return_value = None
-    from aegis.executors.redis import RedisExecutor
+    from aegis.executors.redis_exec import RedisExecutor
 
     executor = RedisExecutor()
     result = executor.get_value("non_existent_key")
@@ -70,7 +70,7 @@ def test_redis_executor_get_value_not_found(mock_redis_client, mock_config_with_
 def test_redis_executor_connection_fails(mock_redis_client, mock_config_with_redis):
     """Verify that methods raise ToolExecutionError if the client is not connected."""
     mock_redis_client.ping.side_effect = Exception("Connection refused")
-    from aegis.executors.redis import RedisExecutor
+    from aegis.executors.redis_exec import RedisExecutor
 
     executor = RedisExecutor()
     assert executor.client is None

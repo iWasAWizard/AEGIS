@@ -2,7 +2,7 @@
 """
 Tests for the core tool execution agent step.
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
 from pydantic import BaseModel

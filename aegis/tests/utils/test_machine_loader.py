@@ -4,6 +4,7 @@ Unit tests for the machine configuration loader.
 """
 import os
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 import yaml
@@ -14,16 +15,14 @@ from aegis.utils.machine_loader import get_machine
 
 
 @pytest.fixture(autouse=True)
-def clean_machine_loader_cache():
+def clean_machine_loader_cache(monkeypatch):
     """Fixture to reset the machine loader cache before and after each test."""
-    global _machine_manifest_cache
-    _machine_manifest_cache = None
-    yield
-    _machine_manifest_cache = None
+    # This correctly patches the cache variable in the module where it's defined.
+    monkeypatch.setattr("aegis.utils.machine_loader._machine_manifest_cache", None)
 
 
 @pytest.fixture
-def mock_manifest_file(tmp_path: Path) -> Path:
+def mock_manifest_file(tmp_path: Path) -> Iterator[Path]:
     """Creates a temporary machines.yaml file for testing."""
     manifest_content = {
         "test-linux": {
