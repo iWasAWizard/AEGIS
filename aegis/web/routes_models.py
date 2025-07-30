@@ -28,8 +28,8 @@ async def get_available_models(backend_profile: str = Query(...)) -> List[ModelE
     try:
         backend_config = get_backend_config(backend_profile)
         aegis_manifest = get_parsed_model_manifest()
-        served_model_ids = []
-        available_models = []
+        served_model_ids: List[str] = []
+        available_models: List[ModelEntry] = []
 
         if backend_config.type in ("vllm", "openai"):
             base_url = backend_config.llm_url.rsplit("/", 2)[0]
@@ -54,12 +54,26 @@ async def get_available_models(backend_profile: str = Query(...)) -> List[ModelE
                 response.raise_for_status()
                 models_data = response.json()
                 served_model_ids = [m["name"] for m in models_data.get("models", [])]
-            # Filter the manifest by the specific 'ollama_model_name' field
-            available_models = [
-                model
-                for model in aegis_manifest.models
-                if model.ollama_model_name in served_model_ids
-            ]
+
+            # Filter the manifest. A model is a match if its ollama_model_name is a prefix
+            # OR if its Hugging Face name is a substring of the served model ID.
+            for model in aegis_manifest.models:
+                is_matched = False
+
+                # Check 1: Match against the short Ollama name (e.g., "nous-hermes2")
+                if model.ollama_model_name:
+                    if any(
+                        served_id.startswith(model.ollama_model_name)
+                        for served_id in served_model_ids
+                    ):
+                        available_models.append(model)
+                        is_matched = True
+
+                # Check 2: Match against the full HF name for pulls like hf.co/...
+                # This prevents adding duplicates if the first check already matched.
+                if not is_matched and model.name:
+                    if any(model.name in served_id for served_id in served_model_ids):
+                        available_models.append(model)
 
         if not available_models:
             logger.warning(

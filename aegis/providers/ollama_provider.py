@@ -6,7 +6,7 @@ import asyncio
 import json
 from typing import List, Dict, Any, Optional, Type
 
-import aiohttp
+import httpx
 from pydantic import BaseModel, ValidationError
 
 from aegis.exceptions import PlannerError, ToolExecutionError
@@ -79,29 +79,27 @@ class OllamaProvider(BackendProvider):
         logger.debug(f"Ollama payload: {json.dumps(payload, indent=2)}")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url,
-                    json=payload,
-                    timeout=runtime_config.llm_planning_timeout,
-                ) as response:
-                    if not response.ok:
-                        body = await response.text()
-                        logger.error(
-                            f"Error from Ollama ({response.status}) at URL '{url}': {body}"
-                        )
-                        raise PlannerError(
-                            f"Failed to query Ollama. Status: {response.status}, Body: {body}"
-                        )
-                    result = await response.json()
-                    if "message" not in result or "content" not in result["message"]:
-                        raise PlannerError(
-                            "Invalid response format from Ollama: 'message.content' key missing."
-                        )
-                    return result["message"]["content"]
-        except asyncio.TimeoutError as e:
+            async with httpx.AsyncClient() as client:
+                timeout = httpx.Timeout(runtime_config.llm_planning_timeout)
+                response = await client.post(url, json=payload, timeout=timeout)
+
+                if not response.is_success:
+                    body = response.text
+                    logger.error(
+                        f"Error from Ollama ({response.status_code}) at URL '{url}': {body}"
+                    )
+                    raise PlannerError(
+                        f"Failed to query Ollama. Status: {response.status_code}, Body: {body}"
+                    )
+                result = response.json()
+                if "message" not in result or "content" not in result["message"]:
+                    raise PlannerError(
+                        "Invalid response format from Ollama: 'message.content' key missing."
+                    )
+                return result["message"]["content"]
+        except httpx.TimeoutException as e:
             raise PlannerError("Query to Ollama timed out.") from e
-        except aiohttp.ClientError as e:
+        except httpx.RequestError as e:
             raise PlannerError(f"Network error while querying Ollama: {e}") from e
 
     async def get_structured_completion(
@@ -125,29 +123,29 @@ class OllamaProvider(BackendProvider):
         logger.debug(f"Ollama structured payload: {json.dumps(payload, indent=2)}")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=300) as response:
-                    if not response.ok:
-                        body = await response.text()
-                        logger.error(
-                            f"Error from Ollama ({response.status}) at URL '{url}': {body}"
-                        )
-                        response.raise_for_status()
+            async with httpx.AsyncClient() as client:
+                timeout = httpx.Timeout(self.config.llm_planning_timeout)
+                response = await client.post(url, json=payload, timeout=timeout)
 
-                    llm_response_json = await response.json()
-
-                    # Ollama nests the actual response string inside a 'message' object
-                    content_str = llm_response_json.get("message", {}).get(
-                        "content", ""
+                if not response.is_success:
+                    body = response.text
+                    logger.error(
+                        f"Error from Ollama ({response.status_code}) at URL '{url}': {body}"
                     )
-                    if not content_str:
-                        raise PlannerError("Ollama returned an empty message content.")
+                    response.raise_for_status()
 
-                    # The content itself is a JSON string, so we parse it again
-                    final_json = json.loads(content_str)
-                    return response_model.model_validate(final_json)
+                llm_response_json = response.json()
 
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                # Ollama nests the actual response string inside a 'message' object
+                content_str = llm_response_json.get("message", {}).get("content", "")
+                if not content_str:
+                    raise PlannerError("Ollama returned an empty message content.")
+
+                # The content itself is a JSON string, so we parse it again
+                final_json = json.loads(content_str)
+                return response_model.model_validate(final_json)
+
+        except (httpx.RequestError, httpx.TimeoutException) as e:
             logger.error(
                 f"Network error during Ollama structured completion at URL '{url}': {e}"
             )

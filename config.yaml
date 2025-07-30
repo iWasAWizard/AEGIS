@@ -17,7 +17,7 @@ defaults:
 
   # The default timeout in seconds for waiting for a response from the LLM.
   # This should be high enough for local models to generate a complete plan.
-  llm_planning_timeout: 300
+  llm_planning_timeout: 1200
 
   # The default maximum number of tokens the LLM should generate for a plan.
   # This prevents the LLM from rambling and improves performance.
