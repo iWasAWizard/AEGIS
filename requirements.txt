@@ -10,7 +10,6 @@ pydantic
 pyyaml
 matplotlib
 aiofiles
-aiohttp
 pytest
 tqdm
 rich
@@ -33,7 +32,8 @@ langchain-openai
 sentence-transformers
 faiss-cpu
 pydantic-settings
-numpy
+numpy<2.0
+cmd2
 pyautogui
 opencv-python
 scapy

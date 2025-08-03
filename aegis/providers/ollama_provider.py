@@ -103,7 +103,10 @@ class OllamaProvider(BackendProvider):
             raise PlannerError(f"Network error while querying Ollama: {e}") from e
 
     async def get_structured_completion(
-        self, messages: List[Dict[str, Any]], response_model: Type[BaseModel]
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: Type[BaseModel],
+        runtime_config: RuntimeExecutionConfig,
     ) -> BaseModel:
         """
         Gets a structured completion from Ollama by requesting a JSON object
@@ -124,7 +127,7 @@ class OllamaProvider(BackendProvider):
 
         try:
             async with httpx.AsyncClient() as client:
-                timeout = httpx.Timeout(self.config.llm_planning_timeout)
+                timeout = httpx.Timeout(runtime_config.llm_planning_timeout)
                 response = await client.post(url, json=payload, timeout=timeout)
 
                 if not response.is_success:

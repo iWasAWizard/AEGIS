@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # tests/regression/vulnerable_app.py
 """
 A simple, simulated vulnerable application for testing pwntools integration.

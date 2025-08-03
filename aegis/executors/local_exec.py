@@ -48,7 +48,7 @@ class LocalExecutor:
         else:
             cmd_arg = command_str
 
-        logger.debug(f"Executing local command (shell={shell}): {cmd_to_log}")
+        logger.info(f"Executing local command (shell={shell}): {cmd_to_log}")
         try:
             result = subprocess.run(
                 cmd_arg,  # type: ignore

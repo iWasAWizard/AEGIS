@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from aegis.agents.agent_graph import AgentGraph
 from aegis.agents.task_state import TaskState
 from aegis.exceptions import ConfigurationError, PlannerError, ToolError
+from aegis.executors.redis_exec import RedisExecutor
 from aegis.schemas.agent import AgentConfig, AgentGraphConfig
 from aegis.schemas.api import HistoryStepResponse, LaunchResponse
 from aegis.schemas.launch import LaunchRequest
@@ -24,10 +25,6 @@ from aegis.utils.logger import setup_logger
 
 router = APIRouter()
 logger = setup_logger(__name__)
-
-# In-memory store for interrupted graph states.
-# In a production system, this should be a more persistent store like Redis.
-INTERRUPTED_STATES: Dict[str, Dict] = {}
 
 
 @router.post("/launch", response_model=LaunchResponse)
@@ -100,11 +97,32 @@ async def launch_task(payload: LaunchRequest) -> LaunchResponse:
             and final_state.history[-1].plan.tool_name == "ask_human_for_input"
         ):
             logger.info(f"⏸️  Task {task_id} has been paused for human input.")
-            # Store the compiled graph and the interrupted state for later resumption.
-            INTERRUPTED_STATES[task_id] = {
-                "graph": agent_graph,
-                "state": final_state.model_dump(),
-            }
+            # Persist the interrupted state to Redis instead of in-memory.
+            try:
+                redis = RedisExecutor()
+                session_data = {
+                    "state": final_state.model_dump(),
+                    "profile": (
+                        payload.config if isinstance(payload.config, str) else None
+                    ),
+                    "raw_config": (
+                        payload.config if isinstance(payload.config, dict) else None
+                    ),
+                }
+                redis.set_value(
+                    f"aegis:interrupted:{task_id}",
+                    json.dumps(session_data, default=str),
+                )
+                logger.info(f"Interrupted state for task {task_id} saved to Redis.")
+            except Exception as e:
+                logger.exception(
+                    f"CRITICAL: Failed to save interrupted state for task {task_id} to Redis."
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Task was interrupted but failed to save its state to Redis: {e}",
+                )
+
             last_observation = final_state.history[-1].observation
             return LaunchResponse(
                 task_id=task_id,

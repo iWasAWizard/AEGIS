@@ -1,43 +1,61 @@
-# aegis/agents/steps/interaction.py
+# aegis/tools/wrappers/interaction.py
 """
-Agent steps related to human-in-the-loop interaction.
+Tools for agent-meta-actions and human-in-the-loop interactions.
 """
-import time
-from typing import Dict, Any
+from pydantic import BaseModel, Field
 
-from aegis.agents.task_state import HistoryEntry, TaskState
-from aegis.schemas.plan_output import AgentScratchpad
+from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
-def process_human_feedback(state: TaskState) -> Dict[str, Any]:
-    """
-    Processes human feedback from the state and adds it to the history.
-    This node runs after a graph interruption is resumed.
-    """
-    logger.info("🗣️ Step: Process Human Feedback")
-    if state.human_feedback is None:
-        logger.warning(
-            "process_human_feedback called but no human feedback found in state."
-        )
-        return {}
+class AskHumanForInputInput(BaseModel):
+    """Input for asking a human for input.
 
-    feedback_entry = HistoryEntry(
-        plan=AgentScratchpad(
-            thought="The agent paused to ask for human guidance. Now, I will incorporate the provided feedback into my plan.",
-            tool_name="process_human_feedback",
-            tool_args={},
-        ),
-        observation=f"Human provided the following input: '{state.human_feedback}'",
-        status="success",
-        start_time=time.time(),
-        end_time=time.time(),
-    )
+    :ivar question: The question to ask the human operator.
+    :vartype question: str
+    """
 
-    # Return the updated history and clear the feedback from the state
-    return {
-        "history": state.history + [feedback_entry],
-        "human_feedback": None,
-    }
+    question: str = Field(..., description="The question to ask the human operator.")
+
+
+class ClearShortTermMemoryInput(BaseModel):
+    """Input for clearing the agent's short-term memory. Takes no arguments."""
+
+    pass
+
+
+@register_tool(
+    name="ask_human_for_input",
+    input_model=AskHumanForInputInput,
+    description="Pauses the task and asks the human operator for input or confirmation. Use this when you are stuck or need permission for a sensitive action.",
+    category="interaction",
+    tags=["interaction", "human-in-the-loop", "pause"],
+    safe_mode=True,
+    purpose="Ask the human operator for guidance or permission.",
+)
+def ask_human_for_input(input_data: AskHumanForInputInput) -> str:
+    """
+    Signals the agent graph to interrupt execution and wait for human feedback.
+    The actual pausing is handled by the graph's interrupt logic.
+    """
+    logger.info(f"Pausing to ask human for input: '{input_data.question}'")
+    return f"The agent has paused and is waiting for human input. The question is: '{input_data.question}'"
+
+
+@register_tool(
+    name="clear_short_term_memory",
+    input_model=ClearShortTermMemoryInput,
+    description="Clears the agent's short-term conversation history. Use this to reduce context size or to start a new, unrelated sub-task without being influenced by past steps.",
+    category="interaction",
+    tags=["interaction", "memory", "context"],
+    safe_mode=True,
+    purpose="Clear the conversational history to start a sub-task fresh.",
+)
+def clear_short_term_memory(input_data: ClearShortTermMemoryInput) -> str:
+    """
+    Signals the execute_tool step to clear the agent's history.
+    This function itself is a no-op; the logic is in the execution step.
+    """
+    return "Agent's short-term memory (conversation history) has been cleared."

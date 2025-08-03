@@ -5,13 +5,13 @@ models:
   # === Models for vLLM (Primary) and Ollama ===
   - key: "hermes"
     name: "NousResearch/Nous-Hermes-2-Mistral-7B-DPO"
-    ollama_model_name: "nous-hermes2"
-    filename_pattern: ["nous-hermes-2-mistral-7b"]
+    ollama_model_name: "hf.co/NousResearch/Nous-Hermes-2-Mistral-7B-DPO-GGUF:Q4_K_M"
+    filename_pattern: ["Nous-Hermes-2-Mistral-7B-DPO-GGUF"]
     formatter_hint: "chatml"
-    default_max_context_length: 16384
+    default_max_context_length: 32768
     quant_example: "Q4_K_M"
     use_case: "General-purpose assistant, strong reasoning"
-    url: "https://huggingface.co/TheBloke/Nous-Hermes-2-Mistral-7B-DPO-GGUF/resolve/main/nous-hermes-2-mistral-7b.Q4_K_M.gguf"
+    url: "https://huggingface.co/TheBloke/Nous-Hermes-2-Mistral-7B-DPO-GGUF/resolve/main/nous-hermes-2-mistral-7b-Q4_K_M.gguf"
     notes: "Primary model for BEND. Set via switch-model.sh."
 
   - key: "mythomax"
@@ -19,37 +19,37 @@ models:
     ollama_model_name: "mythomax"
     filename_pattern: ["mythomax-l2-13b"]
     formatter_hint: "alpaca"
-    default_max_context_length: 8192
-    quant_example: "Q5_K_M"
+    default_max_context_length: 32768
+    quant_example: "Q4_K_M"
     use_case: "Roleplay, lore-heavy chat"
-    url: "https://huggingface.co/TheBloke/MythoMax-L2-13B-GGUF/resolve/main/mythomax-l2-13b.Q4_K_M.gguf"
+    url: "https://huggingface.co/TheBloke/MythoMax-L2-13B-GGUF/resolve/main/mythomax-l2-13b-Q4_K_M.gguf"
 
   - key: "mistral-openorca"
     name: "Open-Orca/Mistral-7B-OpenOrca"
     ollama_model_name: "mistral-openorca"
     filename_pattern: ["mistral-7b-openorca"]
     formatter_hint: "chatml"
-    default_max_context_length: 8192
+    default_max_context_length: 32768
     quant_example: "Q4_K_M"
     use_case: "Fast general chat, coding"
-    url: "https://huggingface.co/TheBloke/Mistral-7B-OpenOrca-GGUF/resolve/main/mistral-7b-openorca.Q4_K_M.gguf"
+    url: "https://huggingface.co/TheBloke/Mistral-7B-OpenOrca-GGUF/resolve/main/mistral-7b-openorca-Q4_K_M.gguf"
 
   - key: "deepseek-coder"
     name: "deepseek-ai/deepseek-coder-33b-instruct"
     ollama_model_name: "deepseek-coder:33b-instruct"
     filename_pattern: ["deepseek-coder-33b"]
     formatter_hint: "codellama-instruct"
-    default_max_context_length: 16384
+    default_max_context_length: 32768
     quant_example: "Q4_K_M"
     use_case: "Software dev, multi-file context"
-    url: "https://huggingface.co/TheBloke/deepseek-coder-33b-GGUF/resolve/main/deepseek-coder-33b.Q4_K_M.gguf"
+    url: "https://huggingface.co/TheBloke/deepseek-coder-33b-GGUF/resolve/main/deepseek-coder-33b-Q4_K_M.gguf"
 
   - key: "llama3"
     name: "meta-llama/Meta-Llama-3-8B-Instruct"
     ollama_model_name: "llama3:8b-instruct"
     filename_pattern: ["Llama-3-8B-Instruct-IQ4_XS.gguf", "Llama-3-8B-Instruct"]
     formatter_hint: "llama3"
-    default_max_context_length: 8192
+    default_max_context_length: 32768
     quant_example: "IQ4_XS"
     use_case: "General-purpose assistant, strong reasoning"
     url: "https://huggingface.co/QuantFactory/Llama-3-8B-Instruct-GGUF/resolve/main/Llama-3-8B-Instruct-IQ4_XS.gguf"
@@ -60,8 +60,19 @@ models:
     ollama_model_name: "granite-code:8b-instruct"
     filename_pattern: ["granite-3.3-8b-instruct"]
     formatter_hint: "chatml"
-    default_max_context_length: 8192
+    default_max_context_length: 32768
     quant_example: "Q4_K_M"
     use_case: "Code generation and instruction following"
-    url: "https://huggingface.co/TheBloke/granite-3.3-8B-instruct-GGUF/resolve/main/granite-3.3-8b-instruct.Q4_K_M.gguf"
+    url: "https://huggingface.co/TheBloke/granite-3.3-8B-instruct-GGUF/resolve/main/granite-3.3-8b-instruct-Q4_K_M.gguf"
     notes: "A strong, modern coding model from IBM."
+
+  - key: "openchat"
+    name: "openchat/openchat-3.6-8b-20240522"
+    ollama_model_name: "hf.co/bartowski/openchat-3.6-8b-20240522-GGUF:Q4_K_M"
+    filename_pattern: ["openchat-3.6-8b"]
+    formatter_hint: "chatml"
+    default_max_context_length: 32768
+    quant_example: "Q4_K_M"
+    use_case: "General-purpose assistant, strong reasoning"
+    url: "https://huggingface.co/bartowski/openchat-3.6-8b-20240522-GGUF/blob/main/openchat-3.6-8b-20240522-Q4_K_M.gguf"
+    notes: "A powerful open-source model, great for general chat."

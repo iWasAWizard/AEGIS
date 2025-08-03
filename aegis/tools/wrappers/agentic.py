@@ -1,6 +1,6 @@
 # aegis/tools/wrappers/agentic.py
 """
-Wrapper tools for agent-to-agent communication and delegation.
+Wrapper tools for agent-to-agent communication, delegation, and meta-actions.
 """
 import json
 
@@ -49,44 +49,25 @@ class DispatchSubtaskInput(BaseModel):
 def dispatch_subtask_to_agent(input_data: DispatchSubtaskInput) -> str:
     """
     Invokes another AEGIS agent via the API to perform a sub-task.
-
-    This tool makes a synchronous HTTP POST request to its own /api/launch
-    endpoint, effectively creating a hierarchical agent structure. It waits for
-    the sub-agent to complete its task and returns the summary.
-
-    :param input_data: The prompt, preset, and backend for the sub-task.
-    :type input_data: DispatchSubtaskInput
-    :return: The final summary from the sub-agent's execution.
-    :rtype: str
-    :raises ToolExecutionError: If the API call fails or the sub-agent returns an error.
     """
     logger.info(
         f"Dispatching sub-task to agent with preset '{input_data.preset}': '{input_data.prompt[:50]}...'"
     )
-
-    # The agent calls itself. We assume it's running on localhost at port 8000.
-    # A more advanced version could get this from a service discovery mechanism.
     launch_url = "http://localhost:8000/api/launch"
-
     payload = {
         "task": {"prompt": input_data.prompt},
         "config": input_data.preset,
         "execution": {"backend_profile": input_data.backend_profile},
     }
-
     try:
-        response = requests.post(
-            launch_url, json=payload, timeout=900
-        )  # 15 min timeout
+        response = requests.post(launch_url, json=payload, timeout=900)
         response.raise_for_status()
         result = response.json()
-
         summary = result.get("summary", "Sub-agent did not provide a summary.")
         logger.info(
             f"Sub-task completed successfully. Returning summary to orchestrator."
         )
         return summary
-
     except requests.exceptions.HTTPError as e:
         error_detail = e.response.json().get("detail", e.response.text)
         logger.error(f"Sub-agent task failed with HTTP error: {error_detail}")
@@ -96,6 +77,58 @@ def dispatch_subtask_to_agent(input_data: DispatchSubtaskInput) -> str:
         raise ToolExecutionError(
             f"Could not dispatch sub-task due to a network error: {e}"
         )
-    except json.JSONDecodeError:
-        logger.error(f"Failed to decode JSON response from sub-agent API.")
-        raise ToolExecutionError("Sub-agent returned an invalid JSON response.")
+
+
+class ReviseGoalInput(BaseModel):
+    """Input for revising the agent's main goal.
+
+    :ivar new_goal: The new, revised goal for the agent to follow.
+    :vartype new_goal: str
+    :ivar reason: A justification for why the goal is being changed.
+    :vartype reason: str
+    """
+
+    new_goal: str = Field(
+        ..., description="The new, revised goal for the agent to follow."
+    )
+    reason: str = Field(
+        ..., description="A justification for why the goal is being changed."
+    )
+
+
+@register_tool(
+    name="revise_goal",
+    input_model=ReviseGoalInput,
+    description="Revises the original task prompt if it is found to be flawed, impossible, or suboptimal. Use this to self-correct your high-level objective.",
+    category="agentic",
+    tags=["agent", "planning", "meta"],
+    safe_mode=True,
+    purpose="Revise the current main goal to a new one.",
+)
+def revise_goal(input_data: ReviseGoalInput) -> str:
+    """
+    Signals the execution step to modify the agent's main goal in the TaskState.
+    """
+    return f"Goal successfully revised. New goal is: '{input_data.new_goal}'"
+
+
+class AdvanceToNextSubGoalInput(BaseModel):
+    """Input for advancing to the next sub-goal. Takes no arguments."""
+
+    pass
+
+
+@register_tool(
+    name="advance_to_next_sub_goal",
+    input_model=AdvanceToNextSubGoalInput,
+    description="Marks the current sub-goal as complete and advances the focus to the next sub-goal in the high-level plan. Call this ONLY when the current sub-goal is fully achieved.",
+    category="agentic",
+    tags=["agent", "planning", "meta", "sub-goal"],
+    safe_mode=True,
+    purpose="Advance to the next sub-goal in the plan.",
+)
+def advance_to_next_sub_goal(input_data: AdvanceToNextSubGoalInput) -> str:
+    """
+    Signals the execution step to increment the sub-goal index in the TaskState.
+    """
+    return "Successfully advanced to the next sub-goal."

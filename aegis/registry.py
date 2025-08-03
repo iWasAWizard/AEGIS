@@ -17,7 +17,7 @@ from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 load_dotenv()
-logger.info("Initializing aegis.registry module...")
+logger.debug("Initializing aegis.registry module...")
 
 
 class ToolEntry(BaseModel):
@@ -171,16 +171,14 @@ def register_tool(
     return decorator
 
 
-def get_tool(name: str, safe_mode: bool = True) -> ToolEntry:
-    """Retrieve a registered tool by name, optionally filtering by safe mode.
+def get_tool(name: str) -> ToolEntry:
+    """Retrieve a registered tool by name.
 
     :param name: The name of the tool to retrieve.
     :type name: str
-    :param safe_mode: If True, only return the tool if it is marked as safe.
-    :type safe_mode: bool
-    :return: A ToolEntry object if the tool is found and meets criteria.
+    :return: A ToolEntry object if the tool is found.
     :rtype: ToolEntry
-    :raises ToolNotFoundError: If the tool is not in the registry or is blocked by safe mode.
+    :raises ToolNotFoundError: If the tool is not in the registry.
     """
     tool = TOOL_REGISTRY.get(name)
     if tool is None:
@@ -189,25 +187,16 @@ def get_tool(name: str, safe_mode: bool = True) -> ToolEntry:
         raise ToolNotFoundError(
             f"Tool '{name}' not found in registry. Available: {available_tools}"
         )
-    if safe_mode and not tool.safe_mode:
-        logger.warning(
-            f"Tool '{name}' is not available in safe_mode, but safe_mode is active."
-        )
-        raise ToolNotFoundError(f"Tool '{name}' is blocked by safe mode.")
     return tool
 
 
-def list_tools(safe_mode: bool = True) -> List[str]:
-    """List the names of all available tools, optionally filtering by safe mode.
+def list_tools() -> List[str]:
+    """List the names of all available tools.
 
-    :param safe_mode: If True, only include tools marked as safe in the list.
-    :type safe_mode: bool
     :return: A list of tool names.
     :rtype: List[str]
     """
-    return [
-        name for name, tool in TOOL_REGISTRY.items() if not safe_mode or tool.safe_mode
-    ]
+    return [name for name, tool in TOOL_REGISTRY.items()]
 
 
 def log_registry_contents() -> None:

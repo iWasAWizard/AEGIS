@@ -1,14 +1,18 @@
 # aegis/web/routes_graphs.py
 """Routes for visualizing or exporting execution graphs, timelines, or state transitions."""
-
 import os
+from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, HTTPException, UploadFile, File
 
+from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
 
-GRAPH_DIR = "presets"
+config = get_config()
+# This assumes that 'presets' is a subdirectory relative to where the app runs.
+# A more robust solution might use an absolute path or resolve relative to the project root.
+PRESET_DIR = Path(config.get("paths", {}).get("presets", "presets"))
 router = APIRouter(prefix="/graphs", tags=["graphs"])
 logger = setup_logger(__name__)
 
@@ -21,9 +25,11 @@ def list_graphs():
     :rtype: list[str]
     """
     logger.info("Listing available graph configuration files.")
-    if not os.path.exists(GRAPH_DIR):
+    if not PRESET_DIR.exists():
         return []
-    return sorted(f for f in os.listdir(GRAPH_DIR) if f.endswith((".yaml", ".yml")))
+    return sorted(
+        f.name for f in PRESET_DIR.iterdir() if f.name.endswith((".yaml", ".yml"))
+    )
 
 
 @router.post("/upload", summary="Upload an AgentGraphConfig YAML file")
@@ -37,10 +43,9 @@ def upload_graph(file: UploadFile = File(...)):
     :raises HTTPException: If the file is invalid or cannot be saved.
     """
     logger.info(f"Attempting to upload graph file: {file.filename}")
-    if not os.path.exists(GRAPH_DIR):
-        os.makedirs(GRAPH_DIR)
+    PRESET_DIR.mkdir(parents=True, exist_ok=True)
 
-    file_path = os.path.join(GRAPH_DIR, file.filename)  # type: ignore
+    file_path = PRESET_DIR / file.filename
     try:
         content = file.file.read()
         # Basic validation to ensure it's valid YAML
@@ -66,8 +71,8 @@ def view_graph(name: str):
     :raises HTTPException: If the file cannot be found or loaded.
     """
     logger.info(f"Request to view graph: {name}")
-    path = os.path.join(GRAPH_DIR, name)
-    if not os.path.exists(path):
+    path = PRESET_DIR / name
+    if not path.exists():
         logger.warning(f"Graph file not found at path: {path}")
         raise HTTPException(status_code=404, detail="Graph not found")
     try:

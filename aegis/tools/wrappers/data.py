@@ -64,7 +64,7 @@ class DiffTextBlocksInput(BaseModel):
     safe_mode=True,
     purpose="Extract structured information from unstructured text.",
 )
-def extract_structured_data(
+async def extract_structured_data(
     input_data: ExtractStructuredDataInput, state: TaskState
 ) -> Dict[str, Any]:
     """
@@ -128,7 +128,7 @@ def extract_structured_data(
         )
 
         # Call the LLM with the response_model parameter to get structured output
-        extracted_data = client.chat.completions.create(
+        extracted_data = await client.chat.completions.create(
             model=getattr(backend_config, "model", "default-model"),
             messages=[
                 {

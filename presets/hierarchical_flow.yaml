@@ -1,0 +1,31 @@
+# presets/hierarchical_flow.yaml
+# An advanced agent that first decomposes a task into sub-goals.
+name: "Hierarchical Agent Flow"
+description: "An agent that first creates a high-level plan (sub-goals) and then executes them sequentially."
+state_type: "aegis.agents.task_state.TaskState"
+entrypoint: "decompose"
+
+nodes:
+  - id: "decompose"
+    tool: "decompose_task"
+  - id: "plan"
+    tool: "reflect_and_plan"
+  - id: "execute"
+    tool: "execute_tool"
+  - id: "summarize"
+    tool: "summarize_result"
+
+edges:
+  - ["decompose", "plan"]
+  - ["plan", "execute"]
+  - ["summarize", "__end__"]
+
+condition_node: "execute"
+condition_map:
+  continue: "plan"
+  end: "summarize"
+
+runtime:
+  # This flow benefits from a powerful model for the initial decomposition.
+  backend_profile: "ollama_remote"
+  llm_model_name: "openchat"

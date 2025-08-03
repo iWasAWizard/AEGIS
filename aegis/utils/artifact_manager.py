@@ -11,11 +11,14 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-ARTIFACT_DIR = Path("artifacts")
+# Load path from central config
+config = get_config()
+ARTIFACT_DIR = Path(config.get("paths", {}).get("artifacts", "artifacts"))
 ARTIFACT_DIR.mkdir(exist_ok=True)
 
 

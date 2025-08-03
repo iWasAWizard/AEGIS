@@ -1,7 +1,10 @@
 networks:
   bend-net:
     external: true
-    name: ${AEGIS_EXTERNAL_NETWORK:-bend_bend-net} # Use variable, with a default
+    name: ${AEGIS_EXTERNAL_NETWORK:-bend_bend-net}
+
+volumes:
+  aegis_ui_dist:
 
 services:
   agent:
@@ -13,6 +16,7 @@ services:
       - "${AEGIS_PORT:-8000}:8000"
     networks:
       - bend-net
+    # network_mode: bridge
     environment:
       - ADMIN_PASSWORD
       - ROOT_PASSWORD
@@ -21,10 +25,15 @@ services:
       - LANGCHAIN_DEBUG=true
       - OTEL_SERVICE_NAME=aegis-agent
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
-      - BEND_API_KEY=${BEND_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - BACKEND_API_KEY=${BACKEND_API_KEY}
     restart: unless-stopped
     volumes:
+      # Mount the source code directory to allow live development.
+      # This is useful for development but should be removed in production.
+      # - ./aegis:/app/aegis
+      # The volume below preserves the built UI artifacts from the image,
+      # preventing the source code mount above from hiding them.
+      # - aegis_ui_dist:/app/aegis/web/react_ui/dist
       - ./reports:/app/reports
       - ./logs:/app/logs
       - ./artifacts:/app/artifacts

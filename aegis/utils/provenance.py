@@ -12,9 +12,13 @@ import time
 from pathlib import Path
 
 from aegis.agents.task_state import TaskState
+from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+config = get_config()
+REPORTS_BASE_DIR = Path(config.get("paths", {}).get("reports", "reports"))
 
 
 def _get_final_status(state: TaskState) -> str:
@@ -57,7 +61,7 @@ def generate_provenance_report(state: TaskState):
     :param state: The final `TaskState` of the completed agent run.
     :type state: TaskState
     """
-    reports_dir = Path("reports") / state.task_id
+    reports_dir = REPORTS_BASE_DIR / state.task_id
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Generating provenance report...")

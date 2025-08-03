@@ -12,6 +12,7 @@ functions that can act as nodes in an agent's execution graph.
 from typing import Dict, Callable, Any
 
 from aegis.agents.steps.check_termination import check_termination
+from aegis.agents.steps.decompose_task import decompose_task
 from aegis.agents.steps.execute_tool import execute_tool
 from aegis.agents.steps.interaction import process_human_feedback
 from aegis.agents.steps.reflect_and_plan import reflect_and_plan
@@ -24,11 +25,13 @@ from aegis.agents.steps.verification import (
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
-logger.info("Initializing aegis.schemas.node_registry module...")
+logger.debug("Initializing aegis.schemas.node_registry module...")
 
 # This registry maps the `tool` name specified in a preset's `nodes` list
 # to the actual function that will be executed for that node.
 AGENT_NODE_REGISTRY: Dict[str, Callable[..., Any]] = {
+    # The step that breaks the main goal into sub-goals.
+    "decompose_task": decompose_task,
     # The core planning step where the agent uses the LLM to decide what to do next.
     "reflect_and_plan": reflect_and_plan,
     # The step that executes the tool chosen by the planner.
@@ -47,6 +50,6 @@ AGENT_NODE_REGISTRY: Dict[str, Callable[..., Any]] = {
     "process_human_feedback": process_human_feedback,
 }
 
-logger.info(
+logger.debug(
     f"Agent node registry initialized with keys: {list(AGENT_NODE_REGISTRY.keys())}"
 )

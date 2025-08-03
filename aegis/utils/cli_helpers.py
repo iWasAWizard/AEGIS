@@ -105,17 +105,18 @@ def _to_pascal_case(snake_str: str) -> str:
 
 
 def create_new_tool(name: str, description: str, category: str, is_safe: bool) -> Path:
-    """Creates a new boilerplate tool file."""
+    """Creates a new boilerplate tool file and a corresponding test file."""
+    # Create tool source file
     plugins_dir = Path("plugins")
     plugins_dir.mkdir(exist_ok=True)
     (plugins_dir / "__init__.py").touch(exist_ok=True)
 
-    file_path = plugins_dir / f"{name}.py"
-    if file_path.exists():
-        raise FileExistsError(f"Tool file '{file_path}' already exists.")
+    tool_file_path = plugins_dir / f"{name}.py"
+    if tool_file_path.exists():
+        raise FileExistsError(f"Tool file '{tool_file_path}' already exists.")
 
     class_name = f"{_to_pascal_case(name)}Input"
-    content = f"""# plugins/{name}.py
+    tool_content = f"""# plugins/{name}.py
 from pydantic import BaseModel, Field
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
@@ -151,10 +152,44 @@ def {name}(input_data: {class_name}) -> str:
     logger.info(f"Executing tool: {name}")
 
     # --- YOUR TOOL LOGIC GOES HERE ---
-    result = f"Tool '{{name}}' executed with arg: {{input_data.example_arg}}"
+    result = f"Tool '{name}' executed with arg: {{input_data.example_arg}}"
     # ---------------------------------
 
     return result
 """
-    file_path.write_text(content, encoding="utf-8")
-    return file_path
+    tool_file_path.write_text(tool_content, encoding="utf-8")
+
+    # Create corresponding test file
+    tests_dir = Path("aegis/tests/tools/plugins")
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir.parent / "__init__.py").touch(exist_ok=True)
+    (tests_dir / "__init__.py").touch(exist_ok=True)
+
+    test_file_path = tests_dir / f"test_{name}.py"
+    if test_file_path.exists():
+        logger.warning(f"Test file '{test_file_path}' already exists. Skipping.")
+    else:
+        test_content = f"""# aegis/tests/tools/plugins/test_{name}.py
+import pytest
+from plugins.{name} import {name}, {class_name}
+
+# This is a basic test case. Consider adding more tests for edge cases,
+# error handling, and different inputs.
+
+def test_{name}_success():
+    \"\"\"
+    Tests that the {name} tool executes successfully with valid input.
+    \"\"\"
+    # Arrange
+    input_data = {class_name}(example_arg="test_value")
+
+    # Act
+    result = {name}(input_data)
+
+    # Assert
+    assert isinstance(result, str)
+    assert "test_value" in result
+"""
+        test_file_path.write_text(test_content, encoding="utf-8")
+
+    return tool_file_path

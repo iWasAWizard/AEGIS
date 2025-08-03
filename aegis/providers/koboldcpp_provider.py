@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Type
 
-import aiohttp
+import httpx
 from pydantic import BaseModel
 
 from aegis.exceptions import PlannerError, ToolExecutionError
@@ -70,34 +70,36 @@ class KoboldcppProvider(BackendProvider):
         logger.info(f"Sending prompt to KoboldCPP backend at {self.config.llm_url}")
         logger.debug(f"KoboldCPP payload: {json.dumps(payload, indent=2)}")
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.config.llm_url,
-                    json=payload,
-                    timeout=runtime_config.llm_planning_timeout,
-                ) as response:
-                    if not response.ok:
-                        body = await response.text()
-                        raise PlannerError(
-                            f"Failed to query KoboldCPP. Status: {response.status}, Body: {body}"
-                        )
-                    result = await response.json()
-                    if (
-                        "results" not in result
-                        or not result["results"]
-                        or "text" not in result["results"][0]
-                    ):
-                        raise PlannerError(
-                            "Invalid response format from KoboldCPP: 'results' or 'text' key missing."
-                        )
-                    return result["results"][0]["text"]
-        except asyncio.TimeoutError as e:
+            async with httpx.AsyncClient() as client:
+                timeout = httpx.Timeout(runtime_config.llm_planning_timeout)
+                response = await client.post(
+                    self.config.llm_url, json=payload, timeout=timeout
+                )
+                if not response.is_success:
+                    body = response.text
+                    raise PlannerError(
+                        f"Failed to query KoboldCPP. Status: {response.status_code}, Body: {body}"
+                    )
+                result = response.json()
+                if (
+                    "results" not in result
+                    or not result["results"]
+                    or "text" not in result["results"][0]
+                ):
+                    raise PlannerError(
+                        "Invalid response format from KoboldCPP: 'results' or 'text' key missing."
+                    )
+                return result["results"][0]["text"]
+        except httpx.TimeoutException as e:
             raise PlannerError("Query to KoboldCPP timed out.") from e
-        except aiohttp.ClientError as e:
+        except httpx.RequestError as e:
             raise PlannerError(f"Network error while querying KoboldCPP: {e}") from e
 
     async def get_structured_completion(
-        self, system_prompt: str, user_prompt: str, response_model: Type[BaseModel]
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: Type[BaseModel],
+        runtime_config: RuntimeExecutionConfig,
     ) -> BaseModel:
         raise NotImplementedError(
             "KoboldCPP provider does not support structured completion."
@@ -113,13 +115,13 @@ class KoboldcppProvider(BackendProvider):
             headers["X-API-Key"] = self.config.api_key
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url, json={"text": text}, headers=headers
-                ) as response:
-                    response.raise_for_status()
-                    return await response.read()
-        except aiohttp.ClientError as e:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url, json={"text": text}, headers=headers, timeout=60.0
+                )
+                response.raise_for_status()
+                return response.read()
+        except httpx.RequestError as e:
             raise ToolExecutionError(f"BEND speech synthesis failed: {e}") from e
 
     async def get_transcription(self, audio_bytes: bytes) -> str:
@@ -131,18 +133,17 @@ class KoboldcppProvider(BackendProvider):
         if self.config.api_key:
             headers["X-API-Key"] = self.config.api_key
 
-        data = aiohttp.FormData()
-        data.add_field(
-            "file", audio_bytes, filename="audio.wav", content_type="audio/wav"
-        )
+        files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=data, headers=headers) as response:
-                    response.raise_for_status()
-                    result = await response.json()
-                    return result.get("text", "[No text in transcription response]")
-        except aiohttp.ClientError as e:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url, files=files, headers=headers, timeout=60.0
+                )
+                response.raise_for_status()
+                result = response.json()
+                return result.get("text", "[No text in transcription response]")
+        except httpx.RequestError as e:
             raise ToolExecutionError(f"BEND audio transcription failed: {e}") from e
 
     async def ingest_document(
@@ -165,15 +166,20 @@ class KoboldcppProvider(BackendProvider):
 
         try:
             with open(file_path, "rb") as f:
-                data = aiohttp.FormData()
-                data.add_field("file", f, filename=source_name or p.name)
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        url, data=data, headers=headers
-                    ) as response:
-                        response.raise_for_status()
-                        return await response.json()
-        except aiohttp.ClientError as e:
+                files = {
+                    "file": (
+                        source_name or p.name,
+                        f.read(),
+                        "application/octet-stream",
+                    )
+                }
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        url, files=files, headers=headers, timeout=120.0
+                    )
+                    response.raise_for_status()
+                    return response.json()
+        except httpx.RequestError as e:
             raise ToolExecutionError(f"BEND document ingestion failed: {e}") from e
         except IOError as e:
             raise ToolExecutionError(
@@ -195,9 +201,11 @@ class KoboldcppProvider(BackendProvider):
         payload = {"query": query, "top_k": top_k}
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers) as response:
-                    response.raise_for_status()
-                    return await response.json()
-        except aiohttp.ClientError as e:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url, json=payload, headers=headers, timeout=30.0
+                )
+                response.raise_for_status()
+                return response.json()
+        except httpx.RequestError as e:
             raise ToolExecutionError(f"BEND knowledge retrieval failed: {e}") from e

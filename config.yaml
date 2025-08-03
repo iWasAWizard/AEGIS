@@ -6,10 +6,10 @@
 # specific launch request.
 defaults:
   # The default backend profile from backends.yaml to use if none is specified.
-  backend_profile: "vllm_local"
+  backend_profile: "ollama_remote"
 
   # The default abstract model name.
-  llm_model_name: "hermes"
+  llm_model_name: "openchat"
 
   # The default maximum number of plan-execute steps an agent can take before
   # the task is automatically terminated.
@@ -29,6 +29,10 @@ defaults:
   # The default safety mode. If true, tools marked as [UNSAFE] cannot be run
   # unless overridden.
   safe_mode: true
+
+  # If the number of available tools exceeds this, a preliminary LLM call is
+  # made to select a relevant subset. Set to a high number to disable.
+  tool_selection_threshold: 20
 
 # Directory paths for generated outputs.
 # These paths are relative to the AEGIS project root.
@@ -56,4 +60,6 @@ logging:
 # Centralized service URLs
 services:
   redis_url: "redis://redis:6379/0"
-  guardrails_url: "http://nemoguardrails:8000/v1/chat/completions"
+  # This now uses an environment variable. The default is for bridge networking.
+  # For host networking, set AEGIS_GUARDRAILS_URL in .env to http://localhost:12012/...
+  guardrails_url: "${AEGIS_GUARDRAILS_URL:-http://nemoguardrails:8000/v1/chat/completions}"

@@ -13,11 +13,14 @@ from typing import List, Dict, Any
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
+from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
 
 router = APIRouter()
-REPORTS_DIR = Path("reports")
 logger = setup_logger(__name__)
+
+config = get_config()
+REPORTS_DIR = Path(config.get("paths", {}).get("reports", "reports"))
 
 
 @router.get("/artifacts", tags=["Artifacts"])

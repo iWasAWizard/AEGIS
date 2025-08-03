@@ -54,7 +54,9 @@ class GuiActionInput(BaseModel):
         None, description="The text to type for the 'type' action."
     )
     screenshot_path: Optional[str] = Field(
-        None, description="The local file path where the screenshot will be saved."
+        default=None,
+        alias="save_path",
+        description="The local file path where the screenshot will be saved.",
     )
     duration_seconds: float = Field(
         0.5, description="The time in seconds over which to perform a mouse move."

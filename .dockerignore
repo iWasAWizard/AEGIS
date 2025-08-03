@@ -1,17 +1,33 @@
-# .dockerignore for the AEGIS agent
+# .dockerignore
+# Exclude files from the Docker build context to speed up builds and reduce image size.
 
-# Exclude the entire BEND submodule, especially the large models directory
-BEND/
+# Docker
+.dockerignore
+Dockerfile*
+docker-compose*
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
 # Exclude Git data
 .git
 .gitignore
+.gitattributes
 
 # Exclude local Python virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
 .venv/
 venv/
-*.pyc
-__pycache__/
+env/
 
 # Exclude local development and test files
 .idea/
@@ -24,9 +40,6 @@ logs/
 reports/
 artifacts/
 index/
-
-# Exclude the dockerignore file itself from the context
-.dockerignore
 
 # Model files, until this blows up in my face.
 *.gguf

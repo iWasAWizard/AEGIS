@@ -69,15 +69,20 @@ def setup_logger(
     if not _LOGGING_CONFIGURED:
         root_logger = logging.getLogger()
 
-        # Get log level from config.yaml, fallback to info
-        try:
-            config = get_config()
-            log_level_str = config.get("logging", {}).get("level", "info").upper()
-        except FileNotFoundError:
-            log_level_str = os.getenv("AEGIS_LOG_LEVEL", "info").upper()
+        # If the root logger's level is still at the default (WARNING), it means
+        # it has not been configured by an entry point. In this case, we configure
+        # it from the config file. Otherwise, we respect the level set by the entry point.
+        if root_logger.level == logging.WARNING:
+            try:
+                config = get_config()
+                log_level_str = config.get("logging", {}).get("level", "info").upper()
+            except FileNotFoundError:
+                log_level_str = os.getenv("AEGIS_LOG_LEVEL", "info").upper()
 
-        level = getattr(logging, log_level_str, logging.INFO)
-        root_logger.setLevel(level)
+            level = getattr(logging, log_level_str, logging.INFO)
+            root_logger.setLevel(level)
+
+        log_level_name = logging.getLevelName(root_logger.level)
 
         if root_logger.hasHandlers():
             root_logger.handlers.clear()
@@ -100,8 +105,9 @@ def setup_logger(
             )
             file_handler.setFormatter(file_formatter)
             root_logger.addHandler(file_handler)
-            root_logger.info(
-                f"Root logger configured. Level: {log_level_str}. Handlers: Console (JSON), JSONL File."
+            # Use a a low-level logger call here to avoid recursion if it's the first log
+            root_logger.debug(
+                f"Root logger configured. Level: {log_level_name}. Handlers: Console (JSON), JSONL File."
             )
         except Exception as e:
             root_logger.error(f"Failed to configure JSONL file logger: {e}")

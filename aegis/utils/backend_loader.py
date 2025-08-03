@@ -60,7 +60,7 @@ def get_backend_config(profile_name: str) -> Any:
         f"Found raw config for backend profile '{profile_name}': {backend_config_raw}"
     )
 
-    # Resolve secret placeholders like ${BEND_API_KEY}
+    # Resolve secret placeholders like ${BACKEND_API_KEY}
     for key, value in backend_config_raw.items():
         if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
             secret_key = value[2:-1]

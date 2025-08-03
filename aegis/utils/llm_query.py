@@ -2,6 +2,7 @@
 """
 LLM query interface for dispatching prompts to a configured backend provider.
 """
+import functools
 from typing import List, Dict, Any
 
 from aegis.exceptions import ConfigurationError
@@ -17,9 +18,11 @@ from aegis.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 
+@functools.cache
 def get_provider_for_profile(profile_name: str) -> BackendProvider:
     """
     Factory function to get the correct provider instance based on a profile name.
+    This function is cached to avoid reloading the backend config repeatedly.
     """
     backend_config = get_backend_config(profile_name)
 

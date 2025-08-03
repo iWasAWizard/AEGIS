@@ -69,58 +69,40 @@ export default function App() {
     return () => { if (wsRef.current) wsRef.current.close(); };
   }, []);
 
-  // --- Data Fetching ---
-  const fetchPresetsForEditor = () => {
-    fetch('/api/presets')
-      .then(res => res.json())
-      .then(setPresetList)
-      .catch(err => console.error("Failed to fetch presets for editor:", err));
+  // --- Initial Data Fetching ---
+  const fetchInitialData = () => {
+    Promise.all([
+        fetch('/api/presets').then(res => res.ok ? res.json() : Promise.reject('Failed to fetch presets')),
+        fetch('/api/backends').then(res => res.ok ? res.json() : Promise.reject('Failed to fetch backends')),
+        fetch('/api/themes').then(res => res.ok ? res.json() : Promise.reject('Failed to fetch themes')),
+        fetch('/api/editor/files').then(res => res.ok ? res.json() : Promise.reject('Failed to fetch editable files'))
+    ]).then(([presetsData, backendsData, themesData, filesData]) => {
+        setPresets(presetsData);
+        setPresetList(presetsData);
+        if (presetsData.length > 0) {
+            const defaultPreset = presetsData.find(p => p.id === 'default') || presetsData[0];
+            setSelectedPreset(defaultPreset.id);
+        }
+
+        setBackends(backendsData);
+        if (backendsData.length > 0) {
+            const defaultBackend = backendsData.find(b => b.profile_name === 'vllm_local') || backendsData[0];
+            setSelectedBackend(defaultBackend.profile_name);
+        }
+
+        setThemes(themesData);
+        setConfigFiles(filesData);
+
+    }).catch(error => {
+        console.error("Error fetching initial data for UI:", error);
+        setError("Could not load initial configuration from server. Please check the connection and restart.");
+    });
   };
 
   useEffect(() => {
-    fetchPresetsForEditor();
-
-    fetch('/api/editor/files')
-      .then(res => res.json())
-      .then(setConfigFiles)
-      .catch(err => console.error("Failed to fetch editable files:", err));
-
-    const fetchData = (url, setter, defaultSetter, findDefault, keyField) => {
-        fetch(url)
-            .then(res => {
-                if (!res.ok) throw new Error(`API fetch failed for ${url}`);
-                return res.json();
-            })
-            .then(data => {
-                if (Array.isArray(data)) {
-                    setter(data);
-                    if (data.length > 0) {
-                        const defaultValue = findDefault(data);
-                        defaultSetter(defaultValue);
-                    }
-                } else {
-                    setter([]);
-                }
-            })
-            .catch(err => {
-                console.error(`Error fetching from ${url}:`, err);
-                setter([]);
-            });
-    };
-
-    fetchData('/api/presets', setPresets, setSelectedPreset, data => {
-        const d = data.find(p => p.id === 'default');
-        return d ? d.id : (data[0] ? data[0].id : '');
-    });
-    fetchData('/api/backends', setBackends, setSelectedBackend, data => {
-        const d = data.find(b => b.profile_name === 'vllm_local');
-        return d ? d.profile_name : (data[0] ? data[0].profile_name : '');
-    });
-    fetch('/api/themes')
-      .then(res => res.ok ? res.json() : ['oled'])
-      .then(setThemes)
-      .catch(err => { console.error("Failed to fetch themes:", err); setThemes(['oled']); });
+    fetchInitialData();
   }, []);
+
 
   // Effect to fetch models when the selected backend changes
   useEffect(() => {
@@ -277,7 +259,7 @@ export default function App() {
         body: JSON.stringify(payload)
       });
       alert("Preset saved.");
-      fetchPresetsForEditor();
+      fetchInitialData(); // Re-fetch all data to update lists
     } catch (e) {
         alert("Failed to save preset. Ensure config is valid JSON.");
     }
@@ -290,7 +272,7 @@ export default function App() {
       case 'launch':
         return <LaunchTab {...{ prompt, setPrompt, presets, selectedPreset, setSelectedPreset, backends, selectedBackend, setSelectedBackend, models, selectedModel, setSelectedModel, isLoading, setIsLoading, error, setError, response, setResponse, launch, logs, setLogs, wsStatus }} />;
       case 'presets':
-        return <PresetsTab {...{ presetList, currentPresetId, presetForm, setPresetForm, presetConfigError, setPresetConfigError, loadPreset, savePreset, fetchPresets: fetchPresetsForEditor }} />;
+        return <PresetsTab {...{ presetList, currentPresetId, presetForm, setPresetForm, presetConfigError, setPresetConfigError, loadPreset, savePreset, fetchPresets: fetchInitialData }} />;
       case 'editor':
         return <ConfigEditorTab {...{ files: configFiles, currentFile, content: fileContent, setContent: setFileContent, status: fileStatus, loadConfigFileContent, saveConfigFileContent }} />;
       case 'artifacts': return <ArtifactsTab targetArtifactId={targetArtifactId} />;

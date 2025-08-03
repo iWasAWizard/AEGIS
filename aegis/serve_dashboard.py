@@ -11,6 +11,7 @@ import importlib
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 
 import uvicorn
 from dotenv import load_dotenv
@@ -37,23 +38,6 @@ from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
 load_dotenv()
 logger = setup_logger(__name__)
-
-app = FastAPI(
-    title="AEGIS Agentic Framework",
-    description="An autonomous agent framework for planning and executing complex tasks.",
-    version="1.0.0",
-)
-
-
-@app.exception_handler(AegisError)
-async def aegis_exception_handler(request: Request, exc: AegisError):
-    """Handles all custom application errors and returns a structured JSON response."""
-    logger.error(f"Caught an AegisError: {exc.__class__.__name__}: {exc}")
-    logger.error(f"Request details: {request}")
-    return JSONResponse(
-        status_code=500,
-        content={"error_type": exc.__class__.__name__, "message": str(exc)},
-    )
 
 
 def validate_critical_imports():
@@ -92,12 +76,12 @@ def validate_critical_imports():
     logger.info("✅ All critical imports validated successfully.")
 
 
-@app.on_event("startup")
-def on_startup():
-    """Performs application startup actions."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handles application startup and shutdown events."""
+    # --- Startup Logic ---
     logger.info("--- AEGIS Application Startup ---")
 
-    # --- OpenTelemetry Tracing Setup ---
     OTEL_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
     if OTEL_ENDPOINT:
         provider = TracerProvider()
@@ -106,19 +90,15 @@ def on_startup():
         )
         provider.add_span_processor(processor)
         trace.set_tracer_provider(provider)
-
         FastAPIInstrumentor.instrument_app(app)
-        RequestsInstrumentor().instrument()  # Instrument outgoing requests
-
+        RequestsInstrumentor().instrument()
         logger.info(f"OpenTelemetry tracing enabled. Exporting to: {OTEL_ENDPOINT}")
     else:
         logger.info(
             "OpenTelemetry tracing is disabled (OTEL_EXPORTER_OTLP_ENDPOINT not set)."
         )
-    # --- End Tracing Setup ---
 
     validate_critical_imports()
-
     logger.info("Importing all available tools...")
     import_all_tools()
     log_registry_contents()
@@ -132,15 +112,33 @@ def on_startup():
     else:
         logger.info("WebSocket log handler already attached.")
 
+    yield
 
-@app.on_event("shutdown")
-async def on_shutdown():
-    """Performs graceful shutdown actions, like closing WebSockets."""
+    # --- Shutdown Logic ---
     logger.info("--- AEGIS Application Shutdown ---")
     logger.info(f"Closing {len(connected_clients)} active WebSocket connections...")
     close_tasks = [client.close() for client in connected_clients]
     await asyncio.gather(*close_tasks, return_exceptions=True)
     logger.info("All WebSocket connections closed.")
+
+
+app = FastAPI(
+    title="AEGIS Agentic Framework",
+    description="An autonomous agent framework for planning and executing complex tasks.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+
+@app.exception_handler(AegisError)
+async def aegis_exception_handler(request: Request, exc: AegisError):
+    """Handles all custom application errors and returns a structured JSON response."""
+    logger.error(f"Caught an AegisError: {exc.__class__.__name__}: {exc}")
+    logger.error(f"Request details: {request}")
+    return JSONResponse(
+        status_code=500,
+        content={"error_type": exc.__class__.__name__, "message": str(exc)},
+    )
 
 
 app.include_router(api_router, prefix="/api")

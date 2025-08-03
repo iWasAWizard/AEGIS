@@ -12,17 +12,19 @@ def test_runtime_config_defaults():
     """Verify that the default values are set correctly when no arguments are provided."""
     config = RuntimeExecutionConfig()
 
-    assert config.model == "llama3"
-    assert config.ollama_url == "http://ollama:5001/api/generate"
-    assert config.safe_mode is True
-    assert config.timeout == 30
-    assert config.retries == 0
-    assert config.iterations == 10
+    assert config.backend_profile is None
+    assert config.llm_model_name is None
+    assert config.safe_mode is None
+    assert config.tool_timeout is None
+    assert config.tool_retries is None
+    assert config.iterations is None
+    assert config.tool_allowlist == []
 
 
 def test_runtime_config_valid_overrides():
     """Verify that valid values can be used to override the defaults."""
     config = RuntimeExecutionConfig(
+        backend_profile="test_backend",
         llm_model_name="test_model",
         safe_mode=False,
         tool_timeout=60,
@@ -30,19 +32,20 @@ def test_runtime_config_valid_overrides():
         iterations=100,
     )
 
-    assert config.model == "test_model"
+    assert config.backend_profile == "test_backend"
+    assert config.llm_model_name == "test_model"
     assert config.safe_mode is False
-    assert config.timeout == 60
-    assert config.retries == 3
+    assert config.tool_timeout == 60
+    assert config.tool_retries == 3
     assert config.iterations == 100
 
 
 @pytest.mark.parametrize(
     "field, invalid_value, expected_error_msg",
     [
-        ("timeout", 0, "Timeout must be a positive integer."),
-        ("timeout", -10, "Timeout must be a positive integer."),
-        ("retries", -1, "Retries must be a non-negative integer."),
+        ("tool_timeout", 0, "Timeout must be a positive integer."),
+        ("tool_timeout", -10, "Timeout must be a positive integer."),
+        ("tool_retries", -1, "Retries must be a non-negative integer."),
         ("iterations", 0, "Iterations must be a positive integer."),
         ("iterations", -5, "Iterations must be a positive integer."),
     ],

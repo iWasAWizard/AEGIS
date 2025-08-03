@@ -66,7 +66,7 @@ class RuntimeExecutionConfig(BaseModel):
     )
     safe_mode: Optional[bool] = Field(
         None,
-        description="Whether to restrict execution to tools marked safe_mode=True.",
+        description="If true, enables calls to the external Guardrails service to vet agent actions.",
     )
     tool_timeout: Optional[int] = Field(
         None,
@@ -83,6 +83,10 @@ class RuntimeExecutionConfig(BaseModel):
     tool_allowlist: List[str] = Field(
         default_factory=list,
         description="If provided, the agent will only be able to see and use tools from this list.",
+    )
+    tool_selection_threshold: Optional[int] = Field(
+        None,
+        description="If the number of available tools exceeds this, a preliminary LLM call is made to select a relevant subset.",
     )
 
     class Config:
@@ -107,4 +111,11 @@ class RuntimeExecutionConfig(BaseModel):
     def check_positive_iterations(cls, v: int | None) -> int | None:
         if v is not None and v <= 0:
             raise ValueError("Iterations must be a positive integer.")
+        return v
+
+    @field_validator("tool_selection_threshold", mode="before")
+    @classmethod
+    def check_positive_threshold(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError("Tool selection threshold must be a positive integer.")
         return v

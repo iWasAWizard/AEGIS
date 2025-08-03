@@ -36,22 +36,35 @@ class SSHExecutor:
         self.machine = machine
         self.ssh_target = f"{self.machine.username}@{self.machine.ip}"
 
-        self.ssh_opts = [
-            "-p",
-            str(self.machine.ssh_port),
-            "-o",
-            "StrictHostKeyChecking=no",
-            "-o",
-            "UserKnownHostsFile=/dev/null",
-        ]
-        self.scp_opts = [
-            "-P",
-            str(self.machine.ssh_port),
-            "-o",
-            "StrictHostKeyChecking=no",
-            "-o",
-            "UserKnownHostsFile=/dev/null",
-        ]
+        base_ssh_opts = ["-p", str(self.machine.ssh_port)]
+        base_scp_opts = ["-P", str(self.machine.ssh_port)]
+
+        if self.machine.known_hosts_file:
+            logger.info(
+                f"Using secure SSH mode for '{self.machine.name}' with known_hosts file: {self.machine.known_hosts_file}"
+            )
+            secure_opts = [
+                "-o",
+                f"UserKnownHostsFile={self.machine.known_hosts_file}",
+                "-o",
+                "StrictHostKeyChecking=yes",
+            ]
+            self.ssh_opts = base_ssh_opts + secure_opts
+            self.scp_opts = base_scp_opts + secure_opts
+        else:
+            logger.warning(
+                f"SSH host key checking is disabled for machine '{self.machine.name}'. "
+                "This is insecure and should not be used in production. "
+                "Consider adding a 'known_hosts_file' to this machine's manifest in machines.yaml."
+            )
+            insecure_opts = [
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "UserKnownHostsFile=/dev/null",
+            ]
+            self.ssh_opts = base_ssh_opts + insecure_opts
+            self.scp_opts = base_scp_opts + insecure_opts
 
     @staticmethod
     def _run_subprocess(command: list[str], timeout: int) -> Tuple[int, str, str]:
@@ -64,7 +77,7 @@ class SSHExecutor:
         :return: A tuple of (returncode, stdout, stderr).
         :rtype: Tuple[int, str, str]
         """
-        logger.debug(f"Executing command: {' '.join(shlex.quote(c) for c in command)}")
+        logger.info(f"Executing command: {' '.join(shlex.quote(c) for c in command)}")
         try:
             result = subprocess.run(
                 command, capture_output=True, text=True, timeout=timeout, check=False

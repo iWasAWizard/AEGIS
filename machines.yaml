@@ -1,45 +1,57 @@
-# === WINDOWS 10 VM ON ESXI ===
-win10-esxi:
-  name: win10-esxi
-  ip: 192.168.1.50
-  platform: windows
-  provider: esxi
-  type: vm
-  shell: powershell
-  username: Administrator
-  password: ${ADMIN_PASSWORD}
-  ssh_port: 22
-  vmtools_path: C:\Program Files\VMware\VMware Tools\vmtoolsd.exe
-  esxi_host: 192.168.1.10
-  esxi_user: root
-  esxi_password: ${ESXI_PASSWORD}
-  tags: [ prod, windows, scan-target ]
-  notes: "Internal QA testbed - Win10 22H2"
+# # === WINDOWS 10 VM ON ESXI ===
+# win10-esxi:
+#   name: win10-esxi
+#   ip: 192.168.1.50
+#   platform: windows
+#   provider: esxi
+#   type: vm
+#   shell: powershell
+#   username: Administrator
+#   password: ${ADMIN_PASSWORD}
+#   ssh_port: 22
+#   vmtools_path: C:\Program Files\VMware\VMware Tools\vmtoolsd.exe
+#   esxi_host: 192.168.1.10
+#   esxi_user: root
+#   esxi_password: ${ESXI_PASSWORD}
+#   tags: [ prod, windows, scan-target ]
+#   notes: "Internal QA testbed - Win10 22H2"
 
-# === UBUNTU 24.04 ON QEMU ===
+# # === UBUNTU 24.04 ON QEMU ===
 ubuntu-qemu:
   name: ubuntu-qemu
-  ip: 10.0.0.6
+  ip: 10.0.0.200
   platform: linux
   provider: qemu
   type: vm
   shell: bash
-  username: root
-  password: ${ROOT_PASSWORD}
+  username: joey
+  password: ${UBUNTU_PASSWORD}
   ssh_port: 22
   vmtools_path: /usr/bin/qemu-guest-agent
   tags: [ linux, infra, scanner-target ]
   notes: "Fresh Ubuntu LTS image, minimal install."
 
-# === BONUS: HEADLESS SSH-ONLY NODE ===
-external-linux-box:
-  name: external-linux-box
+# === LOCALHOST ===
+localhost:
+  name: localhost
+  ip: 127.0.0.1
+  platform: linux
+  provider: local
+  type: physical
+  shell: bash
+  username: root
+  password: "${ROOT_PASSWORD}"
+  tags: [ local, dev, "don't-touch" ]
+
+  # === PHYSICAL REMOTE HOST ===
+tower:
+  name: tower
   ip: 10.0.0.100
   platform: linux
   provider: physical
   type: physical
   shell: bash
-  username: deploy
-  password: ${DEPLOY_PASSWORD}
+  username: root
+  password: "${TOWER_ROOT_PASSWORD}"
   ssh_port: 22
-  tags: [ external, monitoring, "don't-touch" ]
+  tags: [ remote, dev, "don't-touch" ]

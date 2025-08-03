@@ -61,7 +61,8 @@ class TaskState(BaseModel):
     :ivar history: A chronological list of structured `HistoryEntry` objects.
     :ivar final_summary: A string containing the final, human-readable summary.
     :ivar human_feedback: Optional feedback provided by a human operator to resume a paused task.
-    :vartype human_feedback: Optional[str]
+    :ivar sub_goals: A list of high-level sub-goals decomposed from the main prompt.
+    :ivar current_sub_goal_index: The index of the currently active sub-goal.
     """
 
     task_id: str
@@ -72,6 +73,15 @@ class TaskState(BaseModel):
     history: List[HistoryEntry] = Field(default_factory=list)
     final_summary: Optional[str] = None
     human_feedback: Optional[str] = None
+
+    # Fields for Hierarchical Planning
+    sub_goals: List[str] = Field(
+        default_factory=list,
+        description="A list of high-level sub-goals decomposed from the main prompt.",
+    )
+    current_sub_goal_index: int = Field(
+        0, description="The index of the currently active sub-goal."
+    )
 
     @property
     def steps_taken(self) -> int:

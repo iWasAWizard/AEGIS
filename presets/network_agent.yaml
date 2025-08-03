@@ -1,0 +1,49 @@
+# presets/network_agent.yaml
+# A specialist agent for network-related tasks.
+name: "Network Specialist Agent"
+description: "A specialist agent focused on network discovery, diagnostics, and interaction using tools like nmap and scapy."
+state_type: "aegis.agents.task_state.TaskState"
+entrypoint: "plan"
+
+nodes:
+  - id: "plan"
+    tool: "reflect_and_plan"
+  - id: "execute"
+    tool: "execute_tool"
+  - id: "summarize"
+    tool: "summarize_result"
+
+edges:
+  - ["plan", "execute"]
+  - ["summarize", "__end__"]
+
+condition_node: "execute"
+condition_map:
+  continue: "plan"
+  end: "summarize"
+
+# This agent's runtime configuration specifies a tool allow-list,
+# making it an expert in its domain.
+runtime:
+  safe_mode: false # Network tools are inherently unsafe.
+  tool_allowlist:
+    # --- High-Level Wrappers ---
+    - "nmap_port_scan"
+    - "http_post_json"
+
+    # --- Low-Level Primitives ---
+    - "run_local_command" # Essential for running cli tools like ping, dig, etc.
+    - "run_remote_command"
+    - "send_wake_on_lan"
+    - "http_request"
+    - "check_port_status"
+
+    # --- Scapy Suite ---
+    - "scapy_ping"
+    - "scapy_tcp_scan"
+    - "scapy_arp_scan"
+    - "scapy_sniff"
+    - "scapy_craft_and_send"
+
+    # --- General Reasoning ---
+    - "invoke_llm"

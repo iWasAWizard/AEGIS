@@ -49,6 +49,7 @@ class CaptureScreenshotInput(BaseModel):
 
     save_path: str = Field(
         ...,
+        alias="screenshot_path",
         description="The local file path to save the screenshot to (e.g., 'reports/screenshot.png').",
     )
     machine_name: str = Field(

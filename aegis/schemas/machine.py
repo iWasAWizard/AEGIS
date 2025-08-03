@@ -26,11 +26,11 @@ class MachineManifest(BaseModel):
     :vartype ip: str
     :ivar platform: Operating system of the guest (`linux`, `windows`, `mac`).
     :vartype platform: str
-    :ivar provider: Source environment (`qemu`, `esxi`, `physical`, etc.).
+    :ivar provider: Source environment (`qemu`, `esxi`, `vmware`, `proxmox`, `physical`).
     :vartype provider: str
-    :ivar type: Logical host type (`vm`, `physical`, or `container`).
+    :ivar type: Logical host type for routing: `vm`, `physical`, or `container`.
     :vartype type: str
-    :ivar shell: Shell interpreter to be used (`bash`, `sh`, `powershell`).
+    :ivar shell: Shell interpreter to be used for commands: `bash`, `sh`, `zsh`, `powershell`.
     :vartype shell: str
     :ivar username: Username for guest login.
     :vartype username: str
@@ -40,7 +40,9 @@ class MachineManifest(BaseModel):
     :vartype esxi_password: Optional[str]
     :ivar ssh_port: SSH port number.
     :vartype ssh_port: Optional[int]
-    :ivar vmtools_path: Path to guest agent (e.g., `vmtoolsd.exe`).
+    :ivar known_hosts_file: Path to a custom known_hosts file for this machine.
+    :vartype known_hosts_file: Optional[str]
+    :ivar vmtools_path: Path to guest agent (e.g., `qemu-guest-agent`, `vmtoolsd.exe`).
     :vartype vmtools_path: Optional[str]
     :ivar esxi_host: IP or hostname of the ESXi or vCenter host.
     :vartype esxi_host: Optional[str]
@@ -48,7 +50,7 @@ class MachineManifest(BaseModel):
     :vartype esxi_user: Optional[str]
     :ivar tags: List of labels for filtering or routing.
     :vartype tags: List[str]
-    :ivar notes: Freeform human-readable comment.
+    :ivar notes: Freeform human-readable comment or description field.
     :vartype notes: Optional[str]
     """
 
@@ -64,6 +66,9 @@ class MachineManifest(BaseModel):
     esxi_password: Optional[str] = None
 
     ssh_port: Optional[int] = 22
+    known_hosts_file: Optional[str] = Field(
+        default=None, description="Path to a custom known_hosts file for this machine."
+    )
     vmtools_path: Optional[str] = None
 
     esxi_host: Optional[str] = None

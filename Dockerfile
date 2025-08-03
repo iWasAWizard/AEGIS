@@ -18,19 +18,28 @@ WORKDIR /app
 
 ENV PYTHONPATH=/app
 
+# First, copy only the requirements file and install dependencies.
+# This creates a separate cache layer that is only invalidated when
+# requirements.txt changes, speeding up subsequent builds.
 COPY requirements.txt .
-RUN apt-get update && apt-get install -y curl wget git firefox-esr nmap tcpdump jq python3-tk scrot libgl1-mesa-glx \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl wget git firefox-esr nmap tcpdump jq python3-tk scrot libgl1-mesa-glx \
     libglib2.0-0 tesseract-ocr && \
-    pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    python -m pip install --no-cache-dir --upgrade pip && \
+    python -m pip install --no-cache-dir -r requirements.txt && \
+    rm -rf /var/lib/apt/lists/*
 
+# Install geckodriver
 RUN wget -q https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-linux64.tar.gz && \
     tar -xzf geckodriver-v0.36.0-linux64.tar.gz -C /usr/local/bin && \
     chmod +x /usr/local/bin/geckodriver && \
     rm geckodriver-v0.36.0-linux64.tar.gz
 
+# Now, copy the rest of the application code
 COPY . .
 
+# Finally, copy the built UI from the first stage
 COPY --from=ui-builder /app/aegis/web/react_ui/dist /app/aegis/web/react_ui/dist
 
 CMD ["python", "-m", "aegis.serve_dashboard"]

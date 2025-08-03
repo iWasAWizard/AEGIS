@@ -61,3 +61,13 @@ temp/
 *.bin
 *.gguf
 *.safetensors
+
+# Artifacts
+*/artifacts/*
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Project-specific files
+*/aegis_memory_mapping.json

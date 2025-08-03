@@ -13,10 +13,11 @@ import os
 import pathlib
 import sys
 
+from aegis.registry import TOOL_REGISTRY
 from aegis.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
-logger.info("Initializing aegis.utils.tool_loader module...")
+logger.debug("Initializing aegis.utils.tool_loader module...")
 
 
 def _import_from_directory(base_dir: pathlib.Path, base_package_name: str):
@@ -64,7 +65,10 @@ def import_all_tools():
     This function must be called once at application startup to ensure all
     agent capabilities are available.
     """
-    logger.info("--- Starting Dynamic Tool Import ---")
+    # Clear the registry to make this function idempotent. This prevents issues
+    # with hot-reloading where modules might be imported multiple times.
+    TOOL_REGISTRY.clear()
+    logger.info("--- Starting Dynamic Tool Import (Registry Cleared) ---")
 
     core_tools_dir = pathlib.Path(__file__).parent.parent / "tools"
     _import_from_directory(core_tools_dir, "aegis.tools")

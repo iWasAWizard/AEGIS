@@ -9,11 +9,14 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Body
 
+from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
 
 router = APIRouter()
-REPORTS_DIR = Path("reports")
 logger = setup_logger(__name__)
+
+config = get_config()
+REPORTS_DIR = Path(config.get("paths", {}).get("reports", "reports"))
 
 
 @router.post("/compare_reports", tags=["Artifacts"])

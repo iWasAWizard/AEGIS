@@ -1,9 +1,5 @@
 # AEGIS Development Roadmap: From Robust Core to Advanced Autonomy
 
-The core framework is now stable, observable, and extensible. This roadmap outlines the next three horizons of development, prioritizing features that deliver the most significant leaps in agent intelligence, capability, and operational maturity.
-
----
-
 ### **Horizon 1: Foundational Hardening & Measurement**
 
 **Objective:** To establish a production-grade foundation for all future work and implement the core feedback loop for data-driven improvement. This horizon is about ensuring the system is resilient and that we can objectively measure the impact of our changes.
@@ -33,6 +29,13 @@ The core framework is now stable, observable, and extensible. This roadmap outli
     *   Leverage LangFuse's tagging or metadata features to clearly distinguish between "Run A" and "Run B" traces in the UI.
 *   **Impact:** Revolutionizes the development workflow. We can now fine-tune prompts and logic with confidence, backed by quantitative data, massively accelerating performance improvements.
 
+**1.4: Task Repeatability & Introspection**
+*   **Why:** Debugging agentic systems requires perfect replication of past runs. We must build tools to capture, replay, and visualize agent sessions deterministically.
+*   **Key Deliverables:**
+    *   **Session Logger & Replayer:** Create a mechanism to log the exact inputs (model, prompt, tool outputs) for each step of a task, and a corresponding "replayer" to re-run the session with these exact inputs to reproduce behavior.
+    *   **Execution Plan Visualizer:** Develop a feature in the UI to render the provenance report as a DAG, showing the flow of execution, branches, and tool calls.
+*   **Impact:** Creates a robust debugging and auditing capability, essential for understanding and improving complex agent behavior.
+
 ---
 
 ### **Horizon 2: Next-Generation Intelligence & Perception**
@@ -55,20 +58,21 @@ The core framework is now stable, observable, and extensible. This roadmap outli
     *   The tool will return a rich, natural language description of the visual elements in that area.
 *   **Impact:** This is the single largest expansion of the agent's sensory input, making it exponentially more effective at GUI automation and web interaction.
 
-**2.3: Dynamic Goal Management**
+**2.3: Self-Reflection & Dynamic Goal Management**
 *   **Why:** A truly autonomous agent should not blindly follow a flawed initial prompt. This feature gives the agent the ability to reflect on its progress and refine its own objectives, a critical step towards genuine problem-solving.
 *   **Key Deliverables:**
-    *   Create a new tool, `revise_goal(new_goal: str, reason: str)`.
-    *   Update the `reflect_and_plan` prompt to encourage the agent to consider whether the original goal is still optimal after several steps.
-    *   When the `revise_goal` tool is called, the agent step will update the `task_prompt` within the `TaskState` itself. The new, revised goal will then be used in all subsequent planning prompts.
-*   **Impact:** Massively increases agent robustness and adaptability, allowing it to recover from ambiguous or poorly-formed user requests.
+    *   Create a `self_reflection` module that is called after a task fails or partially succeeds. The module will use an LLM to analyze the execution history and produce a "lesson learned" summary.
+    *   These lessons will be embedded and stored in the RAG memory, to be retrieved in future, similar tasks.
+    *   Create a new tool, `revise_goal(new_goal: str, reason: str)`, that allows the agent to update its own `task_prompt` in the `TaskState` mid-flight.
+*   **Impact:** Massively increases agent robustness and adaptability, allowing it to learn from its mistakes and recover from ambiguous user requests.
 
-**2.4: Advanced Web Browsing Executor**
-*   **Why:** Low-level Selenium commands are powerful but require the agent to do too much work. A higher-level, stateful browsing executor will make web-based tasks faster and far more reliable.
+**2.4: Advanced Prompt Engineering Toolkit**
+*   **Why:** The current prompt construction is static. A dynamic, modular system is needed to manage complexity and optimize for performance and cost.
 *   **Key Deliverables:**
-    *   Create a new `StatefulBrowserExecutor` that maintains its own session state (cookies, history) across multiple tool calls.
-    *   Create a new, high-level tool, `browse_and_summarize(url: str, objective: str)`, that automates the entire process of navigating, finding relevant content based on an objective, and returning a clean summary.
-*   **Impact:** Makes the agent a world-class web scraping and data extraction tool.
+    *   **Modular PromptBuilder:** Refactor prompt construction into a class that assembles prompts from distinct, reusable sections (e.g., role, tools, context, history).
+    *   **Context Compression:** Implement logic to intelligently truncate or summarize long execution histories and tool outputs to stay within token limits.
+    *   **Structured Output Enforcement:** Deepen the integration with the `instructor` library to include auto-repair mechanisms for plans that fail Pydantic validation.
+*   **Impact:** Provides fine-grained control over the agent's reasoning process, improving reliability and enabling advanced techniques like dynamic role switching.
 
 ---
 
@@ -76,13 +80,13 @@ The core framework is now stable, observable, and extensible. This roadmap outli
 
 **Objective:** To refine the developer experience and prove out future architectural patterns, making the framework easier and faster to extend.
 
-**3.1: Agent SDK (Tool Scaffolding)**
+**3.1: Agent SDK & Tooling Enhancements**
 *   **Why:** Manually creating tool files, input schemas, and test files is repetitive. An SDK will automate this, enforcing best practices and dramatically speeding up the process of adding new capabilities.
 *   **Key Deliverables:**
-    *   Enhance the `aegis.cli new-tool` command to be more comprehensive.
-    *   When run, it will generate not only the tool file in `plugins/` but also a corresponding boilerplate test file in `aegis/tests/tools/plugins/`.
-    *   Consider using a template engine like `cookiecutter` under the hood to manage the file templates.
-*   **Impact:** Improves developer velocity and code quality by standardizing the tool creation process.
+    *   Enhance the `aegis new-tool` command to generate both the tool file in `plugins/` and a corresponding boilerplate test file in `aegis/tests/tools/plugins/`.
+    *   **Auto-Tool Discovery:** Solidify the `plugins` directory as the primary mechanism for extending agent capabilities.
+    *   **Tool Performance Tracker:** Implement a lightweight mechanism to record tool call latency and error rates, storing this metadata alongside the provenance report.
+*   **Impact:** Improves developer velocity and code quality by standardizing the tool creation process and providing data for tool optimization.
 
 **3.2: Native Tool Integration (Proof of Concept)**
 *   **Why:** To demonstrate the power of moving beyond shell commands, we will create a proof-of-concept tool that directly uses a Python SDK for a more robust and secure interaction with an external service.
@@ -91,3 +95,11 @@ The core framework is now stable, observable, and extensible. This roadmap outli
     *   Create a new tool, `s3_list_buckets`, that uses the `boto3` Python library to list S3 buckets.
     *   This will involve adding `boto3` to `requirements.txt` and handling AWS credentials securely via the `.env` file and Docker Compose.
 *   **Impact:** Serves as a template and a proof of concept for a new, more powerful class of tools, paving the way for deep integrations with any service that has a Python SDK.
+
+**3.3: Advanced Model & Infrastructure Management**
+*   **Why:** As the number of supported models grows, manual management becomes untenable. The system needs to become self-aware of its models and the hardware it's running on.
+*   **Key Deliverables:**
+    *   **Model Registry:** Expand `models.yaml` to be a comprehensive registry tracking model formats, quantization levels, context sizes, and aliases.
+    *   **Hardware Profiler:** Create a script in BEND that detects CPU cores, RAM, and VRAM at startup and suggests optimal model configurations or parallelism settings.
+    *   **Airgap-Ready Deployment:** Develop a build process that can package all Python wheels, models, and binaries into a single archive for deployment on machines without internet access.
+*   **Impact:** Radically simplifies deployment and configuration, enabling the stack to run optimally across a wide range of hardware and in restricted environments.

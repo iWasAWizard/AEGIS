@@ -8,9 +8,10 @@ basic hardware and system statistics.
 """
 
 import subprocess
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 import psutil
+import yaml
 from pydantic import BaseModel, Field
 
 from aegis.executors.local_exec import LocalExecutor
@@ -19,7 +20,7 @@ from aegis.exceptions import ToolExecutionError
 from aegis.registry import register_tool
 from aegis.schemas.common_inputs import MachineTargetInput
 from aegis.utils.logger import setup_logger
-from aegis.utils.machine_loader import get_machine
+from aegis.utils.machine_loader import get_machine, _load_manifest_from_file
 
 logger = setup_logger(__name__)
 
@@ -39,6 +40,18 @@ class KillProcessInput(BaseModel):
 
 class GetLocalMemoryInfoInput(BaseModel):
     """Input for getting local memory information. Takes no arguments."""
+
+    pass
+
+
+class ListAvailableMachinesInput(BaseModel):
+    """Input for listing available machines. Takes no arguments."""
+
+    pass
+
+
+class GetMachineDetailsInput(MachineTargetInput):
+    """Input for getting the configuration details of a specific machine."""
 
     pass
 
@@ -280,3 +293,68 @@ def get_random_bytes_as_hex(input_data: GetRandomBytesInput) -> str:
     except Exception as e:
         logger.exception("Failed to read from /dev/random")
         raise ToolExecutionError(f"Could not read random bytes: {e}")
+
+
+@register_tool(
+    name="list_available_machines",
+    input_model=ListAvailableMachinesInput,
+    description="Returns a list of the names of all machines defined in machines.yaml.",
+    tags=["system", "discovery", "primitive"],
+    safe_mode=True,
+    purpose="Discover the names of available remote machines to target for other tools.",
+    category="system",
+)
+def list_available_machines(input_data: ListAvailableMachinesInput) -> List[str]:
+    """
+    Reads the machines.yaml manifest and returns a list of all defined machine names.
+    """
+    try:
+        manifest = _load_manifest_from_file()
+        if not manifest:
+            return []
+        return list(manifest.keys())
+    except Exception as e:
+        logger.exception("Failed to load or parse machines.yaml.")
+        raise ToolExecutionError(f"Could not list available machines: {e}")
+
+
+@register_tool(
+    name="get_machine_details",
+    input_model=GetMachineDetailsInput,
+    description="Returns the configuration for a specific machine from machines.yaml, with all secrets redacted.",
+    tags=["system", "discovery", "primitive"],
+    safe_mode=True,
+    purpose="Inspect the configuration of a specific machine to understand its properties and requirements.",
+    category="system",
+)
+def get_machine_details(input_data: GetMachineDetailsInput) -> Dict[str, Any]:
+    """
+    Reads the machines.yaml manifest, finds the specified machine, redacts
+    any secret values, and returns the configuration.
+    """
+    try:
+        manifest = _load_manifest_from_file()
+        if not manifest or input_data.machine_name not in manifest:
+            raise ToolExecutionError(
+                f"Machine '{input_data.machine_name}' not found in machines.yaml."
+            )
+
+        machine_config = manifest[input_data.machine_name]
+
+        # Redact any field that looks like a secret
+        for key in machine_config:
+            if (
+                "password" in key.lower()
+                or "secret" in key.lower()
+                or "key" in key.lower()
+            ):
+                machine_config[key] = "[REDACTED]"
+
+        return machine_config
+    except Exception as e:
+        logger.exception(
+            f"Failed to get details for machine '{input_data.machine_name}'."
+        )
+        raise ToolExecutionError(
+            f"Could not get details for machine '{input_data.machine_name}': {e}"
+        )

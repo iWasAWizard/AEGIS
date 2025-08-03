@@ -6,7 +6,7 @@ import asyncio
 import json
 from typing import List, Dict, Any, Optional, Type
 
-import aiohttp
+import httpx
 from pydantic import BaseModel
 
 from aegis.exceptions import PlannerError, ToolExecutionError
@@ -77,42 +77,41 @@ class VllmProvider(BackendProvider):
         logger.debug(f"vLLM payload: {json.dumps(payload, indent=2)}")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.config.llm_url,
-                    json=payload,
-                    timeout=(
-                        aiohttp.ClientTimeout(total=runtime_config.llm_planning_timeout)
-                        if runtime_config.llm_planning_timeout is not None
-                        else None
-                    ),
-                ) as response:
-                    if not response.ok:
-                        body = await response.text()
-                        logger.error(f"Error from vLLM ({response.status}): {body}")
-                        raise PlannerError(
-                            f"Failed to query vLLM. Status: {response.status}, Body: {body}"
-                        )
+            async with httpx.AsyncClient() as client:
+                timeout = httpx.Timeout(runtime_config.llm_planning_timeout)
+                response = await client.post(
+                    self.config.llm_url, json=payload, timeout=timeout
+                )
 
-                    result = await response.json()
-                    if (
-                        "choices" not in result
-                        or not result["choices"]
-                        or "message" not in result["choices"][0]
-                        or "content" not in result["choices"][0]["message"]
-                    ):
-                        raise PlannerError(
-                            "Invalid response format from vLLM chat: expected 'choices[0].message.content' key missing."
-                        )
+                if not response.is_success:
+                    body = response.text
+                    logger.error(f"Error from vLLM ({response.status_code}): {body}")
+                    raise PlannerError(
+                        f"Failed to query vLLM. Status: {response.status_code}, Body: {body}"
+                    )
 
-                    return result["choices"][0]["message"]["content"]
-        except asyncio.TimeoutError as e:
+                result = response.json()
+                if (
+                    "choices" not in result
+                    or not result["choices"]
+                    or "message" not in result["choices"][0]
+                    or "content" not in result["choices"][0]["message"]
+                ):
+                    raise PlannerError(
+                        "Invalid response format from vLLM chat: expected 'choices[0].message.content' key missing."
+                    )
+
+                return result["choices"][0]["message"]["content"]
+        except httpx.TimeoutException as e:
             raise PlannerError("Query to vLLM timed out.") from e
-        except aiohttp.ClientError as e:
+        except httpx.RequestError as e:
             raise PlannerError(f"Network error while querying vLLM: {e}") from e
 
     async def get_structured_completion(
-        self, messages: List[Dict[str, Any]], response_model: Type[BaseModel]
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: Type[BaseModel],
+        runtime_config: RuntimeExecutionConfig,
     ) -> BaseModel:
         if not instructor or not OpenAI:
             raise ToolExecutionError(

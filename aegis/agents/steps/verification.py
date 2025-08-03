@@ -89,7 +89,7 @@ async def verify_outcome(state: TaskState) -> Dict[str, Any]:
 
         provider = get_provider_for_profile(state.runtime.backend_profile)
         response = await provider.get_structured_completion(
-            messages, VerificationJudgement
+            messages, VerificationJudgement, state.runtime
         )
         judgement = cast(VerificationJudgement, response)
         last_history_entry.verification_status = judgement.judgement

@@ -6,11 +6,14 @@ from pathlib import Path
 import yaml
 from fastapi import APIRouter, HTTPException
 
+from aegis.utils.config import get_config
 from aegis.utils.logger import setup_logger
 
 router = APIRouter()
-PRESET_DIR = Path("presets")
 logger = setup_logger(__name__)
+
+config = get_config()
+PRESET_DIR = Path(config.get("paths", {}).get("presets", "presets"))
 
 
 @router.get("/presets", tags=["Presets"])

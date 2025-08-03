@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # tests/regression/simple_button_app.py
 """
 A very simple Tkinter application with a single button.

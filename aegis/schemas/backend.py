@@ -32,11 +32,6 @@ class KoboldcppBackendConfig(BaseBackendConfig):
     top_k: int = Field(40)
     repetition_penalty: float = Field(1.1)
 
-
-class BendBackendConfig(KoboldcppBackendConfig):
-    """Configuration for a full BEND stack, extending KoboldCPP with other services."""
-
-    type: Literal["bend"] = "bend"
     voice_proxy_url: Optional[str] = Field(
         None, description="URL for the BEND voice proxy service (TTS/STT)."
     )
@@ -65,6 +60,16 @@ class VllmBackendConfig(BaseBackendConfig):
     top_k: int = Field(-1)  # -1 is often used to disable top-k in vLLM
     repetition_penalty: float = Field(1.1)
 
+    voice_proxy_url: Optional[str] = Field(
+        None, description="URL for the BEND voice proxy service (TTS/STT)."
+    )
+    rag_url: Optional[str] = Field(
+        None, description="URL for the BEND RAG retriever service."
+    )
+    api_key: Optional[str] = Field(
+        None, description="API key for securing BEND services."
+    )
+
 
 class OllamaBackendConfig(BaseBackendConfig):
     """Configuration for an Ollama backend."""
@@ -80,6 +85,16 @@ class OllamaBackendConfig(BaseBackendConfig):
     top_p: float = Field(0.9)
     top_k: int = Field(40)
     repetition_penalty: float = Field(1.1)
+
+    voice_proxy_url: Optional[str] = Field(
+        None, description="URL for the BEND voice proxy service (TTS/STT)."
+    )
+    rag_url: Optional[str] = Field(
+        None, description="URL for the BEND RAG retriever service."
+    )
+    api_key: Optional[str] = Field(
+        None, description="API key for securing BEND services."
+    )
 
 
 class OpenAIBackendConfig(BaseBackendConfig):

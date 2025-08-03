@@ -1,9 +1,3 @@
-Of course. Let's tackle the next guide for developers: **Adding a New Backend Provider**.
-
-This is a more advanced guide, but it's essential for the framework's long-term health and adaptability. It explains the core "Provider" pattern and gives a clear, step-by-step process for integrating AEGIS with a new, unsupported AI backend.
-
----
-
 # Developer Guide: Adding a New Backend Provider
 
 One of the core design principles of AEGIS is that it is **backend-agnostic**. The agent's reasoning logic is completely decoupled from the specific AI service that provides the intelligence. This is achieved through the **Provider** architectural pattern.
@@ -18,6 +12,7 @@ The foundation of the provider system is the abstract base class located at `aeg
 
 The key methods are:
 -   **`get_completion(...)`**: Takes a list of messages and returns a string from the LLM.
+-   **`get_structured_completion(...)`**: Takes messages and a Pydantic model and returns a validated object.
 -   **`get_speech(...)`**: Takes text and returns audio bytes.
 -   **`get_transcription(...)`**: Takes audio bytes and returns text.
 -   *(...and others for RAG, etc.)*
@@ -34,6 +29,7 @@ The first step is to define how a user will configure your new provider. This is
 ```python
 # aegis/schemas/backend.py
 # ... (other imports) ...
+from typing import Literal
 
 class ExampleComBackendConfig(BaseBackendConfig):
     """Configuration specific to the fictional Example.com API."""
@@ -44,8 +40,7 @@ class ExampleComBackendConfig(BaseBackendConfig):
     )
     api_key: str = Field(..., description="The API key for the Example.com service.")
     model: str = Field("example-model-v1", description="The model name to use.")
-    temperature: float = Field(0.5)
-```
+    temperature: float = Field(0.5)```
 
 ## Step 2: Implement the Provider Class
 
@@ -57,13 +52,14 @@ Next, you will create the Python class that contains the logic for interacting w
 2.  **Implement the Class:**
     -   The class must inherit from `BackendProvider`.
     -   The `__init__` method should accept the Pydantic config model you created in Step 1.
-    -   You must implement the `get_completion` method. This is where you will make the actual API call to your backend.
+    -   You must implement the required methods, like `get_completion`. This is where you will make the actual API call to your backend.
     -   For any unsupported methods, raise `NotImplementedError`.
 
 ```python
 # aegis/providers/example_com_provider.py
-import aiohttp
-from typing import List, Dict, Any, Optional
+import httpx
+from typing import List, Dict, Any, Optional, Type
+from pydantic import BaseModel
 
 from aegis.exceptions import PlannerError
 from aegis.providers.base import BackendProvider
@@ -84,35 +80,29 @@ class ExampleComProvider(BackendProvider):
             "model": self.config.model,
             "prompt": messages[-1]['content'], # Example: maybe it only takes the last user prompt
             "temp": self.config.temperature,
-            # ... other parameters
         }
-        headers = {
-            "Authorization": f"Bearer {self.config.api_key}"
-        }
+        headers = {"Authorization": f"Bearer {self.config.api_key}"}
 
-        # 2. Make the API call using aiohttp
+        # 2. Make the API call using httpx
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.config.llm_url, json=payload, headers=headers) as response:
-                    response.raise_for_status() # Raise an exception for bad status codes
-                    result = await response.json()
-
-                    # 3. Parse the response and return the text
-                    # This part is highly specific to the API's response format
-                    return result["data"]["choices"][0]["text"]
-
-        except aiohttp.ClientError as e:
-            # 4. Handle errors gracefully
+            async with httpx.AsyncClient() as client:
+                response = await client.post(self.config.llm_url, json=payload, headers=headers)
+                response.raise_for_status()
+                result = response.json()
+                return result["data"]["choices"]["text"]
+        except httpx.RequestError as e:
             raise PlannerError(f"Network error while querying Example.com: {e}") from e
 
-    # 5. Implement other methods as needed, or raise NotImplementedError
+    async def get_structured_completion(
+        self, messages: List[Dict[str, Any]], response_model: Type[BaseModel], runtime_config: RuntimeExecutionConfig
+    ) -> BaseModel:
+        raise NotImplementedError("Example.com does not support structured completion.")
+
     async def get_speech(self, text: str) -> bytes:
         raise NotImplementedError("Example.com does not support speech synthesis.")
 
     async def get_transcription(self, audio_bytes: bytes) -> str:
         raise NotImplementedError("Example.com does not support transcription.")
-
-    # ... (implement other methods similarly) ...
 ```
 
 ## Step 3: Wire Up the New Provider
@@ -127,27 +117,19 @@ The final step is to teach AEGIS's factory functions how to recognize and instan
     # aegis/utils/backend_loader.py
     # ...
     from aegis.schemas.backend import (
-        KoboldcppBackendConfig,
         OllamaBackendConfig,
         OpenAIBackendConfig,
         VllmBackendConfig,
         ExampleComBackendConfig, # Add this
-        BaseBackendConfig,
     )
     # ...
-
     def get_backend_config(profile_name: str) -> Any:
         # ... (existing code) ...
         try:
             backend_type = backend_config_raw.get("type")
-            if backend_type == "koboldcpp":
-                return KoboldcppBackendConfig(**backend_config_raw)
-            elif backend_type == "ollama":
+            if backend_type == "ollama":
                 return OllamaBackendConfig(**backend_config_raw)
-            elif backend_type == "openai":
-                return OpenAIBackendConfig(**backend_config_raw)
-            elif backend_type == "vllm":
-                return VllmBackendConfig(**backend_config_raw)
+            # ... (other elifs) ...
             elif backend_type == "example_com": # Add this block
                 return ExampleComBackendConfig(**backend_config_raw)
             else:
@@ -155,28 +137,26 @@ The final step is to teach AEGIS's factory functions how to recognize and instan
         # ... (existing code) ...
     ```
 
-2.  **Open `aegis/utils/llm_query.py`:** (Note: This file is now primarily for provider-aware tools)
+2.  **Open `aegis/utils/llm_query.py`:**
     -   Import your new provider class (`ExampleComProvider`).
     -   Add an `elif` block to the `get_provider_for_profile` factory function.
 
     ```python
     # aegis/utils/llm_query.py
     # ...
-    from aegis.providers.koboldcpp_provider import KoboldcppProvider
     from aegis.providers.openai_provider import OpenAIProvider
     from aegis.providers.vllm_provider import VllmProvider
     from aegis.providers.example_com_provider import ExampleComProvider # Add this
     # ...
-
     def get_provider_for_profile(profile_name: str) -> BackendProvider:
         backend_config = get_backend_config(profile_name)
 
-        if backend_config.type == "koboldcpp":
-            return KoboldcppProvider(config=backend_config)
-        elif backend_config.type == "openai":
+        if backend_config.type == "openai":
             return OpenAIProvider(config=backend_config)
         elif backend_config.type == "vllm":
             return VllmProvider(config=backend_config)
+        elif backend_config.type == "ollama":
+            return OllamaProvider(config=backend_config)
         elif backend_config.type == "example_com": # Add this block
             return ExampleComProvider(config=backend_config)
         else:

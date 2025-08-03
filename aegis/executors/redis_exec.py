@@ -102,3 +102,22 @@ class RedisExecutor:
         except Exception as e:
             logger.exception(f"Failed to get value for key '{key}' from Redis.")
             raise ToolExecutionError(f"Redis GET command failed: {e}")
+
+    def delete_value(self, key: str) -> str:
+        """Deletes a key from Redis."""
+        if not self.client:
+            raise ToolExecutionError(
+                "Redis client is not connected. Check config and BEND service status."
+            )
+        try:
+            # The 'delete' command in redis-py returns the number of keys deleted.
+            num_deleted = self.client.delete(key)
+            if num_deleted > 0:
+                logger.info(f"Successfully deleted memory key '{key}'.")
+                return f"Key '{key}' deleted successfully."
+            else:
+                logger.warning(f"Attempted to delete non-existent memory key '{key}'.")
+                return f"Key '{key}' did not exist."
+        except Exception as e:
+            logger.exception(f"Failed to delete key '{key}' from Redis.")
+            raise ToolExecutionError(f"Redis DELETE command failed: {e}")

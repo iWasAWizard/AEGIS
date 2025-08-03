@@ -65,7 +65,10 @@ class OpenAIProvider(BackendProvider):
             raise PlannerError(f"Unexpected error during OpenAI query: {e}")
 
     async def get_structured_completion(
-        self, messages: List[Dict[str, Any]], response_model: Type[BaseModel]
+        self,
+        messages: List[Dict[str, Any]],
+        response_model: Type[BaseModel],
+        runtime_config: RuntimeExecutionConfig,
     ) -> BaseModel:
         if not self.structured_client:
             raise ToolExecutionError(
@@ -75,6 +78,8 @@ class OpenAIProvider(BackendProvider):
             model=self.config.model,
             messages=messages,
             response_model=response_model,
+            max_retries=2,
+            timeout=runtime_config.llm_planning_timeout,
         )
         return response
 
