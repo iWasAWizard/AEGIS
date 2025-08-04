@@ -27,6 +27,7 @@ from aegis.schemas.plan_output import AgentScratchpad
 from aegis.utils.config import get_config
 from aegis.utils.llm_query import get_provider_for_profile
 from aegis.utils.logger import setup_logger
+from aegis.utils.replay_logger import log_replay_event
 
 logger = setup_logger(__name__)
 
@@ -224,7 +225,14 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
             observation, status = f"[ERROR] {type(e).__name__}: {e}", "failure"
             logger.error(observation)
 
-    # 4. Log and create history entry
+    # 4. Log the ground truth for replay
+    log_replay_event(
+        state.task_id,
+        "TOOL_OUTPUT",
+        {"observation": observation, "status": status},
+    )
+
+    # 5. Log and create history entry
     log_extra = {
         "event_type": "ToolEnd",
         "tool_name": plan.tool_name,

@@ -81,7 +81,7 @@ const getStatusColor = (status) => {
  * @param {string|null} props.targetArtifactId - The ID of the artifact to initially open.
  * @returns {React.Component} The artifacts tab component.
  */
-export default function ArtifactsTab({ targetArtifactId }) {
+export default function ArtifactsTab({ targetArtifactId, navigateAndVisualize }) {
   const [artifacts, setArtifacts] = useState([]);
 
   const fetchArtifacts = () => {
@@ -129,10 +129,17 @@ export default function ArtifactsTab({ targetArtifactId }) {
             itemKey={task.task_id}
             initialEntered={task.task_id === targetArtifactId}
             header={
-              <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '2fr 3fr 1fr', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', alignItems: 'center', gap: '1rem' }}>
                 <code style={{ fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.task_id}</code>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.8 }}>{task.prompt}</span>
                 <span style={{ color: getStatusColor(task.final_status), fontWeight: 'bold', justifySelf: 'end' }}>{task.final_status}</span>
+                <button
+                    onClick={(e) => { e.stopPropagation(); navigateAndVisualize(task.task_id); }}
+                    style={{ justifySelf: 'end', padding: '0.2rem 0.6rem', fontSize: '0.8em' }}
+                    title="Visualize Execution Flow"
+                >
+                    Visualize
+                </button>
               </div>
             }
             style={{ border: '1px solid var(--border)', borderRadius: '6px', marginBottom: '0.5rem' }}

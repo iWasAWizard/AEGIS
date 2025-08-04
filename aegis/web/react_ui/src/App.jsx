@@ -8,6 +8,7 @@ import ReportsTab from './ReportsTab';
 import ToolsTab from './ToolsTab';
 import GraphViewTab from './GraphViewTab';
 import DashboardTab from './DashboardTab';
+import ExecutionGraphViewer from './ExecutionGraphViewer'; // Import the new component
 
 /**
  * The main application component that serves as the root of the UI.
@@ -21,6 +22,7 @@ export default function App() {
   const [themes, setThemes] = useState([]);
   const [selectedTheme, setSelectedTheme] = useState(localStorage.getItem('aegis-theme') || 'oled');
   const [targetArtifactId, setTargetArtifactId] = useState(null);
+  const [visualizerTaskId, setVisualizerTaskId] = useState(null); // New state for visualizer
 
   // --- Lifted state for ALL tabs ---
 
@@ -147,11 +149,19 @@ export default function App() {
     if (activeTab !== 'artifacts') {
       setTargetArtifactId(null);
     }
+    if (activeTab !== 'visualizer') {
+      setVisualizerTaskId(null);
+    }
   }, [activeTab]);
 
   const navigateAndOpenArtifact = (taskId) => {
     setTargetArtifactId(taskId);
     setActiveTab('artifacts');
+  };
+
+  const navigateAndVisualize = (taskId) => {
+    setVisualizerTaskId(taskId);
+    setActiveTab('visualizer');
   };
 
   // --- Lifted Functions for Child Components ---
@@ -275,15 +285,16 @@ export default function App() {
         return <PresetsTab {...{ presetList, currentPresetId, presetForm, setPresetForm, presetConfigError, setPresetConfigError, loadPreset, savePreset, fetchPresets: fetchInitialData }} />;
       case 'editor':
         return <ConfigEditorTab {...{ files: configFiles, currentFile, content: fileContent, setContent: setFileContent, status: fileStatus, loadConfigFileContent, saveConfigFileContent }} />;
-      case 'artifacts': return <ArtifactsTab targetArtifactId={targetArtifactId} />;
+      case 'artifacts': return <ArtifactsTab targetArtifactId={targetArtifactId} navigateAndVisualize={navigateAndVisualize} />;
       case 'reports': return <ReportsTab />;
       case 'tools': return <ToolsTab />;
       case 'graph': return <GraphViewTab />;
+      case 'visualizer': return <ExecutionGraphViewer taskId={visualizerTaskId} />;
       default: return <DashboardTab navigateAndOpenArtifact={navigateAndOpenArtifact} />;
     }
   };
 
   const NavButton = ({ tabId, children }) => ( <button onClick={() => setActiveTab(tabId)} style={{ background: activeTab === tabId ? 'var(--accent)' : 'var(--input-bg)', color: 'var(--fg)', border: '1px solid var(--border)', padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', fontWeight: activeTab === tabId ? 'bold' : 'normal', }} > {children} </button> );
 
-  return ( <div style={{ padding: '1rem', maxWidth: '1400px', margin: 'auto' }}> <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '1rem' }}> <h1 style={{ fontSize: '1.5em', margin: 0 }}>🛡️ AEGIS Dashboard</h1> <nav style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}> <NavButton tabId="dashboard">🏠 Dashboard</NavButton> <NavButton tabId="launch">🚀 Launch</NavButton> <NavButton tabId="graph">🗺️ Graph</NavButton> <NavButton tabId="tools">🧰 Tools</NavButton> <NavButton tabId="presets">🧠 Presets</NavButton> <NavButton tabId="editor">✏️ Config Editor</NavButton> <NavButton tabId="artifacts">📦 Artifacts</NavButton> </nav> <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}> <select value={selectedTheme} onChange={e => setSelectedTheme(e.target.value)} style={{ padding: '0.5rem' }}> {themes.length === 0 ? ( <option>Loading...</option> ) : ( themes.map(themeName => ( <option key={themeName} value={themeName}>{themeName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option> )) )} </select> </div> </header> <main style={{ marginTop: '1rem' }}> {renderTab()} </main> </div> );
+  return ( <div style={{ padding: '1rem', maxWidth: '1400px', margin: 'auto' }}> <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '1rem' }}> <h1 style={{ fontSize: '1.5em', margin: 0 }}>🛡️ AEGIS Dashboard</h1> <nav style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}> <NavButton tabId="dashboard">🏠 Dashboard</NavButton> <NavButton tabId="launch">🚀 Launch</NavButton> <NavButton tabId="graph">🗺️ Graph</NavButton> {visualizerTaskId && <NavButton tabId="visualizer">✨ Visualizer</NavButton>} <NavButton tabId="tools">🧰 Tools</NavButton> <NavButton tabId="presets">🧠 Presets</NavButton> <NavButton tabId="editor">✏️ Config Editor</NavButton> <NavButton tabId="artifacts">📦 Artifacts</NavButton> </nav> <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}> <select value={selectedTheme} onChange={e => setSelectedTheme(e.target.value)} style={{ padding: '0.5rem' }}> {themes.length === 0 ? ( <option>Loading...</option> ) : ( themes.map(themeName => ( <option key={themeName} value={themeName}>{themeName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option> )) )} </select> </div> </header> <main style={{ marginTop: '1rem' }}> {renderTab()} </main> </div> );
 }

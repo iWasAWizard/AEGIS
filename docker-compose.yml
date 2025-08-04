@@ -1,3 +1,4 @@
+# aegis/docker-compose.yml
 networks:
   bend-net:
     external: true
@@ -26,8 +27,13 @@ services:
       - OTEL_SERVICE_NAME=aegis-agent
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
       - BACKEND_API_KEY=${BACKEND_API_KEY}
+      - GITLAB_URL
+      - GITLAB_PRIVATE_TOKEN
+      - SLACK_BOT_TOKEN
     restart: unless-stopped
     volumes:
+      # Mount the Docker socket to allow the agent to manage containers.
+      - /var/run/docker.sock:/var/run/docker.sock
       # Mount the source code directory to allow live development.
       # This is useful for development but should be removed in production.
       # - ./aegis:/app/aegis

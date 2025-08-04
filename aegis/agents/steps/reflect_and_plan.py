@@ -19,6 +19,7 @@ from aegis.registry import TOOL_REGISTRY
 from aegis.schemas.plan_output import AgentScratchpad
 from aegis.utils.llm_query import get_provider_for_profile
 from aegis.utils.logger import setup_logger
+from aegis.utils.replay_logger import log_replay_event
 
 logger = setup_logger(__name__)
 
@@ -42,7 +43,7 @@ async def _select_relevant_tools(
 
     # Note: We create a temporary PromptBuilder here just to get the formatted tool schemas.
     # This logic is now centralized in the builder.
-    temp_builder = PromptBuilder(state, tool_names_to_consider)
+    temp_builder = PromptBuilder(state, tool_names_to_consider, provider)
     tool_signatures = temp_builder._get_tool_schemas()
 
     system_prompt = "You are an expert at selecting the correct tools for a job. Your only task is to analyze a user's goal and a list of available tools, and then return a JSON object containing the names of the most relevant tools."
@@ -96,44 +97,75 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
         raise ConfigurationError("Backend profile is not set.")
 
     try:
-        # 1. Determine the full set of tools available for this run.
+        provider = get_provider_for_profile(state.runtime.backend_profile)
+
         if state.runtime.tool_allowlist:
             available_tool_names = state.runtime.tool_allowlist
         else:
             available_tool_names = list(TOOL_REGISTRY.keys())
 
-        # 2. Conditionally pre-select a subset of tools if the list is large.
-        threshold = state.runtime.tool_selection_threshold or 20  # Fallback
+        threshold = state.runtime.tool_selection_threshold or 20
         if len(available_tool_names) > threshold:
-            logger.info(
-                f"Tool count ({len(available_tool_names)}) exceeds threshold ({threshold}). Performing LLM pre-selection."
-            )
             relevant_tool_names = await _select_relevant_tools(
                 state, available_tool_names
             )
         else:
-            logger.info(
-                f"Tool count ({len(available_tool_names)}) is within threshold ({threshold}). Skipping pre-selection."
-            )
             relevant_tool_names = available_tool_names
 
-        # 3. Use the PromptBuilder to construct the full conversational history.
-        builder = PromptBuilder(state, relevant_tool_names)
-        messages = builder.build()
+        builder = PromptBuilder(state, relevant_tool_names, provider)
+        messages = await builder.build()
 
-        logger.debug(f"--- Full Planning Prompt ---")
+        logger.debug("--- Full Planning Prompt ---")
         logger.debug(json.dumps(messages, indent=2))
-        logger.debug(f"--- End Planning Prompt ---")
+        logger.debug("--- End Planning Prompt ---")
 
-        # 4. Call the provider with the structured messages to get the next plan.
-        provider = get_provider_for_profile(state.runtime.backend_profile)
-        logger.debug(f"Using provider '{provider.__class__.__name__}' for planning.")
-        scratchpad = await provider.get_structured_completion(
-            messages=messages,
-            response_model=AgentScratchpad,
-            runtime_config=state.runtime,
+        log_replay_event(state.task_id, "PLANNER_INPUT", {"messages": messages})
+
+        try:
+            scratchpad = await provider.get_structured_completion(
+                messages=messages,
+                response_model=AgentScratchpad,
+                runtime_config=state.runtime,
+            )
+        except ValidationError as e:
+            logger.warning("LLM plan failed validation. Attempting self-correction...")
+            log_replay_event(
+                state.task_id,
+                "PLANNER_VALIDATION_ERROR",
+                {
+                    "error": str(e),
+                    "json_body": (
+                        e.json()
+                        if hasattr(e, "json")
+                        else "No JSON body available in exception."
+                    ),
+                },
+            )
+
+            remediation_prompt = f"The last JSON response you provided was malformed... Your response MUST be only the corrected JSON object..."
+            repair_messages = messages[:-1] + [
+                {"role": "user", "content": remediation_prompt}
+            ]
+            log_replay_event(
+                state.task_id, "PLANNER_REPAIR_INPUT", {"messages": repair_messages}
+            )
+
+            try:
+                scratchpad = await provider.get_structured_completion(
+                    messages=repair_messages,
+                    response_model=AgentScratchpad,
+                    runtime_config=state.runtime,
+                )
+                logger.info("✅ Self-correction successful. Plan is now valid.")
+            except Exception as final_e:
+                logger.error(
+                    f"Self-correction failed. Raising original error. Final error: {final_e}"
+                )
+                raise e
+
+        log_replay_event(
+            state.task_id, "PLANNER_OUTPUT", {"plan": scratchpad.model_dump()}
         )
-
         logger.info(f"✅ Plan generated: Calling tool `{scratchpad.tool_name}`")
         logger.debug(f"🤔 Thought: {scratchpad.thought}")
         return {"latest_plan": scratchpad}

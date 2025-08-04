@@ -6,6 +6,7 @@ This module defines a Settings model that automatically loads configuration
 values from environment variables or a .env file. This is the single source
 of truth for all secrets and environment-specific configurations.
 """
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +33,13 @@ class Settings(BaseSettings):
     ROOT_PASSWORD: str = "toor"
     DEPLOY_PASSWORD: str = "changeme"
     ESXI_PASSWORD: str = "vmware123"
+
+    # GitLab Integration Secrets
+    GITLAB_URL: Optional[str] = None
+    GITLAB_PRIVATE_TOKEN: Optional[str] = None
+
+    # Slack Integration Secrets
+    SLACK_BOT_TOKEN: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

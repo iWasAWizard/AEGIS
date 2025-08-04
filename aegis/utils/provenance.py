@@ -9,7 +9,9 @@ reproducibility and analysis.
 import json
 import platform
 import time
+from collections import defaultdict
 from pathlib import Path
+from typing import Dict, Any
 
 from aegis.agents.task_state import TaskState
 from aegis.utils.config import get_config
@@ -48,6 +50,44 @@ def _get_final_status(state: TaskState) -> str:
     return "PARTIAL"
 
 
+def _calculate_tool_performance(state: TaskState) -> Dict[str, Any]:
+    """Calculates performance metrics for each tool used in the task.
+
+    :param state: The final state of the task.
+    :type state: TaskState
+    :return: A dictionary of performance metrics for each tool.
+    :rtype: Dict[str, Any]
+    """
+    performance_data = defaultdict(
+        lambda: {
+            "call_count": 0,
+            "success_count": 0,
+            "failure_count": 0,
+            "total_duration_ms": 0.0,
+            "average_duration_ms": 0.0,
+        }
+    )
+
+    for entry in state.history:
+        tool_name = entry.plan.tool_name
+        stats = performance_data[tool_name]
+        stats["call_count"] += 1
+        stats["total_duration_ms"] += entry.duration_ms
+        if entry.status == "success":
+            stats["success_count"] += 1
+        else:
+            stats["failure_count"] += 1
+
+    # Calculate averages
+    for tool_name, stats in performance_data.items():
+        if stats["call_count"] > 0:
+            stats["average_duration_ms"] = round(
+                stats["total_duration_ms"] / stats["call_count"], 2
+            )
+
+    return dict(performance_data)
+
+
 def generate_provenance_report(state: TaskState):
     """
     Generates and saves a machine-readable JSON report of the agent's execution.
@@ -56,7 +96,8 @@ def generate_provenance_report(state: TaskState):
     report directory. This file serves as a "flight data recorder" for the
     agent, capturing the task prompt, final status, environment details, and a
     detailed timeline of every event (thought, action, observation) with
-    timestamps and durations.
+    timestamps and durations. It also includes a performance summary for all
+    tools used.
 
     :param state: The final `TaskState` of the completed agent run.
     :type state: TaskState
@@ -92,6 +133,7 @@ def generate_provenance_report(state: TaskState):
             "node": platform.node(),
             "python_version": platform.python_version(),
         },
+        "tool_performance": _calculate_tool_performance(state),
         "events": events,
     }
 

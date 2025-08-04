@@ -33,7 +33,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
 
 load_dotenv()
@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI):
         provider.add_span_processor(processor)
         trace.set_tracer_provider(provider)
         FastAPIInstrumentor.instrument_app(app)
-        RequestsInstrumentor().instrument()
+        HTTPXClientInstrumentor().instrument()
         logger.info(f"OpenTelemetry tracing enabled. Exporting to: {OTEL_ENDPOINT}")
     else:
         logger.info(

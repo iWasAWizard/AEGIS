@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import Dict, Any, List
 
-import requests
+import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 # Import ToolExecutionError
@@ -375,16 +375,12 @@ def fuzz_api_request(input_data: FuzzAPIRequestInput) -> Dict[str, Any]:
                     payload_dict = json.loads(payload)
                     request_kwargs["json"] = payload_dict
                 except json.JSONDecodeError:
-                    # If JSON mode but payload isn't valid JSON (e.g. if generate_payload was modified)
-                    # send as raw data. Or we could skip/error.
-                    request_kwargs["data"] = payload.encode(
+                    request_kwargs["content"] = payload.encode(
                         "utf-8", errors="surrogateescape"
                     )
-                    request_kwargs["headers"] = {
-                        "Content-Type": "text/plain"
-                    }  # Indicate it's not JSON
-            else:  # ascii, emoji, bytes
-                request_kwargs["data"] = payload.encode(
+                    request_kwargs["headers"] = {"Content-Type": "text/plain"}
+            else:
+                request_kwargs["content"] = payload.encode(
                     "utf-8", errors="surrogateescape"
                 )
                 request_kwargs["headers"] = {
@@ -395,7 +391,7 @@ def fuzz_api_request(input_data: FuzzAPIRequestInput) -> Dict[str, Any]:
                     )
                 }
 
-            resp = requests.request(**request_kwargs)  # type: ignore
+            resp = httpx.request(**request_kwargs)  # type: ignore
             results.append(
                 {
                     "iteration": i + 1,
@@ -405,7 +401,7 @@ def fuzz_api_request(input_data: FuzzAPIRequestInput) -> Dict[str, Any]:
                     + ("..." if len(resp.text.strip()) > 200 else ""),
                 }
             )
-        except requests.exceptions.Timeout:
+        except httpx.Timeout as e:
             logger.warning(
                 f"API fuzzing iteration {i + 1} with payload '{payload[:50]}...' timed out."
             )
@@ -417,9 +413,9 @@ def fuzz_api_request(input_data: FuzzAPIRequestInput) -> Dict[str, Any]:
                     "status_code": -1,
                 }
             )
-        except requests.exceptions.RequestException as e:
+        except httpx.RequestError as e:
             logger.warning(
-                f"API fuzzing iteration {i + 1} failed with a RequestException: {e}"
+                f"API fuzzing iteration {i + 1} failed with a RequestError: {e}"
             )
             results.append(
                 {
@@ -429,7 +425,7 @@ def fuzz_api_request(input_data: FuzzAPIRequestInput) -> Dict[str, Any]:
                     "status_code": -1,
                 }
             )
-        except Exception as e:  # Catch other unexpected errors
+        except Exception as e:
             logger.exception(
                 f"API fuzzing iteration {i + 1} failed with an unexpected exception."
             )

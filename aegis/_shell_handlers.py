@@ -13,9 +13,9 @@ import sys
 import uuid
 from pathlib import Path
 import argparse
+from unittest.mock import patch, AsyncMock
 
 import cmd2
-import requests
 import yaml
 from rich.json import JSON
 from rich.markdown import Markdown
@@ -24,7 +24,8 @@ from rich.table import Table
 
 from aegis.agents.agent_graph import AgentGraph
 from aegis.agents.task_state import TaskState
-from aegis.exceptions import AegisError
+from aegis.exceptions import AegisError, ToolExecutionError
+from aegis.providers.replay_provider import ReplayProvider
 from aegis.registry import TOOL_REGISTRY
 from aegis.schemas.agent import AgentConfig, AgentGraphConfig
 from aegis.schemas.launch import LaunchRequest
@@ -749,6 +750,18 @@ def _test_list_handler(self: cmd2.Cmd, args):
     self.console.print(table)
 
 
+def _test_replay_handler(self: cmd2.Cmd, args):
+    """Handles the 'test replay' sub-command."""
+    if not args.task_id or args.task_id == "help":
+        self.do_help("test replay")
+        return
+    self.poutput(
+        f"🔄 Replaying task: {cmd2.ansi.style(args.task_id, fg='cyan', bold=True)}"
+    )
+    # Placeholder for the actual replay logic
+    self.poutput("   (Replay functionality not yet implemented.)")
+
+
 # --- Core Graph Execution Logic ---
 
 
@@ -833,6 +846,18 @@ def _provide_artifact_choices(self):
     if not reports_dir.is_dir():
         return []
     return sorted([d.name for d in reports_dir.iterdir() if d.is_dir()])
+
+
+def _provide_replay_choices(self):
+    """Provides choices for task IDs that have a replay.jsonl file."""
+    reports_dir = Path("reports")
+    if not reports_dir.is_dir():
+        return []
+    replayable_tasks = []
+    for task_dir in reports_dir.iterdir():
+        if (task_dir / "replay.jsonl").is_file():
+            replayable_tasks.append(task_dir.name)
+    return sorted(replayable_tasks)
 
 
 def _provide_preset_choices(self):

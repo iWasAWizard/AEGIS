@@ -4,7 +4,7 @@ A concrete implementation of the BackendProvider for an Ollama backend.
 """
 import asyncio
 import json
-from typing import List, Dict, Any, Optional, Type
+from typing import List, Dict, Any, Optional, Type, Union
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -30,8 +30,11 @@ class OllamaProvider(BackendProvider):
         )
 
     async def get_completion(
-        self, messages: List[Dict[str, Any]], runtime_config: RuntimeExecutionConfig
-    ) -> str:
+        self,
+        messages: List[Dict[str, Any]],
+        runtime_config: RuntimeExecutionConfig,
+        raw_response: bool = False,
+    ) -> Union[str, Any]:
         """
         Gets a completion from the Ollama chat endpoint.
         """
@@ -91,6 +94,10 @@ class OllamaProvider(BackendProvider):
                     raise PlannerError(
                         f"Failed to query Ollama. Status: {response.status_code}, Body: {body}"
                     )
+
+                if raw_response:
+                    return response
+
                 result = response.json()
                 if "message" not in result or "content" not in result["message"]:
                     raise PlannerError(

@@ -4,7 +4,7 @@ Wrapper tools for agent-to-agent communication, delegation, and meta-actions.
 """
 import json
 
-import requests
+import httpx
 from pydantic import BaseModel, Field
 
 from aegis.exceptions import ToolExecutionError
@@ -46,7 +46,7 @@ class DispatchSubtaskInput(BaseModel):
     safe_mode=True,  # The tool itself is safe; safety of the sub-task is governed by its own context.
     purpose="Delegate a complex sub-task to a specialist agent.",
 )
-def dispatch_subtask_to_agent(input_data: DispatchSubtaskInput) -> str:
+async def dispatch_subtask_to_agent(input_data: DispatchSubtaskInput) -> str:
     """
     Invokes another AEGIS agent via the API to perform a sub-task.
     """
@@ -60,19 +60,20 @@ def dispatch_subtask_to_agent(input_data: DispatchSubtaskInput) -> str:
         "execution": {"backend_profile": input_data.backend_profile},
     }
     try:
-        response = requests.post(launch_url, json=payload, timeout=900)
-        response.raise_for_status()
-        result = response.json()
-        summary = result.get("summary", "Sub-agent did not provide a summary.")
-        logger.info(
-            f"Sub-task completed successfully. Returning summary to orchestrator."
-        )
-        return summary
-    except requests.exceptions.HTTPError as e:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(launch_url, json=payload, timeout=900)
+            response.raise_for_status()
+            result = response.json()
+            summary = result.get("summary", "Sub-agent did not provide a summary.")
+            logger.info(
+                f"Sub-task completed successfully. Returning summary to orchestrator."
+            )
+            return summary
+    except httpx.HTTPStatusError as e:
         error_detail = e.response.json().get("detail", e.response.text)
         logger.error(f"Sub-agent task failed with HTTP error: {error_detail}")
         raise ToolExecutionError(f"Sub-agent task failed: {error_detail}")
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e:
         logger.error(f"Failed to connect to the AEGIS API for sub-task: {e}")
         raise ToolExecutionError(
             f"Could not dispatch sub-task due to a network error: {e}"

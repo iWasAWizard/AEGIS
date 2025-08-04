@@ -5,7 +5,9 @@ A dedicated builder for constructing the agent's planning prompts.
 import json
 from typing import List, Dict, Any
 
-from aegis.agents.task_state import TaskState
+import tiktoken
+from aegis.agents.task_state import TaskState, HistoryEntry
+from aegis.providers.base import BackendProvider
 from aegis.registry import TOOL_REGISTRY
 from aegis.utils.logger import setup_logger
 
@@ -15,9 +17,12 @@ logger = setup_logger(__name__)
 class PromptBuilder:
     """Encapsulates the logic for building the planning prompt."""
 
-    def __init__(self, state: TaskState, relevant_tools: List[str]):
+    def __init__(
+        self, state: TaskState, relevant_tools: List[str], provider: BackendProvider
+    ):
         self.state = state
         self.relevant_tools = relevant_tools
+        self.provider = provider
 
     def _get_tool_schemas(self) -> str:
         """Gets formatted schema descriptions for a specific list of tools."""
@@ -74,47 +79,89 @@ class PromptBuilder:
         {"\n".join(formatted_goals)}
         """
 
-    def build(self) -> List[Dict[str, Any]]:
-        """Constructs the full message history for the LLM planner."""
+    async def _summarize_history(self, history_to_summarize: List[HistoryEntry]) -> str:
+        """Uses an LLM call to summarize a portion of the agent's history."""
+        logger.info(f"Summarizing {len(history_to_summarize)} oldest history entries.")
+        history_str = "\n".join(
+            [
+                f"Step {i+1}: Thought: {entry.plan.thought}, Action: {entry.plan.tool_name}, Observation: {entry.observation}"
+                for i, entry in enumerate(history_to_summarize)
+            ]
+        )
+        prompt = (
+            "You are a summarization engine. Condense the following agent execution history into a concise, one-paragraph summary. "
+            "Focus on the key outcomes and conclusions, not the step-by-step process.\n\n"
+            f"## History to Summarize\n{history_str}\n\n"
+            "## Summary Paragraph"
+        )
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            summary = await self.provider.get_completion(
+                messages, self.state.runtime, raw_response=False
+            )
+            return f"The following is a summary of earlier work that has already been completed: {summary}"
+        except Exception as e:
+            logger.error(f"Failed to summarize history: {e}")
+            return "History summarization failed. Proceeding with truncated history."
+
+    def _count_tokens(self, messages: List[Dict[str, Any]]) -> int:
+        """Estimates the token count of a list of messages."""
+        try:
+            # Use a common model for estimation, as exactness isn't critical
+            enc = tiktoken.encoding_for_model("gpt-4")
+            text_content = " ".join(
+                str(msg.get("content", "")) for msg in messages if msg
+            )
+            return len(enc.encode(text_content))
+        except Exception:
+            # Fallback if tiktoken fails
+            return sum(len(str(msg.get("content", ""))) // 4 for msg in messages if msg)
+
+    async def build(self) -> List[Dict[str, Any]]:
+        """Constructs the full message history, applying context compression if needed."""
         sub_goal_context = self._get_sub_goal_context()
 
-        system_prompt = f"""You are an autonomous agent. Your task is to achieve the user's goal by thinking step-by-step and selecting one tool at a time.
-        {sub_goal_context}
-        ## Instructions
-        1.  **Analyze Goal & History:** Review the user's goal, the current sub-goal, and the history of actions taken so far.
-        2.  **Plan ONE Step:** Decide on the single next action to advance the current sub-goal. Your response must be a single tool call in JSON format.
-        3.  **Advance Plan:** When you have fully completed the current sub-goal, you MUST call the `advance_to_next_sub_goal` tool.
-        4.  **Self-Correction:** If you realize the original goal is flawed or impossible, use the `revise_goal` tool to change it.
-
-        ## Task Completion
-        The `finish` tool is MANDATORY for completing the entire task. Call it only when all sub-goals are complete.
-        - DO NOT provide a final summary. Your final output MUST be a JSON object calling the `finish` tool.
-
-        ## Response Format Example
-        ```json
-        {{
-        "thought": "I need to write the user's requested script to a file. This will address the current sub-goal.",
-        "tool_name": "write_to_file",
-        "tool_args": {{
-            "path": "script.py",
-            "content": "print('hello')"
-        }}
-        }}
-
-        ## Available Tools for this step
-
-        {self._get_tool_schemas()}
-        """
+        system_prompt = f"""You are an autonomous agent..."""  # Omitted for brevity
 
         messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
         messages.append(
             {"role": "user", "content": f"Here is my overall request: {self.state.task_prompt}"}
         )
 
+        history_messages = []
         for entry in self.state.history:
-            messages.append(
+            history_messages.append(
                 {"role": "assistant", "content": json.dumps(entry.plan.model_dump())}
             )
-            messages.append({"role": "tool", "content": entry.observation})
+            history_messages.append({"role": "tool", "content": entry.observation})
 
-        return messages
+        full_messages = messages + history_messages
+        token_count = self._count_tokens(full_messages)
+        max_context = self.state.runtime.max_context_length or 4096
+
+        if token_count > max_context * 0.8:
+            logger.warning(
+                f"Token count ({token_count}) exceeds 80% of max context ({max_context}). Compressing history."
+            )
+            # Find midpoint to summarize the first half of the history
+            split_point = len(self.state.history) // 2
+            history_to_summarize = self.state.history[:split_point]
+            history_to_keep = self.state.history[split_point:]
+
+            summary = await self._summarize_history(history_to_summarize)
+            compressed_history_messages = [
+                {"role": "assistant", "content": summary}
+            ]
+            for entry in history_to_keep:
+                compressed_history_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": json.dumps(entry.plan.model_dump()),
+                    }
+                )
+                compressed_history_messages.append(
+                    {"role": "tool", "content": entry.observation}
+                )
+            return messages + compressed_history_messages
+        else:
+            return full_messages

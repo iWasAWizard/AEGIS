@@ -4,7 +4,7 @@ Provides a client for making HTTP requests.
 """
 from typing import Optional, Dict, Any
 
-import requests
+import httpx
 
 from aegis.exceptions import ToolExecutionError
 from aegis.utils.logger import setup_logger
@@ -33,7 +33,7 @@ class HttpExecutor:
         data: Optional[str | bytes] = None,
         json_payload: Optional[Dict[str, Any]] = None,
         timeout: Optional[int] = None,
-    ) -> requests.Response:
+    ) -> httpx.Response:
         """
         Performs an HTTP request.
 
@@ -53,8 +53,8 @@ class HttpExecutor:
         :type json_payload: Optional[Dict[str, Any]]
         :param timeout: Optional timeout for this specific request.
         :type timeout: Optional[int]
-        :return: The `requests.Response` object.
-        :rtype: requests.Response
+        :return: The `httpx.Response` object.
+        :rtype: httpx.Response
         :raises ToolExecutionError: If the request fails due to network issues,
                                     bad status codes (4xx, 5xx), or other request exceptions.
         """
@@ -73,18 +73,18 @@ class HttpExecutor:
         )
 
         try:
-            response = requests.request(
+            response = httpx.request(
                 method=method.upper(),
                 url=url,
                 headers=final_headers,
                 params=params,
-                data=data,
+                content=data,
                 json=json_payload,
                 timeout=effective_timeout,
             )
             response.raise_for_status()
             return response
-        except requests.exceptions.RequestException as e:
+        except httpx.RequestError as e:
             logger.error(f"HTTP request to {url} failed: {e}")
             raise ToolExecutionError(f"HTTP request failed: {e}")
         except Exception as e:

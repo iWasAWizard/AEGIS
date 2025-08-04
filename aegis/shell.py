@@ -405,6 +405,18 @@ class AegisShell(cmd2.Cmd):
     )
     parser_list_tests.add_argument("--json", action="store_true", help="Output as JSON")
 
+    parser_replay_test = test_subparsers.add_parser(
+        "replay",
+        help="Replay a completed task from its replay log for debugging.",
+        epilog="Example: test replay <task_id>",
+    )
+    parser_replay_test.add_argument(
+        "task_id",
+        nargs="?",
+        help="The ID of the task to replay.",
+        choices_provider=lambda self: self._provide_replay_choices(),
+    )
+
     @cmd2.with_argparser(test_parser)
     @cmd2.with_category("Agent Commands")
     def do_test(self, args):
@@ -438,6 +450,7 @@ class AegisShell(cmd2.Cmd):
         _session_view_handler,
         _test_run_handler,
         _test_list_handler,
+        _test_replay_handler,
         _provide_tool_choices,
         _provide_config_choices,
         _provide_artifact_choices,
@@ -445,6 +458,7 @@ class AegisShell(cmd2.Cmd):
         _provide_backend_choices,
         _provide_dataset_choices,
         _provide_test_choices,
+        _provide_replay_choices,
         _session_set_value_completer,
         _ensure_tools_loaded,
     )
@@ -472,3 +486,4 @@ class AegisShell(cmd2.Cmd):
     parser_view_session.set_defaults(func=_session_view_handler)
     parser_run_tests.set_defaults(func=_test_run_handler)
     parser_list_tests.set_defaults(func=_test_list_handler)
+    parser_replay_test.set_defaults(func=_test_replay_handler)
