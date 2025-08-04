@@ -2,7 +2,26 @@
 # models.yaml — Consolidated model registry for BEND and AEGIS
 
 models:
-  # === Models for vLLM (Primary) and Ollama ===
+  # === Models for the Lightweight Mixture-of-Experts (MoE) Stack ===
+  - key: "phi3-mini"
+    name: "microsoft/phi-3-mini-4k-instruct"
+    ollama_model_name: "phi3:mini"
+    filename_pattern: ["phi3"]
+    formatter_hint: "chatml"
+    default_max_context_length: 4096
+    use_case: "MoE Specialist: Primary reasoning workhorse."
+    notes: "Part of the experimental MoE stack. Uses the public Ollama Hub version."
+
+  - key: "codegemma"
+    name: "google/codegemma-2b"
+    ollama_model_name: "codegemma:2b"
+    filename_pattern: ["codegemma"]
+    formatter_hint: "chatml"
+    default_max_context_length: 8192
+    use_case: "MoE Router and Specialist for Code/Math."
+    notes: "Public model from Ollama Hub. Replaces SmolLM for simplicity."
+
+  # === Original Models for vLLM (Primary) and Ollama ===
   - key: "hermes"
     name: "NousResearch/Nous-Hermes-2-Mistral-7B-DPO"
     ollama_model_name: "hf.co/NousResearch/Nous-Hermes-2-Mistral-7B-DPO-GGUF:Q4_K_M"
@@ -11,7 +30,7 @@ models:
     default_max_context_length: 32768
     quant_example: "Q4_K_M"
     use_case: "General-purpose assistant, strong reasoning"
-    url: "https://huggingface.co/TheBloke/Nous-Hermes-2-Mistral-7B-DPO-GGUF/resolve/main/nous-hermes-2-mistral-7b-Q4_K_M.gguf"
+    url: "https://huggingface.co/TheBloke/Nous-Hermes-2-Mistral-7B-DPO-GGUF/resolve/main/nous-hermes-2-mistral-7b.Q4_K_M.gguf"
     notes: "Primary model for BEND. Set via switch-model.sh."
 
   - key: "mythomax"
@@ -22,7 +41,7 @@ models:
     default_max_context_length: 32768
     quant_example: "Q4_K_M"
     use_case: "Roleplay, lore-heavy chat"
-    url: "https://huggingface.co/TheBloke/MythoMax-L2-13B-GGUF/resolve/main/mythomax-l2-13b-Q4_K_M.gguf"
+    url: "https://huggingface.co/TheBloke/MythoMax-L2-13B-GGUF/resolve/main/mythomax-l2-13b.Q4_K_M.gguf"
 
   - key: "mistral-openorca"
     name: "Open-Orca/Mistral-7B-OpenOrca"
@@ -32,7 +51,7 @@ models:
     default_max_context_length: 32768
     quant_example: "Q4_K_M"
     use_case: "Fast general chat, coding"
-    url: "https://huggingface.co/TheBloke/Mistral-7B-OpenOrca-GGUF/resolve/main/mistral-7b-openorca-Q4_K_M.gguf"
+    url: "https://huggingface.co/TheBloke/Mistral-7B-OpenOrca-GGUF/resolve/main/mistral-7b-openorca.Q4_K_M.gguf"
 
   - key: "deepseek-coder"
     name: "deepseek-ai/deepseek-coder-33b-instruct"
@@ -42,18 +61,18 @@ models:
     default_max_context_length: 32768
     quant_example: "Q4_K_M"
     use_case: "Software dev, multi-file context"
-    url: "https://huggingface.co/TheBloke/deepseek-coder-33b-GGUF/resolve/main/deepseek-coder-33b-Q4_K_M.gguf"
+    url: "https://huggingface.co/TheBloke/deepseek-coder-33b-GGUF/resolve/main/deepseek-coder-33b.Q4_K_M.gguf"
 
   - key: "llama3"
     name: "meta-llama/Meta-Llama-3-8B-Instruct"
-    ollama_model_name: "llama3:8b-instruct"
+    ollama_model_name: "llama3:8b-instruct-q4_K_M"
     filename_pattern: ["Llama-3-8B-Instruct-IQ4_XS.gguf", "Llama-3-8B-Instruct"]
     formatter_hint: "llama3"
-    default_max_context_length: 32768
-    quant_example: "IQ4_XS"
-    use_case: "General-purpose assistant, strong reasoning"
+    default_max_context_length: 8192
+    quant_example: "Q4_K_M"
+    use_case: "General-purpose assistant, strong reasoning. MoE Specialist for Agentic Tasks."
     url: "https://huggingface.co/QuantFactory/Llama-3-8B-Instruct-GGUF/resolve/main/Llama-3-8B-Instruct-IQ4_XS.gguf"
-    notes: "Excellent modern model for agentic tasks."
+    notes: "Excellent modern model for agentic tasks. Now used by the `ollama-agentic` service."
 
   - key: "granite"
     name: "ibm-granite/granite-3.3-8b-instruct"
@@ -63,7 +82,7 @@ models:
     default_max_context_length: 32768
     quant_example: "Q4_K_M"
     use_case: "Code generation and instruction following"
-    url: "https://huggingface.co/TheBloke/granite-3.3-8B-instruct-GGUF/resolve/main/granite-3.3-8b-instruct-Q4_K_M.gguf"
+    url: "https://huggingface.co/TheBloke/granite-3.3-8B-instruct-GGUF/resolve/main/granite-3.3-8b-instruct.Q4_K_M.gguf"
     notes: "A strong, modern coding model from IBM."
 
   - key: "openchat"

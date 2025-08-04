@@ -63,11 +63,14 @@ temp/
 *.safetensors
 
 # Artifacts
-*/artifacts/*
+artifacts/
 *.png
 *.jpg
 *.jpeg
 *.gif
 
-# Project-specific files
-*/aegis_memory_mapping.json
+# Weird stuff
+index/
+*.bak
+*.tmp
+*.old
