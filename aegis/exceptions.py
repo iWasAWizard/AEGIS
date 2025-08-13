@@ -6,6 +6,7 @@ Using custom exceptions allows for more precise error handling and clearer
 distinction between different types of runtime failures, such as configuration
 issues, tool execution problems, or LLM planning errors.
 """
+from typing import Optional, Any
 
 
 class AegisError(Exception):
@@ -71,4 +72,13 @@ class PlannerError(AegisError):
     with the LLM service.
     """
 
-    pass
+    def __init__(
+        self,
+        message: str,
+        raw_json_content: Optional[str] = None,
+        validation_error: Optional[Any] = None,
+    ):
+        """Initializes the PlannerError with optional structured context."""
+        super().__init__(message)
+        self.raw_json_content = raw_json_content
+        self.validation_error = validation_error

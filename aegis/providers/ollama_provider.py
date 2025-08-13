@@ -11,6 +11,7 @@ from pydantic import BaseModel, ValidationError
 
 from aegis.exceptions import PlannerError, ToolExecutionError
 from aegis.providers.base import BackendProvider
+from aegis.providers.vision_provider import VisionProvider
 from aegis.schemas.backend import OllamaBackendConfig
 from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.utils.logger import setup_logger
@@ -25,6 +26,7 @@ class OllamaProvider(BackendProvider):
 
     def __init__(self, config: OllamaBackendConfig):
         self.config = config
+        self.vision_provider = VisionProvider(config) if config.vision_url else None
         logger.debug(
             f"OllamaProvider initialized with config: {config.model_dump_json()}"
         )
@@ -39,8 +41,11 @@ class OllamaProvider(BackendProvider):
         Gets a completion from the Ollama chat endpoint.
         """
         url = f"{self.config.llm_url}/api/chat"
+        # Prioritize the runtime model, fallback to the profile's model
+        model_to_use = runtime_config.llm_model_name or self.config.model
+
         payload = {
-            "model": self.config.model,
+            "model": model_to_use,
             "messages": messages,
             "stream": False,
             "options": {
@@ -77,7 +82,7 @@ class OllamaProvider(BackendProvider):
             k: v for k, v in payload["options"].items() if v is not None
         }
 
-        logger.info(f"Sending prompt to Ollama backend.")
+        logger.info(f"Sending prompt to Ollama backend using model '{model_to_use}'.")
         logger.debug(f"Ollama final URL: {url}")
         logger.debug(f"Ollama payload: {json.dumps(payload, indent=2)}")
 
@@ -120,15 +125,19 @@ class OllamaProvider(BackendProvider):
         and validating it against the provided Pydantic model.
         """
         url = f"{self.config.llm_url}/api/chat"
+        # Prioritize the runtime model, fallback to the profile's model
+        model_to_use = runtime_config.llm_model_name or self.config.model
 
         payload = {
-            "model": self.config.model,
+            "model": model_to_use,
             "messages": messages,
             "format": "json",  # Explicitly request JSON output from Ollama
             "stream": False,
         }
 
-        logger.info(f"Sending structured prompt to Ollama backend.")
+        logger.info(
+            f"Sending structured prompt to Ollama backend using model '{model_to_use}'."
+        )
         logger.debug(f"Ollama final URL for structured completion: {url}")
         logger.debug(f"Ollama structured payload: {json.dumps(payload, indent=2)}")
 
@@ -136,40 +145,40 @@ class OllamaProvider(BackendProvider):
             async with httpx.AsyncClient() as client:
                 timeout = httpx.Timeout(runtime_config.llm_planning_timeout)
                 response = await client.post(url, json=payload, timeout=timeout)
-
-                if not response.is_success:
-                    body = response.text
-                    logger.error(
-                        f"Error from Ollama ({response.status_code}) at URL '{url}': {body}"
-                    )
-                    response.raise_for_status()
-
+                response.raise_for_status()
                 llm_response_json = response.json()
-
-                # Ollama nests the actual response string inside a 'message' object
                 content_str = llm_response_json.get("message", {}).get("content", "")
                 if not content_str:
                     raise PlannerError("Ollama returned an empty message content.")
 
-                # The content itself is a JSON string, so we parse it again
-                final_json = json.loads(content_str)
-                return response_model.model_validate(final_json)
+                try:
+                    final_json = json.loads(content_str)
+                    return response_model.model_validate(final_json)
+                except ValidationError as e:
+                    # Re-raise with the raw JSON content for the repair logic to use.
+                    raise PlannerError(
+                        f"Ollama returned an invalid JSON object. Raw content: {content_str}",
+                        raw_json_content=content_str,
+                        validation_error=e,
+                    ) from e
 
         except (httpx.RequestError, httpx.TimeoutException) as e:
-            logger.error(
-                f"Network error during Ollama structured completion at URL '{url}': {e}"
-            )
             raise PlannerError(
                 f"Network error during Ollama structured completion: {e}"
             ) from e
-        except (json.JSONDecodeError, ValidationError) as e:
+        except json.JSONDecodeError as e:
             content_str = locals().get("content_str", "[Content not captured]")
-            logger.error(
-                f"Failed to parse or validate Ollama's JSON response. Raw content: '{content_str}'. Error: {e}"
-            )
             raise PlannerError(
-                "Ollama returned a malformed or invalid JSON object for the structured plan."
+                f"Ollama returned a malformed JSON string. Raw content: {content_str}"
             ) from e
+
+    async def get_visual_description(self, prompt: str, image_bytes: bytes) -> str:
+        """Gets a visual description from the configured vision model service."""
+        if not self.vision_provider:
+            raise NotImplementedError(
+                "Vision provider is not configured for this backend."
+            )
+        return await self.vision_provider.describe_image(prompt, image_bytes)
 
     async def get_speech(self, text: str) -> bytes:
         raise NotImplementedError("Ollama provider does not support speech synthesis.")

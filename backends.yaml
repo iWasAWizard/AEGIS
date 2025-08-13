@@ -6,6 +6,7 @@ backends:
   llm_url: http://ollama:11434
   rag_url: http://retriever:8000
   voice_proxy_url: http://voiceproxy:8001
+  vision_url: http://ollama-vision:11434
   api_key: ${BACKEND_API_KEY}
   model: "hf.co/NousResearch/Nous-Hermes-2-Mistral-7B-DPO-GGUF:Q4_K_M"
   temperature: 0.2
@@ -18,7 +19,7 @@ backends:
   type: ollama
   llm_url: http://10.0.0.100:11434
   api_key: ${BACKEND_API_KEY}
-  model: "hf.co/bartowski/openchat-3.6-8b-20240522-GGUF:Q4_K_M"
+  model: "llama3:8b-instruct-q4_K_M"
   temperature: 0.2
   max_tokens_to_generate: 1536
   top_p: 0.9

@@ -127,41 +127,48 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
                 response_model=AgentScratchpad,
                 runtime_config=state.runtime,
             )
-        except ValidationError as e:
-            logger.warning("LLM plan failed validation. Attempting self-correction...")
-            log_replay_event(
-                state.task_id,
-                "PLANNER_VALIDATION_ERROR",
-                {
-                    "error": str(e),
-                    "json_body": (
-                        e.json()
-                        if hasattr(e, "json")
-                        else "No JSON body available in exception."
-                    ),
-                },
-            )
-
-            remediation_prompt = f"The last JSON response you provided was malformed... Your response MUST be only the corrected JSON object..."
-            repair_messages = messages[:-1] + [
-                {"role": "user", "content": remediation_prompt}
-            ]
-            log_replay_event(
-                state.task_id, "PLANNER_REPAIR_INPUT", {"messages": repair_messages}
-            )
-
-            try:
-                scratchpad = await provider.get_structured_completion(
-                    messages=repair_messages,
-                    response_model=AgentScratchpad,
-                    runtime_config=state.runtime,
+        except PlannerError as e:
+            # Check if the PlannerError was caused by a validation issue and has the raw content
+            if e.validation_error and e.raw_json_content:
+                logger.warning(
+                    "LLM plan failed validation. Attempting self-correction..."
                 )
-                logger.info("✅ Self-correction successful. Plan is now valid.")
-            except Exception as final_e:
-                logger.error(
-                    f"Self-correction failed. Raising original error. Final error: {final_e}"
+                log_replay_event(
+                    state.task_id,
+                    "PLANNER_VALIDATION_ERROR",
+                    {"error": str(e.validation_error), "raw_json": e.raw_json_content},
                 )
-                raise e
+
+                remediation_prompt = (
+                    "The last JSON response you provided was malformed and failed validation. "
+                    "You must correct it. Here is your invalid JSON and the validation error.\n\n"
+                    f"## YOUR INVALID JSON ##\n{e.raw_json_content}\n\n"
+                    f"## VALIDATION ERROR ##\n{e.validation_error}\n\n"
+                    "## YOUR TASK ##\n"
+                    "Correct the JSON response so that it strictly conforms to the required schema and the validation error is resolved. "
+                    "Your response MUST be only the corrected JSON object, with no other text or explanation."
+                )
+                repair_messages = messages[:-1] + [
+                    {"role": "user", "content": remediation_prompt}
+                ]
+                log_replay_event(
+                    state.task_id, "PLANNER_REPAIR_INPUT", {"messages": repair_messages}
+                )
+
+                try:
+                    scratchpad = await provider.get_structured_completion(
+                        messages=repair_messages,
+                        response_model=AgentScratchpad,
+                        runtime_config=state.runtime,
+                    )
+                    logger.info("✅ Self-correction successful. Plan is now valid.")
+                except Exception as final_e:
+                    logger.error(
+                        f"Self-correction failed. Raising original error. Final error: {final_e}"
+                    )
+                    raise e
+            else:
+                raise e  # Re-raise if it's a different kind of PlannerError
 
         log_replay_event(
             state.task_id, "PLANNER_OUTPUT", {"plan": scratchpad.model_dump()}
@@ -170,9 +177,6 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
         logger.debug(f"🤔 Thought: {scratchpad.thought}")
         return {"latest_plan": scratchpad}
 
-    except (ValidationError, json.JSONDecodeError) as e:
-        logger.error(f"Failed to parse or validate LLM plan output. Error: {e}")
-        raise PlannerError(f"LLM returned malformed plan. Error: {e}") from e
     except Exception as e:
         logger.exception("An unexpected error occurred during planning.")
         raise PlannerError(f"An unexpected error occurred during planning: {e}") from e

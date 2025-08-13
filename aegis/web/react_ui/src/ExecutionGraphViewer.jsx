@@ -100,19 +100,31 @@ export default function ExecutionGraphViewer({ taskId }) {
     return <p style={{ color: '#ff6666' }}>Error: {error}</p>;
   }
 
+  if (!taskId) {
+    return (
+        <div>
+            <h2>✨ Execution Visualizer</h2>
+            <p>Select a task from the 'Artifacts' tab and click 'Visualize' to see its execution flow here.</p>
+        </div>
+    )
+  }
+
   return (
-    <div style={{ height: 'calc(100vh - 200px)', border: '1px solid var(--border)', borderRadius: '4px' }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        fitView
-      >
-        <Background />
-        <Controls />
-        <MiniMap />
-      </ReactFlow>
+    <div>
+      <h2>✨ Execution Visualizer: {taskId}</h2>
+      <div style={{ height: 'calc(100vh - 200px)', border: '1px solid var(--border)', borderRadius: '4px' }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          fitView
+        >
+          <Background />
+          <Controls />
+          <MiniMap />
+        </ReactFlow>
+      </div>
     </div>
   );
 }

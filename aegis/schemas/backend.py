@@ -66,6 +66,9 @@ class VllmBackendConfig(BaseBackendConfig):
     rag_url: Optional[str] = Field(
         None, description="URL for the BEND RAG retriever service."
     )
+    vision_url: Optional[str] = Field(
+        None, description="URL for a vision model service (e.g., LLaVA)."
+    )
     api_key: Optional[str] = Field(
         None, description="API key for securing BEND services."
     )
@@ -91,6 +94,9 @@ class OllamaBackendConfig(BaseBackendConfig):
     )
     rag_url: Optional[str] = Field(
         None, description="URL for the BEND RAG retriever service."
+    )
+    vision_url: Optional[str] = Field(
+        None, description="URL for a vision model service (e.g., LLaVA)."
     )
     api_key: Optional[str] = Field(
         None, description="API key for securing BEND services."

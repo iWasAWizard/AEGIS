@@ -2,26 +2,7 @@
 # models.yaml — Consolidated model registry for BEND and AEGIS
 
 models:
-  # === Models for the Lightweight Mixture-of-Experts (MoE) Stack ===
-  - key: "phi3-mini"
-    name: "microsoft/phi-3-mini-4k-instruct"
-    ollama_model_name: "phi3:mini"
-    filename_pattern: ["phi3"]
-    formatter_hint: "chatml"
-    default_max_context_length: 4096
-    use_case: "MoE Specialist: Primary reasoning workhorse."
-    notes: "Part of the experimental MoE stack. Uses the public Ollama Hub version."
-
-  - key: "codegemma"
-    name: "google/codegemma-2b"
-    ollama_model_name: "codegemma:2b"
-    filename_pattern: ["codegemma"]
-    formatter_hint: "chatml"
-    default_max_context_length: 8192
-    use_case: "MoE Router and Specialist for Code/Math."
-    notes: "Public model from Ollama Hub. Replaces SmolLM for simplicity."
-
-  # === Original Models for vLLM (Primary) and Ollama ===
+  # === Models for vLLM (Primary) and Ollama ===
   - key: "hermes"
     name: "NousResearch/Nous-Hermes-2-Mistral-7B-DPO"
     ollama_model_name: "hf.co/NousResearch/Nous-Hermes-2-Mistral-7B-DPO-GGUF:Q4_K_M"
@@ -63,16 +44,25 @@ models:
     use_case: "Software dev, multi-file context"
     url: "https://huggingface.co/TheBloke/deepseek-coder-33b-GGUF/resolve/main/deepseek-coder-33b.Q4_K_M.gguf"
 
-  - key: "llama3"
-    name: "meta-llama/Meta-Llama-3-8B-Instruct"
-    ollama_model_name: "llama3:8b-instruct-q4_K_M"
+  - key: "llama3.1"
+    name: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF"
+    ollama_model_name: "hf.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q4_K_M"
     filename_pattern: ["Llama-3-8B-Instruct-IQ4_XS.gguf", "Llama-3-8B-Instruct"]
     formatter_hint: "llama3"
-    default_max_context_length: 8192
+    default_max_context_length: 32768
     quant_example: "Q4_K_M"
-    use_case: "General-purpose assistant, strong reasoning. MoE Specialist for Agentic Tasks."
+    use_case: "General-purpose assistant, strong reasoning"
     url: "https://huggingface.co/QuantFactory/Llama-3-8B-Instruct-GGUF/resolve/main/Llama-3-8B-Instruct-IQ4_XS.gguf"
-    notes: "Excellent modern model for agentic tasks. Now used by the `ollama-agentic` service."
+    notes: "Excellent modern model for agentic tasks."
+
+  - key: "llava-llama3"
+    name: "xtuner/llava-llama-3-8b-v1_1-gguf"
+    ollama_model_name: "llava-llama3:8b"
+    filename_pattern: ["llava"]
+    formatter_hint: "llama3"
+    default_max_context_length: 4096
+    use_case: "MoE Specialist: Vision Language Model for screen perception."
+    notes: "The primary model for the ollama-vision service."
 
   - key: "granite"
     name: "ibm-granite/granite-3.3-8b-instruct"
