@@ -47,7 +47,7 @@ pytest_cache/
 # Protect default preset LangGraph configurations
 !presets/*.yaml
 
-# Node or web-related (if added later)
+# Node or web-related
 node_modules/
 build/
 dist/
@@ -74,3 +74,6 @@ index/
 *.bak
 *.tmp
 *.old
+
+# Continue AI dev assistant
+.continue/

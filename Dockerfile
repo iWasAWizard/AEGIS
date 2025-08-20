@@ -4,6 +4,7 @@ FROM node:23-alpine AS ui-builder
 WORKDIR /app
 
 COPY aegis/web/react_ui/package.json aegis/web/react_ui/package-lock.json* aegis/web/react_ui/vite.config.js ./aegis/web/react_ui/
+
 RUN cd aegis/web/react_ui && npm install --legacy-peer-deps
 
 COPY aegis/web/react_ui/ ./aegis/web/react_ui/
@@ -24,7 +25,7 @@ ENV PYTHONPATH=/app
 COPY requirements.txt .
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    curl wget git firefox-esr nmap tcpdump jq python3-tk scrot libgl1-mesa-glx \
+    curl wget git firefox-esr nmap tcpdump jq python3-tk scrot libgl1 libglx-mesa0 \
     libglib2.0-0 tesseract-ocr && \
     python -m pip install --no-cache-dir --upgrade pip && \
     python -m pip install --no-cache-dir -r requirements.txt && \

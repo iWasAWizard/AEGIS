@@ -2,44 +2,22 @@
 # models.yaml — Consolidated model registry for BEND and AEGIS
 
 models:
-  # === Models for the Lightweight Mixture-of-Experts (MoE) Stack ===
-  - key: "phi3-mini"
-    name: "microsoft/phi-3-mini-4k-instruct"
-    ollama_model_name: "phi3:mini"
-    filename_pattern: ["phi3"]
-    formatter_hint: "chatml"
-    default_max_context_length: 4096
-    use_case: "MoE Specialist: Primary reasoning workhorse."
-    notes: "Part of the experimental MoE stack. Uses the public Ollama Hub version."
-
-  - key: "codegemma"
-    name: "google/codegemma-2b"
-    ollama_model_name: "codegemma:2b"
-    filename_pattern: ["codegemma"]
-    formatter_hint: "chatml"
-    default_max_context_length: 8192
-    use_case: "MoE Router and Specialist for Code/Math."
-    notes: "Public model from Ollama Hub. Replaces SmolLM for simplicity."
-
-  # === Original Models for vLLM (Primary) and Ollama ===
+  # === Models for vLLM (Primary) and Ollama ===
   - key: "hermes"
     name: "NousResearch/Nous-Hermes-2-Mistral-7B-DPO"
     ollama_model_name: "hf.co/NousResearch/Nous-Hermes-2-Mistral-7B-DPO-GGUF:Q4_K_M"
     filename_pattern: ["Nous-Hermes-2-Mistral-7B-DPO-GGUF"]
     formatter_hint: "chatml"
-    default_max_context_length: 32768
-    quant_example: "Q4_K_M"
+    context_length: 32768
     use_case: "General-purpose assistant, strong reasoning"
     url: "https://huggingface.co/TheBloke/Nous-Hermes-2-Mistral-7B-DPO-GGUF/resolve/main/nous-hermes-2-mistral-7b.Q4_K_M.gguf"
-    notes: "Primary model for BEND. Set via switch-model.sh."
 
   - key: "mythomax"
     name: "Gryphe/MythoMax-L2-13b"
     ollama_model_name: "mythomax"
     filename_pattern: ["mythomax-l2-13b"]
     formatter_hint: "alpaca"
-    default_max_context_length: 32768
-    quant_example: "Q4_K_M"
+    context_length: 32768
     use_case: "Roleplay, lore-heavy chat"
     url: "https://huggingface.co/TheBloke/MythoMax-L2-13B-GGUF/resolve/main/mythomax-l2-13b.Q4_K_M.gguf"
 
@@ -48,50 +26,42 @@ models:
     ollama_model_name: "mistral-openorca"
     filename_pattern: ["mistral-7b-openorca"]
     formatter_hint: "chatml"
-    default_max_context_length: 32768
-    quant_example: "Q4_K_M"
+    context_length: 32768
     use_case: "Fast general chat, coding"
     url: "https://huggingface.co/TheBloke/Mistral-7B-OpenOrca-GGUF/resolve/main/mistral-7b-openorca.Q4_K_M.gguf"
 
-  - key: "deepseek-coder"
-    name: "deepseek-ai/deepseek-coder-33b-instruct"
-    ollama_model_name: "deepseek-coder:33b-instruct"
-    filename_pattern: ["deepseek-coder-33b"]
-    formatter_hint: "codellama-instruct"
-    default_max_context_length: 32768
-    quant_example: "Q4_K_M"
-    use_case: "Software dev, multi-file context"
-    url: "https://huggingface.co/TheBloke/deepseek-coder-33b-GGUF/resolve/main/deepseek-coder-33b.Q4_K_M.gguf"
-
   - key: "llama3"
     name: "meta-llama/Meta-Llama-3-8B-Instruct"
-    ollama_model_name: "llama3:8b-instruct-q4_K_M"
+    ollama_model_name: "llama3:8b-instruct"
     filename_pattern: ["Llama-3-8B-Instruct-IQ4_XS.gguf", "Llama-3-8B-Instruct"]
     formatter_hint: "llama3"
-    default_max_context_length: 8192
-    quant_example: "Q4_K_M"
-    use_case: "General-purpose assistant, strong reasoning. MoE Specialist for Agentic Tasks."
+    context_length: 32768
+    use_case: "General-purpose assistant, strong reasoning"
     url: "https://huggingface.co/QuantFactory/Llama-3-8B-Instruct-GGUF/resolve/main/Llama-3-8B-Instruct-IQ4_XS.gguf"
-    notes: "Excellent modern model for agentic tasks. Now used by the `ollama-agentic` service."
-
-  - key: "granite"
-    name: "ibm-granite/granite-3.3-8b-instruct"
-    ollama_model_name: "granite-code:8b-instruct"
-    filename_pattern: ["granite-3.3-8b-instruct"]
-    formatter_hint: "chatml"
-    default_max_context_length: 32768
-    quant_example: "Q4_K_M"
-    use_case: "Code generation and instruction following"
-    url: "https://huggingface.co/TheBloke/granite-3.3-8B-instruct-GGUF/resolve/main/granite-3.3-8b-instruct.Q4_K_M.gguf"
-    notes: "A strong, modern coding model from IBM."
 
   - key: "openchat"
     name: "openchat/openchat-3.6-8b-20240522"
     ollama_model_name: "hf.co/bartowski/openchat-3.6-8b-20240522-GGUF:Q4_K_M"
     filename_pattern: ["openchat-3.6-8b"]
     formatter_hint: "chatml"
-    default_max_context_length: 32768
-    quant_example: "Q4_K_M"
+    context_length: 32768
     use_case: "General-purpose assistant, strong reasoning"
     url: "https://huggingface.co/bartowski/openchat-3.6-8b-20240522-GGUF/blob/main/openchat-3.6-8b-20240522-Q4_K_M.gguf"
-    notes: "A powerful open-source model, great for general chat."
+
+  - key: "qwen3"
+    name: "Qwen/Qwen3-4B-Thinking-2507"
+    ollama_model_name: "hf.co/unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M"
+    filename_pattern: ["Qwen3-4B-Thinking-2507"]
+    formatter_hint: "chatml"
+    context_length: 32768
+    use_case: "Assistant, reasoning, coding"
+    url: "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf?download=true"
+
+  - key: "qwen2.5-omni"
+    name: "Qwen/Qwen2.5-Omni-7B"
+    ollama_model_name: "hf.co/unsloth/Qwen2.5-Omni-7B-GGUF:Q6_K"
+    filename_pattern:
+    formatter_hint: "chatml"
+    max_default_context_length: 32768
+    use_case: "Multimodal, visio, audio, video"
+    url: "https://huggingface.co/unsloth/Qwen2.5-Omni-7B-GGUF/resolve/main/Qwen2.5-Omni-7B-Q6_K.gguf?download=true"
