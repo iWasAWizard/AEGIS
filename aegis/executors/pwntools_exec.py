@@ -1,241 +1,384 @@
 # aegis/executors/pwntools_exec.py
 """
-Provides a client for executing pwntools-based interactions.
+Provides a client for interacting with remote services or local binaries via pwntools.
 """
-from typing import Callable, Any, Optional, Protocol, runtime_checkable, cast
+from __future__ import annotations
 
-from aegis.exceptions import ToolExecutionError
+from typing import Optional, List, Tuple
+from dataclasses import dataclass
+
+from aegis.exceptions import ToolExecutionError, ConfigurationError
 from aegis.utils.logger import setup_logger
+from aegis.schemas.tool_result import ToolResult
+from aegis.utils.dryrun import dry_run
+from aegis.utils.redact import redact_for_log
+import time
 
 logger = setup_logger(__name__)
 
-# Import pwntools conditionally for the executor
 try:
-    from pwn import (
-        remote as pwn_remote,
-        process as pwn_process,
-        context as pwn_context,
-        shellcraft as pwn_shellcraft,
-        ELF as pwn_ELF,
-        cyclic as pwn_cyclic,
-        cyclic_find as pwn_cyclic_find,
-    )
-    from pwnlib.exception import PwnlibException
+    from pwn import context, remote, process, cyclic, asm, ELF
+    from pwnlib.exception import PwnlibException as _PwnlibException
 
-    PWNTOOLS_AVAILABLE_FOR_EXECUTOR = True
+    PWNLIB_AVAILABLE = True
 except ImportError:
-    PWNTOOLS_AVAILABLE_FOR_EXECUTOR = False
-
-    class PwnlibException(Exception):
-        pass
+    PWNLIB_AVAILABLE = False
 
 
-@runtime_checkable
-class TubeProtocol(Protocol):
-    """Defines the interface for a pwntools-like tube object."""
+@dataclass
+class TubeProtocol:
+    """A tiny helper to interact with a tube-like interface."""
 
-    def sendline(self, data: bytes): ...
-    def recvall(self, timeout: Any = ...) -> bytes: ...
-    def close(self): ...
+    tube: any
 
-    timeout: int
+    def sendline(self, s: str) -> None:
+        self.tube.sendline(s.encode("utf-8", "ignore"))
+
+    def recvall(self, timeout: float = 5.0) -> bytes:
+        return self.tube.recvall(timeout=timeout)
+
+    def close(self) -> None:
+        try:
+            self.tube.close()
+        except Exception:
+            pass
 
 
 class PwntoolsExecutor:
-    """
-    A client for managing pwntools connections (remote, process) and interactions.
-    Ensures connections are properly closed.
-    """
+    """A focused wrapper over pwntools for basic CTF-like interactions."""
 
-    def __init__(self, default_timeout: int = 5):
+    def __init__(self, arch: str = "amd64", os_name: str = "linux"):
         """
-        Initializes the PwntoolsExecutor.
-
-        :param default_timeout: Default timeout in seconds for connection/receive operations.
-        :type default_timeout: int
+        :param arch: Architecture for asm/shellcode helpers (e.g., 'amd64', 'i386').
+        :type arch: str
+        :param os_name: OS name for pwntools context (e.g., 'linux').
+        :type os_name: str
         """
-        if not PWNTOOLS_AVAILABLE_FOR_EXECUTOR:
-            raise ToolExecutionError(
-                "Pwntools library is not installed. Cannot use PwntoolsExecutor."
-            )
-        self.default_timeout = default_timeout
-
-    def _connect_remote(
-        self, host: str, port: int, timeout: Optional[int]
-    ) -> TubeProtocol:
-        """Establishes a pwntools remote connection."""
-        effective_timeout = timeout if timeout is not None else self.default_timeout
-        logger.debug(
-            f"PwntoolsExecutor: Connecting to remote {host}:{port} with timeout {effective_timeout}s"
-        )
+        if not PWNLIB_AVAILABLE:
+            raise ToolExecutionError("Pwntools is not installed.")
         try:
-            conn = pwn_remote(host, port, timeout=effective_timeout)
-            return conn  # type: ignore
-        except PwnlibException as e:
-            logger.error(f"Pwntools remote connection to {host}:{port} failed: {e}")
-            raise ToolExecutionError(
-                f"Pwntools remote connection to {host}:{port} failed: {e}"
-            )
+            context.clear()
+            context.update(arch=arch, os=os_name, timeout=5)
         except Exception as e:
-            logger.exception(
-                f"Unexpected error during pwntools remote connection to {host}:{port}"
-            )
-            raise ToolExecutionError(f"Unexpected error connecting with pwntools: {e}")
+            raise ConfigurationError(
+                f"Failed to configure pwntools context: {e}"
+            ) from e
+
+    def _connect_remote(self, host: str, port: int) -> TubeProtocol:
+        try:
+            r = remote(host, port)
+            return TubeProtocol(r)
+        except _PwnlibException as e:
+            raise ToolExecutionError(f"Pwntools remote connection error: {e}") from e
+        except Exception as e:
+            raise ToolExecutionError(f"Remote connection error: {e}") from e
 
     def _start_process(
-        self, executable_path: str, timeout: Optional[int]
+        self, binary_path: str, argv: Optional[List[str]] = None
     ) -> TubeProtocol:
-        """Starts a local process using pwntools."""
-        effective_timeout = timeout if timeout is not None else self.default_timeout
-        logger.debug(
-            f"PwntoolsExecutor: Starting process {executable_path} (ops timeout {effective_timeout}s)"
-        )
         try:
-            proc = pwn_process(executable_path)
-            proc.timeout = effective_timeout
-            return proc  # type: ignore
-        except FileNotFoundError:
-            logger.error(
-                f"Executable not found for Pwntools process: '{executable_path}'"
-            )
-            raise ToolExecutionError(
-                f"Pwntools process: Executable not found at '{executable_path}'"
-            )
-        except PwnlibException as e:
-            logger.error(f"Pwntools starting process '{executable_path}' failed: {e}")
-            raise ToolExecutionError(
-                f"Pwntools process start failed for '{executable_path}': {e}"
-            )
+            argv = argv or []
+            p = process([binary_path] + argv)
+            return TubeProtocol(p)
+        except _PwnlibException as e:
+            raise ToolExecutionError(f"Pwntools process start error: {e}") from e
         except Exception as e:
-            logger.exception(
-                f"Unexpected error starting Pwntools process '{executable_path}'"
-            )
-            raise ToolExecutionError(f"Unexpected error starting Pwntools process: {e}")
+            raise ToolExecutionError(f"Process start error: {e}") from e
 
     def interact_remote(
         self,
         host: str,
         port: int,
-        interaction_func: Callable[[TubeProtocol], Any],
-        timeout: Optional[int] = None,
-    ) -> Any:
+        send_lines: Optional[List[str]] = None,
+        recv_until: Optional[str] = None,
+        timeout_s: int = 5,
+    ) -> Tuple[str, bytes]:
         """
-        Connects to a remote service, executes an interaction function, and closes connection.
+        Connect to a remote service, optionally send lines, and read until a marker or EOF.
         """
-        conn: Optional[TubeProtocol] = None
         try:
-            conn = self._connect_remote(host, port, timeout)
-            result = interaction_func(conn)
-            return result
-        except ToolExecutionError:
-            raise
-        except PwnlibException as e:
-            logger.error(f"Pwntools remote interaction with {host}:{port} failed: {e}")
-            raise ToolExecutionError(f"Pwntools remote interaction failed: {e}")
+            tube = self._connect_remote(host, port)
+            if send_lines:
+                for line in send_lines:
+                    tube.sendline(line)
+            data = b""
+            if recv_until:
+                end = time.time() + timeout_s
+                while time.time() < end:
+                    chunk = tube.tube.recv(timeout=0.2)
+                    if chunk:
+                        data += chunk
+                        if recv_until.encode("utf-8", "ignore") in data:
+                            break
+            else:
+                data = tube.recvall(timeout=timeout_s)
+            tube.close()
+            return ("ok", data)
         except Exception as e:
-            logger.exception(
-                f"Unexpected error during Pwntools remote interaction with {host}:{port}"
-            )
-            raise ToolExecutionError(
-                f"Unexpected error during Pwntools remote interaction: {e}"
-            )
-        finally:
-            if conn:
-                try:
-                    conn.close()
-                except Exception as e_close:
-                    logger.warning(
-                        f"Error closing pwntools remote connection: {e_close}"
-                    )
+            raise ToolExecutionError(f"Pwntools interact_remote error: {e}") from e
 
     def interact_process(
         self,
-        executable_path: str,
-        interaction_func: Callable[[TubeProtocol], Any],
-        timeout: Optional[int] = None,
-    ) -> Any:
+        binary_path: str,
+        argv: Optional[List[str]] = None,
+        send_lines: Optional[List[str]] = None,
+        recv_until: Optional[str] = None,
+        timeout_s: int = 5,
+    ) -> Tuple[str, bytes]:
         """
-        Starts a local process, executes an interaction function, and closes connection.
+        Start a local process, optionally send lines, and read until a marker or EOF.
         """
-        proc: Optional[TubeProtocol] = None
         try:
-            proc = self._start_process(executable_path, timeout)
-            result = interaction_func(proc)
-            return result
-        except ToolExecutionError:
-            raise
-        except PwnlibException as e:
-            logger.error(
-                f"Pwntools process interaction with '{executable_path}' failed: {e}"
-            )
-            raise ToolExecutionError(f"Pwntools process interaction failed: {e}")
-        except Exception as e:
-            logger.exception(
-                f"Unexpected error during Pwntools process interaction with '{executable_path}'"
-            )
-            raise ToolExecutionError(
-                f"Unexpected error during Pwntools process interaction: {e}"
-            )
-        finally:
-            if proc:
-                try:
-                    proc.close()
-                except Exception as e_close:
-                    logger.warning(
-                        f"Error closing pwntools process connection: {e_close}"
-                    )
-
-    def craft_shellcode(self, arch: str, os: str, command: str) -> str:
-        """Generates shellcode assembly using pwntools' shellcraft module."""
-        try:
-            pwn_context.clear()
-            pwn_context.arch = arch
-            pwn_context.os = os
-
-            if command == "sh":
-                return pwn_shellcraft.sh()  # type: ignore
-            elif command.startswith("cat"):
-                filename = command.split(None, 1)[1]
-                return pwn_shellcraft.cat(filename)  # type: ignore
+            tube = self._start_process(binary_path, argv=argv)
+            if send_lines:
+                for line in send_lines:
+                    tube.sendline(line)
+            data = b""
+            if recv_until:
+                end = time.time() + timeout_s
+                while time.time() < end:
+                    chunk = tube.tube.recv(timeout=0.2)
+                    if chunk:
+                        data += chunk
+                        if recv_until.encode("utf-8", "ignore") in data:
+                            break
             else:
-                raise ToolExecutionError("Unsupported shellcode command.")
+                data = tube.recvall(timeout=timeout_s)
+            tube.close()
+            return ("ok", data)
         except Exception as e:
-            raise ToolExecutionError(f"Shellcode generation failed: {e}")
+            raise ToolExecutionError(f"Pwntools interact_process error: {e}") from e
 
-    def generate_cyclic_pattern(self, length: int, find: Optional[str]) -> str:
-        """Generates a cyclic pattern or finds an offset within one."""
+    def craft_shellcode(self, arch: str, instructions: List[str]) -> bytes:
+        """
+        Assemble shellcode for the given arch from instruction strings.
+        """
         try:
-            if find:
-                value_to_find = find
-                if value_to_find.startswith("0x"):
-                    value_to_find = int(value_to_find, 16)
-                else:
-                    value_to_find = value_to_find.encode("utf-8")
-                offset = pwn_cyclic_find(value_to_find, n=4)
-                return f"Offset for '{find}' is: {offset}"
-            else:
-                pattern_bytes = pwn_cyclic(length, n=4)
-                return f"Generated pattern: {pattern_bytes.decode('utf-8', errors='ignore')}"  # type: ignore
+            with context.local(arch=arch):
+                src = "\n".join(instructions)
+                return asm(src)
         except Exception as e:
-            raise ToolExecutionError(f"Cyclic pattern operation failed: {e}")
+            raise ToolExecutionError(f"Pwntools asm error: {e}") from e
 
-    def inspect_elf(self, file_path: str) -> str:
-        """Inspects an ELF binary for security mitigations."""
+    def generate_cyclic_pattern(self, length: int) -> bytes:
+        """
+        Generate a cyclic pattern (useful for offset discovery).
+        """
         try:
-            elf = pwn_ELF(file_path)
-            results = [
-                f"File: {elf.path}",
-                f"Arch: {elf.arch}",
-                f"Bits: {elf.bits}",
-                f"OS: {elf.os}",
-                f"RELRO: {elf.relro}",
-                f"PIE: {elf.pie}",
-                f"NX: {elf.nx}",
-                f"Canary: {elf.canary}",
-                f"Functions (first 10): {list(elf.functions.keys())[:10]}",
-            ]
-            return "\n".join(results)
-        except FileNotFoundError:
-            raise ToolExecutionError(f"ELF file not found: {file_path}")
+            return cyclic(length)
         except Exception as e:
-            raise ToolExecutionError(f"Failed to inspect ELF '{file_path}': {e}")
+            raise ToolExecutionError(f"Pwntools cyclic error: {e}") from e
+
+    def inspect_elf(self, path: str) -> dict:
+        """
+        Inspect an ELF binary and return basic metadata.
+        """
+        try:
+            elf = ELF(path)
+            return {
+                "arch": elf.get_machine_arch(),
+                "bits": elf.elfclass,
+                "entry": hex(elf.entry),
+                "plt": list(elf.plt.keys()) if elf.plt else [],
+                "symbols": list(elf.symbols.keys())[:100],
+            }
+        except Exception as e:
+            raise ToolExecutionError(f"Pwntools ELF inspect error: {e}") from e
+
+
+# === ToolResult wrappers ===
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _error_type_from_exception(e: Exception) -> str:
+    msg = str(e).lower()
+    if "timeout" in msg:
+        return "Timeout"
+    if "permission" in msg or "auth" in msg:
+        return "Auth"
+    if "not found" in msg or "no such" in msg:
+        return "NotFound"
+    if "parse" in msg or "json" in msg:
+        return "Parse"
+    return "Runtime"
+
+
+class PwntoolsExecutorToolResultMixin:
+    def interact_remote_result(
+        self,
+        host: str,
+        port: int,
+        send_lines: list[str] | None = None,
+        recv_until: str | None = None,
+        timeout_s: int = 5,
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="pwntools.interact_remote",
+                args=redact_for_log({"host": host, "port": port}),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] pwntools.interact_remote",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.interact_remote(
+                host=host,
+                port=port,
+                send_lines=send_lines,
+                recv_until=recv_until,
+                timeout_s=timeout_s,
+            )
+            return ToolResult.ok_result(
+                stdout=str(out[0]),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"host": host, "port": port},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"host": host, "port": port},
+            )
+
+    def interact_process_result(
+        self,
+        binary_path: str,
+        argv: list[str] | None = None,
+        send_lines: list[str] | None = None,
+        recv_until: str | None = None,
+        timeout_s: int = 5,
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="pwntools.interact_process",
+                args=redact_for_log({"binary_path": binary_path}),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] pwntools.interact_process",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.interact_process(
+                binary_path=binary_path,
+                argv=argv,
+                send_lines=send_lines,
+                recv_until=recv_until,
+                timeout_s=timeout_s,
+            )
+            return ToolResult.ok_result(
+                stdout=str(out[0]),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"binary_path": binary_path},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"binary_path": binary_path},
+            )
+
+    def craft_shellcode_result(self, arch: str, instructions: list[str]) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="pwntools.craft_shellcode", args=redact_for_log({"arch": arch})
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] pwntools.craft_shellcode",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.craft_shellcode(arch=arch, instructions=instructions)
+            return ToolResult.ok_result(
+                stdout=out.hex(),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"arch": arch},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"arch": arch},
+            )
+
+    def generate_cyclic_pattern_result(self, length: int) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="pwntools.generate_cyclic", args=redact_for_log({"length": length})
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] pwntools.generate_cyclic",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.generate_cyclic_pattern(length=length)
+            return ToolResult.ok_result(
+                stdout=out.decode("latin-1", "ignore"),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"length": length},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"length": length},
+            )
+
+    def inspect_elf_result(self, path: str) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="pwntools.inspect_elf", args=redact_for_log({"path": path})
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] pwntools.inspect_elf",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.inspect_elf(path=path)
+            return ToolResult.ok_result(
+                stdout=str(out),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"path": path},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"path": path},
+            )
+
+
+PwntoolsExecutor.interact_remote_result = (
+    PwntoolsExecutorToolResultMixin.interact_remote_result
+)
+PwntoolsExecutor.interact_process_result = (
+    PwntoolsExecutorToolResultMixin.interact_process_result
+)
+PwntoolsExecutor.craft_shellcode_result = (
+    PwntoolsExecutorToolResultMixin.craft_shellcode_result
+)
+PwntoolsExecutor.generate_cyclic_pattern_result = (
+    PwntoolsExecutorToolResultMixin.generate_cyclic_pattern_result
+)
+PwntoolsExecutor.inspect_elf_result = PwntoolsExecutorToolResultMixin.inspect_elf_result

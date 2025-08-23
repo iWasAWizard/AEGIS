@@ -1,20 +1,21 @@
 # aegis/executors/scapy_exec.py
 """
-Provides a client for executing scapy-based network operations.
+Provides a client for performing typical Scapy-based network tasks safely.
 """
-from typing import List, Any, Optional, Dict
+from typing import List, Dict, Any, Optional
 
-from aegis.exceptions import ToolExecutionError
+from aegis.exceptions import ToolExecutionError, ConfigurationError
 from aegis.utils.logger import setup_logger
+from aegis.schemas.tool_result import ToolResult
+from aegis.utils.dryrun import dry_run
+from aegis.utils.redact import redact_for_log
+import time
+import json
 
 logger = setup_logger(__name__)
 
 try:
-    # Correct, explicit imports from scapy submodules
-    from scapy.layers.inet import IP, TCP, UDP, ICMP
-    from scapy.layers.l2 import Ether, ARP
-    from scapy.layers.dns import DNS, DNSQR
-    from scapy.sendrecv import sr1, srp, send, sniff
+    from scapy.all import ICMP, IP, TCP, ARP, Ether, sr1, sr, sniff, send
 
     SCAPY_AVAILABLE = True
 except ImportError:
@@ -22,113 +23,318 @@ except ImportError:
 
 
 class ScapyExecutor:
-    """A client for managing and executing scapy network operations."""
+    """A client to encapsulate Scapy interactions with safer defaults."""
 
-    def __init__(self, default_timeout: int = 2):
+    def __init__(self, require_root: bool = False):
+        """
+        :param require_root: If True, raise if the process is not root; otherwise warn.
+        :type require_root: bool
+        """
         if not SCAPY_AVAILABLE:
-            raise ToolExecutionError("Scapy library is not installed.")
-        self.default_timeout = default_timeout
-
-    def ping(self, target: str, timeout: Optional[int] = None) -> str:
-        """Sends an ICMP echo request to a target."""
-        effective_timeout = timeout if timeout is not None else self.default_timeout
-        logger.info(f"Pinging host {target} with scapy.")
+            raise ToolExecutionError("Scapy is not installed.")
         try:
-            packet = IP(dst=target) / ICMP()
-            reply = sr1(packet, timeout=effective_timeout, verbose=0)
-            return (
-                f"Host {target} is up."
-                if reply
-                else f"Host {target} is down or not responding."
-            )
-        except Exception as e:
-            raise ToolExecutionError(f"An error occurred during scapy ping: {e}")
+            import os
 
-    def tcp_scan(self, target: str, port: int, timeout: Optional[int] = None) -> str:
-        """Performs a TCP SYN scan on a single port."""
-        effective_timeout = timeout if timeout is not None else self.default_timeout
-        logger.info(f"Scanning port {port} on host {target} with scapy.")
+            if require_root and os.geteuid() != 0:
+                raise ConfigurationError("Scapy operations require root privileges.")
+            if os.geteuid() != 0:
+                logger.warning("Scapy running without root; some operations may fail.")
+        except Exception as e:
+            raise ToolExecutionError(f"Environment check failed: {e}") from e
+
+    def ping(
+        self, target_ip: str, count: int = 1, timeout_s: int = 2
+    ) -> Dict[str, Any]:
+        """
+        Send ICMP echo requests to a target and measure success.
+        """
         try:
-            packet = IP(dst=target) / TCP(dport=port, flags="S")
-            response = sr1(packet, timeout=effective_timeout, verbose=0)
-
-            if response is None:
-                return f"Port {port} on {target} is filtered (No response)."
-            elif response.haslayer(TCP):
-                tcp_layer = response.getlayer(TCP)
-                if tcp_layer is not None and tcp_layer.flags == 0x12:  # SYN/ACK
-                    send(IP(dst=target) / TCP(dport=port, flags="R"), verbose=0)
-                    return f"Port {port} on {target} is open."
-                elif tcp_layer is not None and tcp_layer.flags == 0x14:  # RST/ACK
-                    return f"Port {port} on {target} is closed."
-            return f"Port {port} on {target} state is unknown (unexpected response)."
+            results = {"sent": count, "received": 0, "rtts_ms": []}
+            for _ in range(count):
+                pkt = IP(dst=target_ip) / ICMP()
+                ans = sr1(pkt, timeout=timeout_s, verbose=False)
+                if ans is not None:
+                    results["received"] += 1
+                    rtt_ms = (
+                        (ans.time - pkt.time) * 1000.0 if hasattr(ans, "time") else None
+                    )
+                    if rtt_ms is not None:
+                        results["rtts_ms"].append(rtt_ms)
+            return results
         except Exception as e:
-            raise ToolExecutionError(f"An error occurred during TCP scan: {e}")
+            raise ToolExecutionError(f"Scapy ping error: {e}") from e
 
-    def arp_scan(self, target_range: str, timeout: Optional[int] = None) -> str:
-        """Performs an ARP scan on a local network range."""
-        effective_timeout = timeout if timeout is not None else self.default_timeout
-        logger.info(f"Performing ARP scan on network range: {target_range}")
+    def tcp_scan(
+        self, target_ip: str, ports: List[int], timeout_s: int = 2
+    ) -> Dict[str, Any]:
+        """
+        Perform a very basic TCP SYN scan over a list of ports.
+        """
         try:
-            arp_request = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=target_range)
-            answered, _ = srp(arp_request, timeout=effective_timeout, verbose=0)
-
-            if not answered:
-                return f"No hosts found in range {target_range}."
-
-            results = ["Discovered hosts:"]
-            for _, received in answered:
-                results.append(f"  - IP: {received.psrc:<16} MAC: {received.hwsrc}")
-            return "\n".join(results)
+            results: Dict[str, str] = {}
+            for p in ports:
+                syn = IP(dst=target_ip) / TCP(dport=p, flags="S")
+                ans, _ = sr(syn, timeout=timeout_s, verbose=False)
+                state = "filtered"
+                if ans:
+                    for _, rcv in ans:
+                        if rcv.haslayer(TCP) and rcv[TCP].flags == 0x12:
+                            state = "open"
+                            break
+                        elif rcv.haslayer(TCP) and rcv[TCP].flags == 0x14:
+                            state = "closed"
+                            break
+                results[str(p)] = state
+            return {"host": target_ip, "results": results}
         except Exception as e:
-            raise ToolExecutionError(f"An error occurred during ARP scan: {e}")
+            raise ToolExecutionError(f"Scapy TCP scan error: {e}") from e
 
-    def sniff_packets(self, count: int, filter_bpf: Optional[str], timeout: int) -> str:
-        """Captures network packets."""
-        logger.info(
-            f"Starting packet sniff for {count} packets. Filter: '{filter_bpf or 'None'}'"
-        )
+    def arp_scan(self, network_cidr: str, timeout_s: int = 2) -> List[Dict[str, str]]:
+        """
+        Perform an ARP scan over a local network CIDR.
+        """
         try:
-            packets = sniff(count=count, filter=filter_bpf, timeout=timeout)
-            return str(packets.nsummary()) if packets else "No packets captured."
+            pkt = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=network_cidr)
+            ans, _ = sr(pkt, timeout=timeout_s, verbose=False)
+            hosts: List[Dict[str, str]] = []
+            if ans:
+                for _, rcv in ans:
+                    hosts.append({"ip": rcv.psrc, "mac": rcv.hwsrc})
+            return hosts
         except Exception as e:
-            raise ToolExecutionError(f"An error occurred during packet sniffing: {e}")
+            raise ToolExecutionError(f"Scapy ARP scan error: {e}") from e
+
+    def sniff_packets(
+        self,
+        iface: Optional[str] = None,
+        count: int = 10,
+        timeout_s: int = 5,
+        bpf_filter: Optional[str] = None,
+    ) -> List[str]:
+        """
+        Sniff packets and return a simple string summary list.
+        """
+        try:
+            pkts = sniff(iface=iface, count=count, timeout=timeout_s, filter=bpf_filter)
+            return [p.summary() for p in pkts]
+        except Exception as e:
+            raise ToolExecutionError(f"Scapy sniff error: {e}") from e
 
     def craft_and_send_packet(
-        self, layers_data: List[Dict[str, Any]], count: int
-    ) -> str:
-        """Dynamically crafts and sends a custom packet."""
-        logger.info(f"Safely crafting custom packet with layers: {layers_data}")
-        allowed_layers = {
-            "Ether": Ether,
-            "IP": IP,
-            "TCP": TCP,
-            "UDP": UDP,
-            "ICMP": ICMP,
-            "ARP": ARP,
-            "DNS": DNS,
-            "DNSQR": DNSQR,
-        }
+        self,
+        dst_ip: str,
+        dst_port: int | None = None,
+        payload: bytes | str | None = None,
+        protocol: str = "ICMP",
+    ) -> bool:
+        """
+        Craft and send a very simple packet via Scapy (ICMP default).
+        """
         try:
-            packet_layers = []
-            for layer_data in layers_data:
-                layer_class = allowed_layers.get(layer_data["name"])
-                if not layer_class:
-                    raise ToolExecutionError(
-                        f"Layer '{layer_data['name']}' is not supported."
-                    )
-                packet_layers.append(layer_class(**layer_data["args"]))
+            if protocol.upper() == "ICMP":
+                pkt = IP(dst=dst_ip) / ICMP()
+            elif protocol.upper() == "TCP" and dst_port is not None:
+                pkt = IP(dst=dst_ip) / TCP(dport=dst_port, flags="S")
+                if payload:
+                    if isinstance(payload, str):
+                        payload = payload.encode("utf-8", "ignore")
+                    pkt = pkt / payload
+            else:
+                raise ToolExecutionError(
+                    "Unsupported protocol for craft_and_send_packet."
+                )
+            send(pkt, verbose=False)
+            return True
+        except Exception as e:
+            raise ToolExecutionError(f"Scapy craft/send error: {e}") from e
 
-            if not packet_layers:
-                raise ToolExecutionError("No layers provided for packet crafting.")
 
-            final_packet = packet_layers[0]
-            for layer in packet_layers[1:]:
-                final_packet /= layer
+# === ToolResult wrappers ===
+def _now_ms() -> int:
+    return int(time.time() * 1000)
 
-            send(final_packet, count=count, verbose=0)
-            return (
-                f"Successfully sent {count} packet(s) of type {final_packet.summary()}"
+
+def _error_type_from_exception(e: Exception) -> str:
+    msg = str(e).lower()
+    if "timeout" in msg:
+        return "Timeout"
+    if "permission" in msg or "auth" in msg:
+        return "Auth"
+    if "not found" in msg or "no such" in msg:
+        return "NotFound"
+    if "parse" in msg or "json" in msg:
+        return "Parse"
+    return "Runtime"
+
+
+class ScapyExecutorToolResultMixin:
+    def ping_result(
+        self, target_ip: str, count: int = 1, timeout_s: int = 2
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="scapy.ping",
+                args=redact_for_log({"target_ip": target_ip, "count": count}),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] scapy.ping",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.ping(target_ip=target_ip, count=count, timeout_s=timeout_s)
+            return ToolResult.ok_result(
+                stdout=json.dumps(out),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"target_ip": target_ip, "count": count},
             )
         except Exception as e:
-            raise ToolExecutionError(f"Failed to craft or send packet: {e}")
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"target_ip": target_ip, "count": count},
+            )
+
+    def tcp_scan_result(
+        self, target_ip: str, ports: list[int], timeout_s: int = 2
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="scapy.tcp_scan",
+                args=redact_for_log({"target_ip": target_ip, "ports": ports}),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] scapy.tcp_scan",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.tcp_scan(target_ip=target_ip, ports=ports, timeout_s=timeout_s)
+            return ToolResult.ok_result(
+                stdout=json.dumps(out),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"target_ip": target_ip, "ports": ports},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"target_ip": target_ip, "ports": ports},
+            )
+
+    def arp_scan_result(self, network_cidr: str, timeout_s: int = 2) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="scapy.arp_scan",
+                args=redact_for_log({"network_cidr": network_cidr}),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] scapy.arp_scan",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.arp_scan(network_cidr=network_cidr, timeout_s=timeout_s)
+            return ToolResult.ok_result(
+                stdout=json.dumps(out),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"network_cidr": network_cidr},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"network_cidr": network_cidr},
+            )
+
+    def sniff_packets_result(
+        self,
+        iface: str | None = None,
+        count: int = 10,
+        timeout_s: int = 5,
+        bpf_filter: str | None = None,
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="scapy.sniff",
+                args=redact_for_log({"iface": iface, "count": count}),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] scapy.sniff",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.sniff_packets(
+                iface=iface, count=count, timeout_s=timeout_s, bpf_filter=bpf_filter
+            )
+            return ToolResult.ok_result(
+                stdout=json.dumps(out),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"iface": iface, "count": count},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"iface": iface, "count": count},
+            )
+
+    def craft_and_send_packet_result(
+        self,
+        dst_ip: str,
+        dst_port: int | None = None,
+        payload: bytes | str | None = None,
+        protocol: str = "ICMP",
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="scapy.send",
+                args=redact_for_log(
+                    {"dst_ip": dst_ip, "dst_port": dst_port, "protocol": protocol}
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] scapy.send",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.craft_and_send_packet(
+                dst_ip=dst_ip, dst_port=dst_port, payload=payload, protocol=protocol
+            )
+            return ToolResult.ok_result(
+                stdout=str(out),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"dst_ip": dst_ip, "dst_port": dst_port, "protocol": protocol},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"dst_ip": dst_ip, "dst_port": dst_port, "protocol": protocol},
+            )
+
+
+ScapyExecutor.ping_result = ScapyExecutorToolResultMixin.ping_result
+ScapyExecutor.tcp_scan_result = ScapyExecutorToolResultMixin.tcp_scan_result
+ScapyExecutor.arp_scan_result = ScapyExecutorToolResultMixin.arp_scan_result
+ScapyExecutor.sniff_packets_result = ScapyExecutorToolResultMixin.sniff_packets_result
+ScapyExecutor.craft_and_send_packet_result = (
+    ScapyExecutorToolResultMixin.craft_and_send_packet_result
+)

@@ -2,218 +2,232 @@
 """
 Provides a centralized, robust client for SSH and SCP operations.
 
-This module contains the SSHExecutor class, which is designed to be the single
-source of truth for executing commands and transferring files on remote hosts.
-It handles connection parameters, authentication, and error handling to ensure
-consistent and reliable remote interactions for all tools in the AEGIS framework.
+Now interface-aware:
+- Accepts a MachineManifest and optional interface_name.
+- Resolves address/port from the chosen NetworkInterface.
 """
 
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 
-from aegis.exceptions import ToolExecutionError
+from aegis.exceptions import ToolExecutionError, ConfigurationError
 from aegis.schemas.machine import MachineManifest
+from aegis.utils.manifest_resolver import resolve_target_host_port
 from aegis.utils.logger import setup_logger
+from aegis.schemas.tool_result import ToolResult
+from aegis.utils.dryrun import dry_run
+from aegis.utils.redact import redact_for_log
+import time
+import re
 
 logger = setup_logger(__name__)
+
+
+def _sanitize_cli_list(argv: list[str]) -> str:
+    """
+    Redact sensitive bits for logging: we only log a preview string, not the actual list.
+    """
+    s = " ".join(shlex.quote(x) for x in argv)
+    s = re.sub(r"(-i\s+)(\S+)", r"\1********", s)
+    s = re.sub(
+        r"(\b(password|passwd|token|api[_-]?key|secret)\s*=\s*)([^ \t]+)",
+        r"\1********",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"(Authorization[:=]\s*Bearer\s+)([^\s]+)",
+        r"\1********",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"(Cookie[:=]\s*)([^ \t;]+[^ \t]*)", r"\1********", s, flags=re.IGNORECASE
+    )
+    return s
 
 
 class SSHExecutor:
     """A robust client for executing commands and transferring files on a remote host."""
 
-    def __init__(self, machine: MachineManifest):
-        """Initializes the SSHExecutor from a resolved machine configuration.
-
-        :param machine: A validated MachineManifest object containing connection details.
-        :type machine: MachineManifest
-        :raises ValueError: If the machine configuration is missing IP or username.
+    def __init__(
+        self,
+        manifest: Optional[MachineManifest] = None,
+        ssh_target: Optional[str] = None,
+        *,
+        username: str = "root",
+        port: Optional[int] = None,
+        private_key_path: Optional[str] = None,
+        password: Optional[str] = None,
+        timeout: int = 120,
+        interface_name: Optional[str] = None,
+    ):
         """
-        if not all([machine.ip, machine.username]):
-            raise ValueError("Machine config must have ip and username.")
+        Initialize the SSH executor with connection details.
 
-        self.machine = machine
-        self.ssh_target = f"{self.machine.username}@{self.machine.ip}"
+        Preferred: provide `manifest` (with interfaces) and optional `interface_name`.
+        Back-compat: you may still pass `ssh_target` and `port` directly without a manifest.
 
-        base_ssh_opts = ["-p", str(self.machine.ssh_port)]
-        base_scp_opts = ["-P", str(self.machine.ssh_port)]
-
-        if self.machine.known_hosts_file:
-            logger.info(
-                f"Using secure SSH mode for '{self.machine.name}' with known_hosts file: {self.machine.known_hosts_file}"
-            )
-            secure_opts = [
-                "-o",
-                f"UserKnownHostsFile={self.machine.known_hosts_file}",
-                "-o",
-                "StrictHostKeyChecking=yes",
-            ]
-            self.ssh_opts = base_ssh_opts + secure_opts
-            self.scp_opts = base_scp_opts + secure_opts
-        else:
-            logger.warning(
-                f"SSH host key checking is disabled for machine '{self.machine.name}'. "
-                "This is insecure and should not be used in production. "
-                "Consider adding a 'known_hosts_file' to this machine's manifest in machines.yaml."
-            )
-            insecure_opts = [
-                "-o",
-                "StrictHostKeyChecking=no",
-                "-o",
-                "UserKnownHostsFile=/dev/null",
-            ]
-            self.ssh_opts = base_ssh_opts + insecure_opts
-            self.scp_opts = base_scp_opts + insecure_opts
-
-    @staticmethod
-    def _run_subprocess(command: list[str], timeout: int) -> Tuple[int, str, str]:
-        """A private helper to run a subprocess command and capture its output.
-
-        :param command: A list of strings representing the command and its arguments.
-        :type command: list[str]
-        :param timeout: The timeout in seconds for the command.
+        :param manifest: Machine manifest used to resolve interface and target address.
+        :type manifest: Optional[MachineManifest]
+        :param ssh_target: Direct override for host if no manifest is provided.
+        :type ssh_target: Optional[str]
+        :param username: SSH username to authenticate as.
+        :type username: str
+        :param port: SSH port (overrides interface port if provided).
+        :type port: Optional[int]
+        :param private_key_path: Path to private key (key-based auth).
+        :type private_key_path: Optional[str]
+        :param password: Password for password-based auth.
+        :type password: Optional[str]
+        :param timeout: Default timeout in seconds for SSH operations.
         :type timeout: int
-        :return: A tuple of (returncode, stdout, stderr).
-        :rtype: Tuple[int, str, str]
+        :param interface_name: Logical interface label (e.g., "mgmt0") for provenance.
+        :type interface_name: Optional[str]
         """
-        logger.info(f"Executing command: {' '.join(shlex.quote(c) for c in command)}")
+        self.manifest = manifest
+        self.username = username
+        self.private_key_path = private_key_path
+        self.password = password
+        self.default_timeout = timeout
+
+        if manifest:
+            address, nic_port, nic_name = resolve_target_host_port(
+                manifest, interface_name
+            )
+            self.ssh_target = address
+            self.port = int(port or nic_port or 22)
+            self.interface_name = nic_name
+        else:
+            if not ssh_target:
+                raise ConfigurationError(
+                    "Either 'manifest' or 'ssh_target' must be provided."
+                )
+            self.ssh_target = ssh_target
+            self.port = int(port or 22)
+            self.interface_name = interface_name or "unspecified"
+
+        if not private_key_path and not password:
+            logger.warning(
+                "No private_key_path or password provided; relying on agent/ssh config."
+            )
+
+    def _run_subprocess(
+        self, command_list: list[str], timeout: int
+    ) -> Tuple[int, str, str]:
+        """
+        Internal method to execute a subprocess (ssh/scp) with robust error handling.
+        """
+        try:
+            logger.info(f"Running SSH subprocess: {_sanitize_cli_list(command_list)}")
+        except Exception:
+            logger.info("Running SSH subprocess.")
+
         try:
             result = subprocess.run(
-                command, capture_output=True, text=True, timeout=timeout, check=False
+                command_list,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+                encoding="utf-8",
+                errors="surrogateescape",
             )
-            return result.returncode, result.stdout.strip(), result.stderr.strip()
-        except FileNotFoundError:
+        except subprocess.TimeoutExpired as e:
             logger.error(
-                f"Command not found: {command[0]}. Is the client (ssh, scp) installed?"
+                f"SSH command timed out after {timeout} seconds: {_sanitize_cli_list(command_list)}"
             )
             raise ToolExecutionError(
-                f"SSH/SCP client not found: {command[0]}. Please ensure it is installed and in PATH."
-            )
-        except subprocess.TimeoutExpired:
-            logger.warning(f"Command timed out after {timeout}s: {' '.join(command)}")
-            raise ToolExecutionError(
-                f"Remote command timed out after {timeout} seconds: {' '.join(command)}"
-            )
+                f"SSH command timed out after {timeout} seconds"
+            ) from e
         except Exception as e:
-            logger.exception(
-                f"An unexpected error occurred while running command: {' '.join(command)}"
-            )
-            raise ToolExecutionError(
-                f"Unexpected error during remote subprocess execution: {e}"
-            )
-
-    def run(self, command: str, timeout: int = 30) -> str:
-        """Executes a shell command on the remote host via SSH.
-        If the command returns a non-zero exit code, ToolExecutionError is raised.
-
-        :param command: The shell command to execute.
-        :type command: str
-        :param timeout: The timeout in seconds for the command.
-        :type timeout: int
-        :return: The combined stdout and stderr from the command if successful.
-        :rtype: str
-        :raises ToolExecutionError: If the command fails (non-zero exit code) or other execution error.
-        """
-        cmd_list = ["ssh", *self.ssh_opts, self.ssh_target, command]
-        returncode, stdout, stderr = self._run_subprocess(cmd_list, timeout=timeout)
-
-        combined_output = stdout
-        if stderr:
-            combined_output = f"{stdout}\n[STDERR]\n{stderr}".strip()
-
-        if returncode != 0:
             logger.error(
-                f"Remote command '{command}' failed on '{self.ssh_target}' with RC {returncode}. "
-                f"Output:\n{combined_output}"
+                f"Error executing SSH command: {_sanitize_cli_list(command_list)} -> {e}"
             )
-            raise ToolExecutionError(
-                f"Remote command failed with exit code {returncode}. Output: {combined_output}"
-            )
+            raise ToolExecutionError(f"Error executing SSH command: {e}") from e
 
-        return combined_output
+        stdout = result.stdout or ""
+        stderr = result.stderr or ""
+        return result.returncode, stdout, stderr
+
+    def run(self, command: str, *, timeout: Optional[int] = None) -> str:
+        """
+        Run a command over SSH and return stdout. Raises if exit code != 0.
+        """
+        eff_timeout = timeout or self.default_timeout
+
+        ssh_cmd = [
+            "ssh",
+            "-p",
+            str(self.port),
+            f"{self.username}@{self.ssh_target}",
+        ]
+
+        if self.private_key_path:
+            ssh_cmd += ["-i", self.private_key_path]
+        ssh_cmd += ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new"]
+        ssh_cmd += ["--", command]
+
+        rc, stdout, stderr = self._run_subprocess(ssh_cmd, eff_timeout)
+        if rc != 0:
+            logger.error(f"Remote command failed with RC {rc} on {self.ssh_target}.")
+            raise ToolExecutionError(
+                f"Remote command failed with exit code {rc}. STDERR: {stderr}"
+            )
+        return stdout
 
     def upload(
-        self, local_path: str | Path, remote_path: str | Path, timeout: int = 60
-    ) -> str:
-        """Uploads a local file to the remote host using SCP.
-
-        :param local_path: The path to the local file to upload.
-        :type local_path: str | Path
-        :param remote_path: The destination path on the remote host.
-        :type remote_path: str | Path
-        :param timeout: The timeout in seconds for the transfer.
-        :type timeout: int
-        :return: A success message.
-        :rtype: str
-        :raises ToolExecutionError: If SCP upload fails.
+        self, local_path: str, remote_path: str, *, timeout: Optional[int] = None
+    ) -> None:
         """
-        source = str(local_path)
-        destination = f"{self.ssh_target}:{remote_path}"
-        cmd_list = ["scp", *self.scp_opts, source, destination]
-        returncode, stdout, stderr = self._run_subprocess(cmd_list, timeout=timeout)
+        Upload a file to the remote host via SCP.
+        """
+        eff_timeout = timeout or self.default_timeout
+        scp_cmd = ["scp", "-P", str(self.port)]
+        if self.private_key_path:
+            scp_cmd += ["-i", self.private_key_path]
+        scp_cmd += [local_path, f"{self.username}@{self.ssh_target}:{remote_path}"]
 
-        if returncode != 0:
-            logger.error(
-                f"SCP upload from '{source}' to '{destination}' failed with RC {returncode}. Error: {stderr or stdout}"
-            )
+        rc, stdout, stderr = self._run_subprocess(scp_cmd, eff_timeout)
+        if rc != 0:
+            logger.error(f"SCP upload failed with RC {rc} to {self.ssh_target}.")
             raise ToolExecutionError(
-                f"SCP upload failed. RC: {returncode}. Error: {stderr or stdout}"
+                f"SCP upload failed with exit code {rc}. STDERR: {stderr}"
             )
-
-        success_msg = f"Successfully uploaded {source} to {destination}"
-        logger.info(success_msg)
-        return success_msg
 
     def download(
-        self, remote_path: str | Path, local_path: str | Path, timeout: int = 60
-    ) -> str:
-        """Downloads a remote file to the local machine using SCP.
-
-        :param remote_path: The path to the remote file to download.
-        :type remote_path: str | Path
-        :param local_path: The destination path on the local machine.
-        :type local_path: str | Path
-        :param timeout: The timeout in seconds for the transfer.
-        :type timeout: int
-        :return: A success message.
-        :rtype: str
-        :raises ToolExecutionError: If SCP download fails.
+        self, remote_path: str, local_path: str, *, timeout: Optional[int] = None
+    ) -> None:
         """
-        source = f"{self.ssh_target}:{remote_path}"
-        destination = str(local_path)
-        cmd_list = ["scp", *self.scp_opts, source, destination]
-        returncode, stdout, stderr = self._run_subprocess(cmd_list, timeout=timeout)
+        Download a file from the remote host via SCP.
+        """
+        eff_timeout = timeout or self.default_timeout
+        scp_cmd = ["scp", "-P", str(self.port)]
+        if self.private_key_path:
+            scp_cmd += ["-i", self.private_key_path]
+        scp_cmd += [f"{self.username}@{self.ssh_target}:{remote_path}", local_path]
 
-        if returncode != 0:
-            logger.error(
-                f"SCP download from '{source}' to '{destination}' failed with RC {returncode}. "
-                f"Error: {stderr or stdout}"
-            )
+        rc, stdout, stderr = self._run_subprocess(scp_cmd, eff_timeout)
+        if rc != 0:
+            logger.error(f"SCP download failed with RC {rc} from {self.ssh_target}.")
             raise ToolExecutionError(
-                f"SCP download failed. RC: {returncode}. Error: {stderr or stdout}"
+                f"SCP download failed with exit code {rc}. STDERR: {stderr}"
             )
 
-        success_msg = f"Successfully downloaded {source} to {destination}"
-        logger.info(success_msg)
-        return success_msg
-
-    def check_file_exists(self, file_path: str, timeout: int = 20) -> bool:
-        """Checks if a file exists on the remote host using a reliable test command.
-
-        :param file_path: The absolute path to the file on the remote host.
-        :type file_path: str
-        :param timeout: The timeout in seconds for the check.
-        :type timeout: int
-        :return: True if the file exists, False otherwise.
-        :rtype: bool
-        :raises ToolExecutionError: If the SSH command itself fails unexpectedly (not if the file doesn't exist).
+    def check_file_exists(
+        self, file_path: str, *, timeout: Optional[int] = None
+    ) -> bool:
         """
-        marker_string = "AEGIS_FILE_EXISTS_SUCCESS_MARKER"
-        command = f"test -f {shlex.quote(file_path)} && echo {marker_string}"
+        Check whether a file exists on the remote machine.
+        """
+        eff_timeout = timeout or self.default_timeout
+        command = f"test -f {shlex.quote(file_path)} && echo '__AEGIS_FILE_EXISTS__'"
+        marker_string = "__AEGIS_FILE_EXISTS__"
 
         try:
-            output = self.run(command, timeout=timeout)
+            output = self.run(command, timeout=eff_timeout)
             return marker_string in output
         except ToolExecutionError as e:
             if "Remote command failed with exit code" in str(e):
@@ -226,3 +240,202 @@ class SSHExecutor:
                     f"Error checking file existence for '{file_path}' on '{self.ssh_target}': {e}"
                 )
                 raise
+
+
+# === ToolResult wrappers ===
+from typing import Optional as _Opt
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _error_type_from_exception(e: Exception) -> str:
+    msg = str(e).lower()
+    if "timeout" in msg:
+        return "Timeout"
+    if "permission" in msg or "auth" in msg:
+        return "Auth"
+    if "not found" in msg or "no such" in msg:
+        return "NotFound"
+    if "parse" in msg or "json" in msg:
+        return "Parse"
+    return "Runtime"
+
+
+class SSHExecutorToolResultMixin:
+    def run_result(self, command: str, timeout: _Opt[int] = None) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="ssh.exec",
+                args=redact_for_log(
+                    {
+                        "target": self.ssh_target,
+                        "iface": self.interface_name,
+                        "command": command,
+                    }
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] ssh.exec",
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"preview": preview},
+            )
+        try:
+            out = self.run(command, timeout=timeout)
+            return ToolResult.ok_result(
+                stdout=out,
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"command": command},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"command": command},
+            )
+
+    def upload_result(
+        self, local_path: str, remote_path: str, timeout: _Opt[int] = None
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="scp.upload",
+                args=redact_for_log(
+                    {
+                        "target": self.ssh_target,
+                        "iface": self.interface_name,
+                        "local_path": local_path,
+                        "remote_path": remote_path,
+                    }
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] scp.upload",
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"preview": preview},
+            )
+        try:
+            self.upload(local_path, remote_path, timeout=timeout)
+            return ToolResult.ok_result(
+                stdout="OK",
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"local_path": local_path, "remote_path": remote_path},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"local_path": local_path, "remote_path": remote_path},
+            )
+
+    def download_result(
+        self, remote_path: str, local_path: str, timeout: _Opt[int] = None
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="scp.download",
+                args=redact_for_log(
+                    {
+                        "target": self.ssh_target,
+                        "iface": self.interface_name,
+                        "remote_path": remote_path,
+                        "local_path": local_path,
+                    }
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] scp.download",
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"preview": preview},
+            )
+        try:
+            self.download(remote_path, local_path, timeout=timeout)
+            return ToolResult.ok_result(
+                stdout="OK",
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"remote_path": remote_path, "local_path": local_path},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"remote_path": remote_path, "local_path": local_path},
+            )
+
+    def check_file_exists_result(
+        self, file_path: str, timeout: _Opt[int] = None
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="ssh.test_file",
+                args=redact_for_log(
+                    {
+                        "target": self.ssh_target,
+                        "iface": self.interface_name,
+                        "path": file_path,
+                    }
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] ssh.test_file",
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"preview": preview},
+            )
+        try:
+            exists = self.check_file_exists(file_path, timeout=timeout)
+            return ToolResult.ok_result(
+                stdout=str(exists),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"path": file_path},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                target_host=str(getattr(self, "ssh_target", None)),
+                interface=str(getattr(self, "interface_name", None)),
+                meta={"path": file_path},
+            )
+
+
+SSHExecutor.run_result = SSHExecutorToolResultMixin.run_result
+SSHExecutor.upload_result = SSHExecutorToolResultMixin.upload_result
+SSHExecutor.download_result = SSHExecutorToolResultMixin.download_result
+SSHExecutor.check_file_exists_result = (
+    SSHExecutorToolResultMixin.check_file_exists_result
+)

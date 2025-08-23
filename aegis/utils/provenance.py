@@ -1,146 +1,187 @@
 # aegis/utils/provenance.py
 """
-Utility for generating and saving a machine-readable provenance report.
+Tamper-evident provenance ledger (hash-chained JSONL).
 
-This module encapsulates the logic for creating a detailed, structured JSON
-log of an agent's entire execution, providing a complete audit trail for
-reproducibility and analysis.
-"""
-import json
-import platform
-import time
-from collections import defaultdict
-from pathlib import Path
-from typing import Dict, Any
+Each appended step is recorded as a JSON object with a `curr_hash` derived from:
+    SHA256(prev_hash || canonical_json_without_hashes)
 
-from aegis.agents.task_state import TaskState
-from aegis.utils.config import get_config
-from aegis.utils.logger import setup_logger
+Environment:
+    - AEGIS_PROVENANCE_PATH: target file path (default: ./provenance.log.jsonl)
 
-logger = setup_logger(__name__)
-
-config = get_config()
-REPORTS_BASE_DIR = Path(config.get("paths", {}).get("reports", "reports"))
-
-
-def _get_final_status(state: TaskState) -> str:
-    """Determines the overall task status based on the final step.
-
-    This helper function inspects the last entry in the agent's history to
-    determine a final, summary status for the entire task.
-
-    :param state: The final state of the task.
-    :type state: TaskState
-    :return: A summary status string (e.g., 'SUCCESS', 'FAILURE').
-    :rtype: str
-    """
-    if not state.history:
-        return "NO_ACTION"
-
-    last_entry = state.history[-1]
-    if last_entry.plan.tool_name == "finish":
-        # The 'status' arg in the finish tool determines the outcome
-        return last_entry.plan.tool_args.get("status", "UNKNOWN").upper()
-
-    # If the task ended for other reasons (e.g., max iterations)
-    if last_entry.status == "failure":
-        return "FAILURE"
-
-    # If it ended on a successful step but not via 'finish', it's partial.
-    return "PARTIAL"
-
-
-def _calculate_tool_performance(state: TaskState) -> Dict[str, Any]:
-    """Calculates performance metrics for each tool used in the task.
-
-    :param state: The final state of the task.
-    :type state: TaskState
-    :return: A dictionary of performance metrics for each tool.
-    :rtype: Dict[str, Any]
-    """
-    performance_data = defaultdict(
-        lambda: {
-            "call_count": 0,
-            "success_count": 0,
-            "failure_count": 0,
-            "total_duration_ms": 0.0,
-            "average_duration_ms": 0.0,
-        }
+Usage:
+    from aegis.utils import provenance
+    provenance.record_step(
+        run_id=state.task_id,
+        step_index=len(state.history),
+        tool=plan.tool_name,
+        tool_args=plan.tool_args,
+        target_host=target_host,
+        interface=interface,
+        status=status,
+        observation=observation,
+        duration_ms=int(duration_ms),
     )
+"""
 
-    for entry in state.history:
-        tool_name = entry.plan.tool_name
-        stats = performance_data[tool_name]
-        stats["call_count"] += 1
-        stats["total_duration_ms"] += entry.duration_ms
-        if entry.status == "success":
-            stats["success_count"] += 1
-        else:
-            stats["failure_count"] += 1
+from __future__ import annotations
 
-    # Calculate averages
-    for tool_name, stats in performance_data.items():
-        if stats["call_count"] > 0:
-            stats["average_duration_ms"] = round(
-                stats["total_duration_ms"] / stats["call_count"], 2
-            )
-
-    return dict(performance_data)
+import os
+import io
+import json
+import hashlib
+import threading
+from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 
-def generate_provenance_report(state: TaskState):
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _sha256(text: str) -> str:
+    h = hashlib.sha256()
+    h.update(text.encode("utf-8", "ignore"))
+    return h.hexdigest()
+
+
+def _canonical_json(obj: Any) -> str:
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+@dataclass
+class StepRecord:
+    run_id: str
+    step_index: int
+    utc_ts: str
+    tool: str
+    args_hash: str
+    target_host: Optional[str]
+    interface: Optional[str]
+    status: str
+    observation_hash: str
+    duration_ms: int
+    prev_hash: str
+    curr_hash: str
+
+
+class _Ledger:
+    """Append-only JSONL ledger with a rolling hash chain."""
+
+    def __init__(self, path: Optional[str] = None):
+        self.path = path or os.getenv("AEGIS_PROVENANCE_PATH", "provenance.log.jsonl")
+        # In-memory tail hash; also recovered lazily from file when needed
+        self._tail_hash: str = "GENESIS"
+        self._tail_loaded = False
+        self._lock = threading.Lock()
+
+    def _ensure_tail_loaded(self) -> None:
+        if self._tail_loaded:
+            return
+        self._tail_loaded = True
+        try:
+            if not os.path.exists(self.path):
+                return
+            last_line = None
+            with open(self.path, "rb") as f:
+                # Efficiently read last non-empty line
+                f.seek(0, os.SEEK_END)
+                pos = f.tell()
+                buf = bytearray()
+                while pos > 0:
+                    pos -= 1
+                    f.seek(pos)
+                    ch = f.read(1)
+                    if ch == b"\n":
+                        if buf:
+                            break
+                        continue
+                    buf.extend(ch)
+                if buf:
+                    last_line = bytes(reversed(buf)).decode("utf-8", "ignore")
+            if last_line:
+                obj = json.loads(last_line)
+                self._tail_hash = obj.get("curr_hash", "GENESIS")
+        except Exception:
+            # Fail open: keep GENESIS
+            self._tail_hash = "GENESIS"
+
+    def _open_for_append(self):
+        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        # Use text mode with explicit utf-8 and line buffering
+        return open(self.path, "a", encoding="utf-8")
+
+    def append(self, rec: Dict[str, Any]) -> StepRecord:
+        with self._lock:
+            self._ensure_tail_loaded()
+
+            # Build unsigned payload (no prev/curr) deterministically
+            unsigned = {
+                k: v for k, v in rec.items() if k not in ("prev_hash", "curr_hash")
+            }
+            prev_hash = self._tail_hash
+            material = _canonical_json({"prev_hash": prev_hash, **unsigned})
+            curr_hash = _sha256(material)
+
+            full = {
+                **unsigned,
+                "prev_hash": prev_hash,
+                "curr_hash": curr_hash,
+            }
+            step = StepRecord(**full)  # type: ignore[arg-type]
+
+            # Append line
+            try:
+                with self._open_for_append() as fh:
+                    fh.write(_canonical_json(asdict(step)))
+                    fh.write("\n")
+                    fh.flush()
+                self._tail_hash = curr_hash
+            except Exception:
+                # If write fails, do not update in-memory tail
+                pass
+
+            return step
+
+
+# Singleton ledger
+_ledger = _Ledger()
+
+
+def set_ledger_path(path: str) -> None:
+    """Override the ledger file path programmatically (optional)."""
+    global _ledger
+    _ledger = _Ledger(path)
+
+
+def record_step(
+    *,
+    run_id: str,
+    step_index: int,
+    tool: str,
+    tool_args: Dict[str, Any] | None,
+    target_host: Optional[str],
+    interface: Optional[str],
+    status: str,
+    observation: str,
+    duration_ms: int,
+) -> StepRecord:
     """
-    Generates and saves a machine-readable JSON report of the agent's execution.
-
-    This function creates a comprehensive `provenance.json` file in the task's
-    report directory. This file serves as a "flight data recorder" for the
-    agent, capturing the task prompt, final status, environment details, and a
-    detailed timeline of every event (thought, action, observation) with
-    timestamps and durations. It also includes a performance summary for all
-    tools used.
-
-    :param state: The final `TaskState` of the completed agent run.
-    :type state: TaskState
+    Compute hashes and append a step to the ledger.
     """
-    reports_dir = REPORTS_BASE_DIR / state.task_id
-    reports_dir.mkdir(parents=True, exist_ok=True)
-
-    logger.info("Generating provenance report...")
-
-    events = []
-    for i, entry in enumerate(state.history):
-        event_data = {
-            "step": i + 1,
-            "start_time_utc": time.strftime(
-                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(entry.start_time)
-            ),
-            "duration_ms": round(entry.duration_ms, 2),
-            "status": entry.status,
-            "thought": entry.plan.thought,
-            "tool_name": entry.plan.tool_name,
-            "tool_args": entry.plan.tool_args,
-            "observation": str(entry.observation),  # Ensure observation is stringified
-        }
-        events.append(event_data)
-
-    provenance_data = {
-        "task_id": state.task_id,
-        "task_prompt": state.task_prompt,
-        "final_status": _get_final_status(state),
-        "steps_taken": len(events),
-        "execution_env": {
-            "platform": platform.system(),
-            "node": platform.node(),
-            "python_version": platform.python_version(),
-        },
-        "tool_performance": _calculate_tool_performance(state),
-        "events": events,
+    args_hash = _sha256(_canonical_json(tool_args or {}))
+    observation_hash = _sha256(observation or "")
+    rec = {
+        "run_id": run_id,
+        "step_index": step_index,
+        "utc_ts": _utc_now_iso(),
+        "tool": tool,
+        "args_hash": args_hash,
+        "target_host": target_host,
+        "interface": interface,
+        "status": status,
+        "observation_hash": observation_hash,
+        "duration_ms": duration_ms,
+        # prev_hash/curr_hash are set inside append()
     }
-
-    provenance_path = reports_dir / "provenance.json"
-    try:
-        with provenance_path.open("w", encoding="utf-8") as f:
-            json.dump(provenance_data, f, indent=2)
-        logger.info(f"Provenance report saved successfully to: {provenance_path}")
-    except IOError as e:
-        logger.error(f"Failed to save provenance report to '{provenance_path}': {e}")
+    return _ledger.append(rec)

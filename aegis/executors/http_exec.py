@@ -8,6 +8,10 @@ import httpx
 
 from aegis.exceptions import ToolExecutionError
 from aegis.utils.logger import setup_logger
+from aegis.schemas.tool_result import ToolResult
+from aegis.utils.dryrun import dry_run
+from aegis.utils.redact import redact_for_log
+import time
 
 logger = setup_logger(__name__)
 
@@ -15,19 +19,23 @@ logger = setup_logger(__name__)
 class HttpExecutor:
     """A client for making HTTP requests consistently."""
 
-    def __init__(self, default_timeout: int = 30):
+    def __init__(self, base_url: Optional[str] = None, default_timeout: int = 30):
         """
-        Initializes the HttpExecutor.
+        Initialize the HTTP executor.
 
-        :param default_timeout: Default timeout in seconds for HTTP requests.
+        :param base_url: Optional base URL to resolve relative paths.
+        :type base_url: Optional[str]
+        :param default_timeout: Default timeout for all requests.
         :type default_timeout: int
         """
+        self.base_url = base_url
         self.default_timeout = default_timeout
 
-    def request(
+    async def request(
         self,
         method: str,
         url: str,
+        *,
         headers: Optional[Dict[str, str]] = None,
         params: Optional[Dict[str, Any]] = None,
         data: Optional[str | bytes] = None,
@@ -35,11 +43,11 @@ class HttpExecutor:
         timeout: Optional[int] = None,
     ) -> httpx.Response:
         """
-        Performs an HTTP request.
+        Perform an HTTP request using httpx.
 
-        :param method: HTTP method (e.g., 'GET', 'POST').
+        :param method: HTTP method (GET, POST, etc.).
         :type method: str
-        :param url: The target URL.
+        :param url: The request URL (absolute or relative to base_url).
         :type url: str
         :param headers: Optional HTTP headers.
         :type headers: Optional[Dict[str, str]]
@@ -55,42 +63,138 @@ class HttpExecutor:
         :type timeout: Optional[int]
         :return: The `httpx.Response` object.
         :rtype: httpx.Response
-        :raises ToolExecutionError: If the request fails due to network issues,
-                                    bad status codes (4xx, 5xx), or other request exceptions.
+        :raises ToolExecutionError: If the HTTP operation fails (network error, timeout, etc.)
         """
-        effective_timeout = timeout if timeout is not None else self.default_timeout
-
-        if data is not None and json_payload is not None:
-            raise ValueError("Cannot provide both 'data' and 'json_payload'.")
-
-        final_headers = headers.copy() if headers else {}
-        if json_payload is not None and "Content-Type" not in final_headers:
-            final_headers["Content-Type"] = "application/json"
-
-        logger.debug(
-            f"HttpExecutor: Sending {method.upper()} request to {url} with timeout {effective_timeout}s. "
-            f"Headers: {final_headers}, Params: {params}, JSON: {json_payload is not None}, Data: {data is not None}"
+        eff_timeout = timeout or self.default_timeout
+        target_url = (
+            url
+            if (url.startswith("http://") or url.startswith("https://"))
+            else (
+                (self.base_url.rstrip("/") + "/" + url.lstrip("/"))
+                if self.base_url
+                else url
+            )
         )
 
         try:
-            response = httpx.request(
-                method=method.upper(),
-                url=url,
-                headers=final_headers,
-                params=params,
-                content=data,
-                json=json_payload,
-                timeout=effective_timeout,
-            )
-            response.raise_for_status()
-            return response
-        except httpx.RequestError as e:
-            logger.error(f"HTTP request to {url} failed: {e}")
-            raise ToolExecutionError(f"HTTP request failed: {e}")
-        except Exception as e:
-            logger.exception(
-                f"An unexpected error occurred during HTTP request to {url}"
+            async with httpx.AsyncClient(timeout=eff_timeout) as client:
+                response = await client.request(
+                    method.upper(),
+                    target_url,
+                    headers=headers,
+                    params=params,
+                    data=data,
+                    json=json_payload,
+                )
+                return response
+        except httpx.TimeoutException as e:
+            logger.error(
+                "HTTP request timed out after %ss: %s %s | headers=%s params=%s",
+                eff_timeout,
+                method.upper(),
+                target_url,
+                redact_for_log(headers or {}),
+                redact_for_log(params or {}),
             )
             raise ToolExecutionError(
-                f"Unexpected error during HTTP request to {url}: {e}"
+                f"HTTP request timed out after {eff_timeout}s"
+            ) from e
+        except Exception as e:
+            logger.error(
+                "HTTP request failed: %s %s -> %s | headers=%s params=%s",
+                method.upper(),
+                target_url,
+                e,
+                redact_for_log(headers or {}),
+                redact_for_log(params or {}),
             )
+            raise ToolExecutionError(f"HTTP request failed: {e}") from e
+
+
+# === ToolResult wrappers ===
+from typing import Optional, Dict, Any
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _error_type_from_exception(e: Exception) -> str:
+    msg = str(e).lower()
+    if "timeout" in msg:
+        return "Timeout"
+    if "permission" in msg or "auth" in msg:
+        return "Auth"
+    if "not found" in msg or "404" in msg:
+        return "NotFound"
+    if "parse" in msg or "json" in msg:
+        return "Parse"
+    return "Runtime"
+
+
+class HttpExecutorToolResultMixin:
+    def request_result(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        data: Optional[Any] = None,
+        json_payload: Optional[Dict[str, Any]] = None,
+        timeout: Optional[int] = None,
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="http.request",
+                args=redact_for_log(
+                    {"method": method, "url": url, "headers": headers, "params": params}
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] http.request",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            # Note: original request is async; for sync wrapper, you may call within an event loop.
+            # If your call sites are async, prefer awaiting `request()` directly and wrap outside.
+            import anyio
+
+            async def _go(self):
+                resp = await self.request(
+                    method,
+                    url,
+                    headers=headers,
+                    params=params,
+                    data=data,
+                    json_payload=json_payload,
+                    timeout=timeout,
+                )
+                return resp
+
+            resp = anyio.run(lambda: _go(self))  # lightweight bridge
+            meta = {
+                "status_code": getattr(resp, "status_code", None),
+                "url": url,
+                "method": method,
+            }
+            return ToolResult.ok_result(
+                stdout=getattr(resp, "text", None),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta=meta,
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta=redact_for_log(
+                    {"url": url, "method": method, "headers": headers, "params": params}
+                ),
+            )
+
+
+HttpExecutor.request_result = HttpExecutorToolResultMixin.request_result

@@ -1,217 +1,294 @@
 # aegis/executors/selenium_exec.py
 """
-Provides a client for performing Selenium-based browser operations.
+Provides a client for Selenium-based web automation.
 """
-from pathlib import Path
-from typing import Callable, Any, Optional, Dict
-
-from selenium import webdriver
-
-# from selenium.webdriver.chrome.options import Options as ChromeOptions # If Chrome support is added
-from selenium.common.exceptions import WebDriverException, TimeoutException
-from selenium.webdriver.firefox.options import Options as FirefoxOptions
-from selenium.webdriver.remote.webdriver import WebDriver  # For type hinting
+from typing import Optional, Dict, Any
 
 from aegis.exceptions import ToolExecutionError
 from aegis.utils.logger import setup_logger
+from aegis.schemas.tool_result import ToolResult
+from aegis.utils.dryrun import dry_run
+from aegis.utils.redact import redact_for_log
+import time
 
 logger = setup_logger(__name__)
 
-SUPPORTED_BROWSERS = ["firefox"]  # Add "chrome" etc. if supported later
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options as ChromeOptions
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+    from selenium.common.exceptions import (
+        WebDriverException,
+        TimeoutException,
+        NoSuchElementException,
+    )
+
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
 
 
 class SeleniumExecutor:
-    """
-    A client for managing Selenium WebDriver instances and performing browser operations.
-    Ensures WebDriver is properly initialized and quit.
-    """
+    """A client for simple Selenium actions with ephemeral drivers."""
 
     def __init__(
         self,
-        browser_name: str = "firefox",
         headless: bool = True,
-        page_load_timeout: int = 30,  # Default page load timeout
-        implicit_wait: int = 10,  # Default implicit wait
+        driver_path: Optional[str] = None,
+        implicit_wait_s: int = 5,
     ):
         """
-        Initializes the SeleniumExecutor.
-
-        :param browser_name: Name of the browser to use (e.g., "firefox").
-        :type browser_name: str
-        :param headless: Whether to run the browser in headless mode.
+        :param headless: Run Chrome in headless mode.
         :type headless: bool
-        :param page_load_timeout: Time in seconds to wait for a page to load.
-        :type page_load_timeout: int
-        :param implicit_wait: Time in seconds for implicit waits for elements.
-        :type implicit_wait: int
-        :raises ConfigurationError: If an unsupported browser is specified.
+        :param driver_path: Optional path to a chromedriver or compatible driver.
+        :type driver_path: Optional[str]
+        :param implicit_wait_s: Implicit wait time in seconds.
+        :type implicit_wait_s: int
         """
-        if browser_name.lower() not in SUPPORTED_BROWSERS:
-            raise ToolExecutionError(
-                f"Unsupported browser: {browser_name}. Supported: {SUPPORTED_BROWSERS}"
-            )
-        self.browser_name = browser_name.lower()
+        if not SELENIUM_AVAILABLE:
+            raise ToolExecutionError("Selenium is not installed.")
         self.headless = headless
-        self.page_load_timeout = page_load_timeout
-        self.implicit_wait = implicit_wait
-        self.driver: Optional[WebDriver] = None  # For type hinting
+        self.driver_path = driver_path
+        self.implicit_wait_s = implicit_wait_s
+        self._driver: Optional[webdriver.Chrome] = None
 
-    def _get_driver(self) -> WebDriver:
-        """Initializes and returns a WebDriver instance."""
-        if self.driver and self._is_driver_active():
-            return self.driver
+    def _get_driver(self) -> webdriver.Chrome:
+        """
+        Lazily create a Chrome driver with reasonable defaults.
+        """
+        if self._driver is not None:
+            return self._driver
 
-        logger.debug(
-            f"Initializing {self.browser_name} WebDriver (headless={self.headless})..."
-        )
+        options = ChromeOptions()
+        if self.headless:
+            options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-dev-shm-usage")
         try:
-            if self.browser_name == "firefox":
-                options = FirefoxOptions()
-                if self.headless:
-                    options.add_argument("--headless")
-                # Ensure geckodriver is in PATH or specify its path:
-                # service = webdriver.FirefoxService(executable_path="/path/to/geckodriver")
-                # self.driver = webdriver.Firefox(options=options, service=service)
-                self.driver = webdriver.Firefox(options=options)
-            # Add other browsers like Chrome here if needed
-            # elif self.browser_name == "chrome":
-            #     options = ChromeOptions()
-            #     if self.headless:
-            #         options.add_argument("--headless")
-            #         options.add_argument("--disable-gpu") # Often needed for headless chrome
-            #     self.driver = webdriver.Chrome(options=options)
+            if self.driver_path:
+                driver = webdriver.Chrome(self.driver_path, options=options)
             else:
-                # This case should be caught by __init__, but defensive check
-                raise ToolExecutionError(
-                    f"Attempted to initialize unsupported browser: {self.browser_name}"
-                )
-
-            self.driver.set_page_load_timeout(self.page_load_timeout)
-            self.driver.implicitly_wait(self.implicit_wait)  # Global implicit wait
-            logger.info(
-                f"{self.browser_name.capitalize()} WebDriver initialized successfully."
-            )
-            return self.driver
+                driver = webdriver.Chrome(options=options)
+            driver.implicitly_wait(self.implicit_wait_s)
+            self._driver = driver
+            return driver
         except WebDriverException as e:
-            logger.error(f"Failed to initialize {self.browser_name} WebDriver: {e.msg}")
-            raise ToolExecutionError(
-                f"WebDriver initialization failed for {self.browser_name}: {e.msg}"
-            )
-        except Exception as e:
-            logger.exception(
-                f"Unexpected error initializing WebDriver for {self.browser_name}"
-            )
-            raise ToolExecutionError(f"Unexpected error initializing WebDriver: {e}")
+            raise ToolExecutionError(f"Failed to start Chrome driver: {e}") from e
 
     def _is_driver_active(self) -> bool:
-        """Checks if the driver session is still active."""
-        if not self.driver:
-            return False
-        try:
-            # A lightweight command to check session validity
-            _ = self.driver.current_url
-            return True
-        except WebDriverException:
-            return False
+        return self._driver is not None
 
-    def execute_action(self, action_func: Callable[[WebDriver], Any]) -> Any:
+    def execute_action(
+        self,
+        action: str,
+        url: str,
+        selector: str | None = None,
+        text: str | None = None,
+        screenshot_path: str | None = None,
+    ) -> Dict[str, Any]:
         """
-        Executes a given function that takes a WebDriver instance as an argument.
-        Manages the WebDriver lifecycle (setup and teardown).
-
-        :param action_func: A callable that performs browser actions using the WebDriver.
-                            It should take one argument: the WebDriver instance.
-        :type action_func: Callable[[WebDriver], Any]
-        :return: The result of the action_func.
-        :rtype: Any
-        :raises ToolExecutionError: If any WebDriver or other exception occurs during action.
+        Perform a simple action: 'goto', 'click', 'type', 'screenshot'.
         """
-        driver = None
         try:
             driver = self._get_driver()
-            result = action_func(driver)
-            return result
-        except (
-            WebDriverException,
-            TimeoutException,
-        ) as e:  # Catch common Selenium exceptions
-            # Attempt to get current URL for better error context, if driver is available
-            current_url_msg = "N/A"
-            if driver and self._is_driver_active():
-                try:
-                    current_url_msg = driver.current_url
-                except WebDriverException:
-                    pass  # Driver might have crashed, current_url fails
+            if action == "goto":
+                driver.get(url)
+                return {"ok": True, "title": driver.title}
+            elif action == "click":
+                if not selector:
+                    raise ToolExecutionError("selector is required for click")
+                el = driver.find_element(By.CSS_SELECTOR, selector)
+                el.click()
+                return {"ok": True}
+            elif action == "type":
+                if not selector or text is None:
+                    raise ToolExecutionError("selector and text are required for type")
+                el = driver.find_element(By.CSS_SELECTOR, selector)
+                el.clear()
+                el.send_keys(text)
+                return {"ok": True}
+            elif action == "screenshot":
+                if not screenshot_path:
+                    raise ToolExecutionError(
+                        "screenshot_path is required for screenshot"
+                    )
+                driver.save_screenshot(screenshot_path)
+                return {"ok": True, "path": screenshot_path}
+            else:
+                raise ToolExecutionError(f"Unsupported action: {action}")
+        except (NoSuchElementException, TimeoutException, WebDriverException) as e:
+            raise ToolExecutionError(f"Selenium action error: {e}") from e
 
-            error_detail = e.msg if hasattr(e, "msg") else str(e)
-            logger.error(
-                f"Selenium action failed on URL '{current_url_msg}': {error_detail}"
-            )
-            raise ToolExecutionError(
-                f"Selenium action failed (URL: {current_url_msg}): {error_detail}"
-            )
-        except (
-            ToolExecutionError
-        ):  # Re-raise specific ToolExecutionErrors from action_func
-            raise
-        except Exception as e:
-            logger.exception(
-                "An unexpected error occurred during Selenium action execution."
-            )
-            raise ToolExecutionError(f"Unexpected error during Selenium action: {e}")
+    def _quit_driver(self) -> None:
+        try:
+            if self._driver is not None:
+                self._driver.quit()
+                self._driver = None
+        except Exception:
+            self._driver = None
+
+    def get_page_details(self, url: str, selector: str | None = None) -> Dict[str, Any]:
+        """
+        Navigate to a page and optionally return text of an element.
+        """
+        try:
+            driver = self._get_driver()
+            driver.get(url)
+            title = driver.title
+            details: Dict[str, Any] = {"title": title}
+            if selector:
+                try:
+                    el = driver.find_element(By.CSS_SELECTOR, selector)
+                    details["text"] = el.text
+                except NoSuchElementException:
+                    details["text"] = None
+            return details
+        except (TimeoutException, WebDriverException) as e:
+            raise ToolExecutionError(f"Selenium navigation error: {e}") from e
+
+    def take_screenshot(self, url: str, path: str) -> bool:
+        """
+        Navigate to a page and take a screenshot to the given path.
+        """
+        try:
+            driver = self._get_driver()
+            driver.get(url)
+            return bool(driver.save_screenshot(path))
+        except (TimeoutException, WebDriverException) as e:
+            raise ToolExecutionError(f"Selenium screenshot error: {e}") from e
         finally:
             self._quit_driver()
 
-    def _quit_driver(self):
-        """Quits the WebDriver if it's active."""
-        if self.driver:
-            logger.debug("Quitting WebDriver...")
-            try:
-                self.driver.quit()
-                logger.info("WebDriver quit successfully.")
-            except Exception as e:
-                logger.error(f"Error quitting WebDriver: {e}")
-            finally:
-                self.driver = None
 
-    # --- Convenience methods for common actions ---
-    # These can be called by tools if preferred over passing a lambda to execute_action
+# === ToolResult wrappers ===
+def _now_ms() -> int:
+    return int(time.time() * 1000)
 
-    def get_page_details(self, url: str) -> Dict[str, Any]:
-        """Navigates to a URL and returns page title, current URL, text, and HTML source."""
 
-        def _action(driver: WebDriver) -> Dict[str, Any]:
-            driver.get(url)
-            # implicit_wait in _get_driver should handle general load timing
-            title = driver.title
-            current_url = driver.current_url
-            try:
-                body = driver.find_element(webdriver.common.by.By.TAG_NAME, "body")
-                text = body.text.strip()
-            except WebDriverException:  # Body might not be found on some error pages
-                text = ""
-                logger.warning(
-                    f"Could not find <body> tag on {url}, text will be empty."
-                )
+def _error_type_from_exception(e: Exception) -> str:
+    msg = str(e).lower()
+    if "timeout" in msg:
+        return "Timeout"
+    if "permission" in msg or "auth" in msg:
+        return "Auth"
+    if "not found" in msg or "no such" in msg:
+        return "NotFound"
+    if "parse" in msg or "json" in msg:
+        return "Parse"
+    return "Runtime"
 
-            html = driver.page_source.strip()
-            return {
-                "title": title,
-                "current_url": current_url,
-                "text": text,
-                "html": html,
-            }
 
-        return self.execute_action(_action)
+class SeleniumExecutorToolResultMixin:
+    def execute_action_result(
+        self,
+        action: str,
+        url: str,
+        selector: str | None = None,
+        text: str | None = None,
+        screenshot_path: str | None = None,
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="selenium.execute_action",
+                args=redact_for_log(
+                    {"action": action, "url": url, "selector": selector}
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] selenium.execute_action",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.execute_action(
+                action=action,
+                url=url,
+                selector=selector,
+                text=text,
+                screenshot_path=screenshot_path,
+            )
+            return ToolResult.ok_result(
+                stdout=str(out),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"action": action, "url": url},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"action": action, "url": url},
+            )
 
-    def take_screenshot(self, url: str, save_path: str) -> str:
-        """Navigates to a URL and saves a screenshot."""
+    def get_page_details_result(
+        self, url: str, selector: str | None = None
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="selenium.get_page_details",
+                args=redact_for_log({"url": url, "selector": selector}),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] selenium.get_page_details",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.get_page_details(url=url, selector=selector)
+            return ToolResult.ok_result(
+                stdout=str(out),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"url": url, "selector": selector},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"url": url, "selector": selector},
+            )
 
-        def _action(driver: WebDriver) -> str:
-            driver.get(url)
-            # Ensure screenshot directory exists just before saving
-            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-            driver.save_screenshot(save_path)
-            return f"Screenshot saved to {save_path}"
+    def take_screenshot_result(self, url: str, path: str) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="selenium.screenshot",
+                args=redact_for_log({"url": url, "path": path}),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] selenium.screenshot",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            out = self.take_screenshot(url=url, path=path)
+            return ToolResult.ok_result(
+                stdout=str(out),
+                exit_code=0,
+                latency_ms=_now_ms() - start,
+                meta={"url": url, "path": path},
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_error_type_from_exception(e),
+                stderr=str(e),
+                latency_ms=_now_ms() - start,
+                meta={"url": url, "path": path},
+            )
 
-        return self.execute_action(_action)
+
+SeleniumExecutor.execute_action_result = (
+    SeleniumExecutorToolResultMixin.execute_action_result
+)
+SeleniumExecutor.get_page_details_result = (
+    SeleniumExecutorToolResultMixin.get_page_details_result
+)
+SeleniumExecutor.take_screenshot_result = (
+    SeleniumExecutorToolResultMixin.take_screenshot_result
+)

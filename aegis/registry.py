@@ -1,218 +1,156 @@
 # aegis/registry.py
-"""Provides centralized tool registration, validation, and lookup.
+"""
+Auto-registering tool registry.
 
-This module is the single source of truth for all tools available to the AEGIS
-agent. It uses a decorator-based system to register functions, validate their
-metadata and input schemas, and make them discoverable at runtime. All tools
-must be registered via this interface to be callable by the agent.
+- ToolEntry: metadata + callable
+- register_tool() / get_tool()
+- ensure_discovered(): import aegis.tools.builtins and register all @tool adapters
+- audit_executors(): scan aegis.executors for *_result methods that are not registered; log WARNINGs
+
+This design minimizes fragility:
+- You add a new executor method (e.g., `FooExecutor.bar_result`) → audit will warn if it's not registered.
+- You add a new adapter in aegis.tools.builtins with @tool → it auto-registers on first use.
 """
 
-from typing import Any, Callable, Dict, List, Optional, Type
+from __future__ import annotations
 
-from dotenv import load_dotenv
-from pydantic import BaseModel, create_model
+import importlib
+import inspect
+import pkgutil
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional, Type
 
-from aegis.exceptions import ToolNotFoundError, ToolValidationError
+from pydantic import BaseModel
+
+from aegis.exceptions import ToolNotFoundError
 from aegis.utils.logger import setup_logger
+from aegis.utils.tooling import discover_decorated
 
 logger = setup_logger(__name__)
-load_dotenv()
-logger.debug("Initializing aegis.registry module...")
 
 
-class ToolEntry(BaseModel):
-    """Represents a registered tool within the agent system.
-
-    This class stores the complete, validated metadata for a single tool,
-    including its execution logic, input validation model, and descriptive
-    properties used for planning and filtering.
-
-    :ivar name: The unique, callable name of the tool.
-    :vartype name: str
-    :ivar run: The actual function to execute for this tool.
-    :vartype run: Callable[[BaseModel], Any]
-    :ivar input_model: The Pydantic model used to validate the tool's input.
-    :vartype input_model: Type[BaseModel]
-    :ivar tags: A list of lowercase tags for categorization and filtering.
-    :vartype tags: List[str]
-    :ivar description: A human-readable summary of what the tool does.
-    :vartype description: str
-    :ivar safe_mode: A boolean indicating if the tool can perform dangerous actions.
-    :vartype safe_mode: bool
-    :ivar purpose: An optional, concise verb describing the tool's main action.
-    :vartype purpose: Optional[str]
-    :ivar category: An optional high-level category (e.g., 'primitive', 'wrapper').
-    :vartype category: Optional[str]
-    :ivar timeout: An optional execution timeout in seconds for the tool.
-    :vartype timeout: Optional[int]
-    :ivar retries: The number of times to retry the tool on failure.
-    :vartype retries: int
-    """
-
+@dataclass
+class ToolEntry:
     name: str
-    run: Callable[[BaseModel], Any]
     input_model: Type[BaseModel]
-    tags: List[str]
-    description: str
-    safe_mode: bool = True
-    purpose: Optional[str] = None
-    category: Optional[str] = None
+    func: Callable[..., Any]
     timeout: Optional[int] = None
-    retries: int = 0
-
-    class Config:
-        """Pydantic configuration to allow arbitrary types like callables."""
-
-        arbitrary_types_allowed = True
 
 
-TOOL_REGISTRY: Dict[str, ToolEntry] = {}
-
-
-def normalize_tags(tags: List[str]) -> List[str]:
-    """Normalize and deduplicate tags by converting to lowercase and stripping whitespace.
-
-    :param tags: A list of tag strings.
-    :type tags: List[str]
-    :return: A normalized and sorted list of unique tags.
-    :rtype: List[str]
-    """
-    return sorted({tag.lower().strip() for tag in tags})
-
-
-def validate_input_model(model: Type[BaseModel]) -> None:
-    """Validate that a given Pydantic model can be used for tool input.
-
-    :param model: The Pydantic model class to validate.
-    :type model: Type[BaseModel]
-    :raises ToolValidationError: If the model is invalid or cannot be instantiated.
-    """
-    try:
-        # Check if it's a valid Pydantic model in the first place
-        if not issubclass(model, BaseModel):
-            raise TypeError("Input model must be a subclass of pydantic.BaseModel.")
-        create_model("ValidationCheck", __base__=model)
-    except Exception as e:
-        raise ToolValidationError(
-            f"Input model '{model.__name__}' is invalid or non-instantiable: {e}"
-        ) from e
+_REGISTRY: Dict[str, ToolEntry] = {}
+_DISCOVERED = False
+_AUDITED = False
 
 
 def register_tool(
     name: str,
     input_model: Type[BaseModel],
-    tags: List[str],
-    description: str,
-    safe_mode: bool = True,
-    purpose: Optional[str] = None,
-    category: Optional[str] = None,
+    func: Callable[..., Any],
     timeout: Optional[int] = None,
-    retries: int = 0,
-) -> Callable[[Callable[[BaseModel], Any]], Callable[[BaseModel], Any]]:
-    """A decorator to register a function as a tool for the agent system.
+) -> None:
+    _REGISTRY[name] = ToolEntry(
+        name=name, input_model=input_model, func=func, timeout=timeout
+    )
 
-    This decorator is the primary mechanism for adding new capabilities to the agent.
-    It attaches essential metadata to a function and adds it to the global
-    `TOOL_REGISTRY`, making it discoverable and callable by the agent's planner.
 
-    :param name: The unique, callable name for the tool.
-    :type name: str
-    :param input_model: The Pydantic model for validating the tool's input.
-    :type input_model: Type[BaseModel]
-    :param tags: A list of tags for categorizing and filtering the tool.
-    :type tags: List[str]
-    :param description: A human-readable description of the tool's purpose.
-    :type description: str
-    :param safe_mode: If True, the tool is considered safe from performing destructive actions. Defaults to True.
-    :type safe_mode: bool
-    :param purpose: An optional, concise verb describing the tool's action.
-    :type purpose: Optional[str]
-    :param category: An optional high-level category (e.g., 'primitive', 'wrapper').
-    :type category: Optional[str]
-    :param timeout: An optional execution timeout in seconds.
-    :type timeout: Optional[int]
-    :param retries: The number of times to retry the tool on failure. Defaults to 0.
-    :type retries: int
-    :return: A decorator that registers the function.
-    :rtype: Callable
+def _iter_module_callables(mod) -> list:
+    return [getattr(mod, k) for k in dir(mod)]
+
+
+def _discover_builtin_tools() -> None:
     """
+    Import aegis.tools.builtins (and any submodules) and register all decorated adapters.
+    """
+    try:
+        pkg = importlib.import_module("aegis.tools")
+    except ModuleNotFoundError:
+        return
 
-    def decorator(func: Callable[[BaseModel], Any]) -> Callable[[BaseModel], Any]:
-        if not callable(func):
-            raise TypeError(f"Registered tool '{name}' must be a callable function.")
-        if name in TOOL_REGISTRY:
+    # Import builtins.py explicitly
+    try:
+        builtins_mod = importlib.import_module("aegis.tools.builtins")
+        for name, input_model, timeout, func in discover_decorated(
+            _iter_module_callables(builtins_mod)
+        ):
+            register_tool(name, input_model, func, timeout)
+    except ModuleNotFoundError:
+        pass
+
+    # Import any submodules under aegis.tools.* and collect decorated callables too
+    try:
+        pkg_path = pkg.__path__  # type: ignore[attr-defined]
+        for finder, modname, ispkg in pkgutil.walk_packages(
+            pkg_path, prefix=pkg.__name__ + "."
+        ):
+            try:
+                m = importlib.import_module(modname)
+                for name, input_model, timeout, func in discover_decorated(
+                    _iter_module_callables(m)
+                ):
+                    register_tool(name, input_model, func, timeout)
+            except Exception as e:
+                logger.error(f"Tool discovery error in module {modname}: {e}")
+    except Exception:
+        pass
+
+
+def _audit_missing_tools() -> None:
+    """
+    Scan aegis.executors.* for public methods ending with '_result'.
+    If any are not present in the registry, log a WARNING so nothing is silently forgotten.
+    """
+    try:
+        exe_pkg = importlib.import_module("aegis.executors")
+    except ModuleNotFoundError:
+        return
+
+    missing = []
+    try:
+        pkg_path = exe_pkg.__path__  # type: ignore[attr-defined]
+        for finder, modname, ispkg in pkgutil.walk_packages(
+            pkg_path, prefix=exe_pkg.__name__ + "."
+        ):
+            try:
+                m = importlib.import_module(modname)
+            except Exception:
+                continue
+            for _, obj in inspect.getmembers(m, inspect.isclass):
+                if obj.__module__ != m.__name__:
+                    continue
+                # look for methods ending in _result
+                for meth_name, meth in inspect.getmembers(obj, inspect.isfunction):
+                    if not meth_name.endswith("_result"):
+                        continue
+                    # Heuristic tool key suggestion: <module-base>.<method-base>
+                    module_base = modname.split(".")[-1].replace("_exec", "")
+                    method_base = meth_name.removesuffix("_result")
+                    suggested = f"{module_base}.{method_base}"
+                    if suggested not in _REGISTRY:
+                        missing.append(suggested)
+        if missing:
+            uniq = sorted(set(missing))
             logger.warning(
-                f"A tool with the name '{name}' is already registered. Overwriting."
+                "Tool registry audit: found executor methods with no adapters registered. "
+                "Consider adding @tool adapters in aegis.tools.builtins for: %s",
+                ", ".join(uniq),
             )
+    except Exception as e:
+        logger.error(f"Tool audit failed: {e}")
 
-        validate_input_model(input_model)
-        normalized_tags = normalize_tags(tags)
 
-        entry = ToolEntry(
-            name=name,
-            run=func,
-            input_model=input_model,
-            tags=normalized_tags,
-            description=description,
-            safe_mode=safe_mode,
-            purpose=purpose,
-            category=category,
-            timeout=timeout,
-            retries=retries,
-        )
-        TOOL_REGISTRY[name] = entry
-        logger.debug(
-            f"Registered tool: {name} | "
-            f"Category: {category or 'N/A'} | "
-            f"Safe: {safe_mode}"
-        )
-        return func
-
-    return decorator
+def ensure_discovered() -> None:
+    global _DISCOVERED, _AUDITED
+    if not _DISCOVERED:
+        _discover_builtin_tools()
+        _DISCOVERED = True
+    if not _AUDITED:
+        _audit_missing_tools()
+        _AUDITED = True
 
 
 def get_tool(name: str) -> ToolEntry:
-    """Retrieve a registered tool by name.
-
-    :param name: The name of the tool to retrieve.
-    :type name: str
-    :return: A ToolEntry object if the tool is found.
-    :rtype: ToolEntry
-    :raises ToolNotFoundError: If the tool is not in the registry.
-    """
-    tool = TOOL_REGISTRY.get(name)
-    if tool is None:
-        logger.warning(f"Requested tool '{name}' not found in registry.")
-        available_tools = list(TOOL_REGISTRY.keys())
-        raise ToolNotFoundError(
-            f"Tool '{name}' not found in registry. Available: {available_tools}"
-        )
-    return tool
-
-
-def list_tools() -> List[str]:
-    """List the names of all available tools.
-
-    :return: A list of tool names.
-    :rtype: List[str]
-    """
-    return [name for name, tool in TOOL_REGISTRY.items()]
-
-
-def log_registry_contents() -> None:
-    """Outputs all currently registered tools and their metadata to the logger."""
-    logger.info("--- Tool Registry Contents ---")
-    if not TOOL_REGISTRY:
-        logger.info("Registry is empty.")
-        return
-
-    for name, tool in sorted(TOOL_REGISTRY.items()):
-        logger.info(
-            f"- Tool: {name}\n"
-            f"  - Description: {tool.description}\n"
-            f"  - Category: {tool.category or 'N/A'}\n"
-            f"  - Tags: {tool.tags}\n"
-            f"  - Input Model: {tool.input_model.__name__}\n"
-            f"  - Safe: {tool.safe_mode}"
-        )
-    logger.info(f"--- End of Registry Contents ({len(TOOL_REGISTRY)} tools) ---")
+    ensure_discovered()
+    try:
+        return _REGISTRY[name]
+    except KeyError:
+        raise ToolNotFoundError(f"Tool '{name}' is not registered.")
