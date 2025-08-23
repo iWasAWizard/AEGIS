@@ -76,9 +76,12 @@ def simulate(
     )
 
 
-def record_failure(*, tool: str, target_host: str | None, run_id: str | None = None) -> None:
+def record_failure(
+    *, tool: str, target_host: str | None, run_id: str | None = None
+) -> None:
     """Record a failure for breaker accounting and emit a trip event when threshold is crossed."""
     import os
+
     now = time.time()
     key = f"{tool}::{target_host or 'none'}"
     window = int(os.getenv("AEGIS_BREAKER_WINDOW_S", "120"))
@@ -95,17 +98,27 @@ def record_failure(*, tool: str, target_host: str | None, run_id: str | None = N
             try:
                 # Optional: structured replay event if run_id is present
                 if run_id:
-                    from aegis.utils.replay_logger import log_replay_event  # lazy import to avoid cycles
+                    from aegis.utils.replay_logger import (
+                        log_replay_event,
+                    )  # lazy import to avoid cycles
+
                     log_replay_event(
                         run_id,
                         "BREAKER_TRIPPED",
-                        {"key": key, "window_s": window, "threshold": threshold, "cooldown_s": cooldown, "until": _cooldown_until[key]},
+                        {
+                            "key": key,
+                            "window_s": window,
+                            "threshold": threshold,
+                            "cooldown_s": cooldown,
+                            "until": _cooldown_until[key],
+                        },
                     )
             except Exception:
                 pass
             try:
                 # Also log a plain info line
                 from aegis.utils.logger import setup_logger  # lazy
+
                 setup_logger(__name__).info(
                     "Breaker tripped",
                     extra={
@@ -119,7 +132,6 @@ def record_failure(*, tool: str, target_host: str | None, run_id: str | None = N
                 )
             except Exception:
                 pass
-
 
 
 def authorize(
@@ -189,10 +201,12 @@ def authorize(
             when_iso=when,
             metadata=None,
         )
-
-    deny_set = {
-        t.strip() for t in os.getenv("AEGIS_POLICY_DENY_TOOLS", "").split(",") if t.strip()
-    }
+    try:
+        deny_set = {
+            t.strip()
+            for t in os.getenv("AEGIS_POLICY_DENY_TOOLS", "").split(",")
+            if t.strip()
+        }
     except Exception:
         deny_set = set()
 
@@ -227,7 +241,7 @@ def authorize(
                 )
             hits.append(now)
             _rate_hits[key] = hits
-
+    try:
         require_list = {
             t.strip()
             for t in os.getenv("AEGIS_POLICY_REQUIRE_APPROVAL", "").split(",")
@@ -239,10 +253,14 @@ def authorize(
         # Host / interface allowlists: if set and not matched, require approval
     try:
         allowed_hosts = {
-            h.strip() for h in os.getenv("AEGIS_POLICY_ALLOW_HOSTS", "").split(",") if h.strip()
+            h.strip()
+            for h in os.getenv("AEGIS_POLICY_ALLOW_HOSTS", "").split(",")
+            if h.strip()
         }
         allowed_ifaces = {
-            i.strip() for i in os.getenv("AEGIS_POLICY_ALLOW_INTERFACES", "").split(",") if i.strip()
+            i.strip()
+            for i in os.getenv("AEGIS_POLICY_ALLOW_INTERFACES", "").split(",")
+            if i.strip()
         }
     except Exception:
         allowed_hosts = set()
