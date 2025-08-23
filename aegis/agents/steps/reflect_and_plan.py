@@ -20,6 +20,7 @@ from aegis.schemas.plan_output import AgentScratchpad
 from aegis.utils.llm_query import get_provider_for_profile
 from aegis.utils.logger import setup_logger
 from aegis.utils.replay_logger import log_replay_event
+from aegis.utils.tracing import span
 
 logger = setup_logger(__name__)
 
@@ -71,9 +72,14 @@ async def _select_relevant_tools(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        selected_tools_model = await provider.get_structured_completion(
-            messages, RelevantTools, state.runtime
-        )
+        with span(
+            "reflect_and_plan",
+            run_id=state.task_id,
+            ready_tools=len(allowed_tools) if "allowed_tools" in locals() else None,
+        ):
+            selected_tools_model = await provider.get_structured_completion(
+                messages, RelevantTools, state.runtime
+            )
         # Filter the LLM's response to ensure it only returns tools that were actually available.
         valid_selected_tools = [
             name
@@ -122,11 +128,16 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
         log_replay_event(state.task_id, "PLANNER_INPUT", {"messages": messages})
 
         try:
-            scratchpad = await provider.get_structured_completion(
-                messages=messages,
-                response_model=AgentScratchpad,
-                runtime_config=state.runtime,
-            )
+            with span(
+                "reflect_and_plan",
+                run_id=state.task_id,
+                ready_tools=len(allowed_tools) if "allowed_tools" in locals() else None,
+            ):
+                scratchpad = await provider.get_structured_completion(
+                    messages=messages,
+                    response_model=AgentScratchpad,
+                    runtime_config=state.runtime,
+                )
         except ValidationError as e:
             logger.warning("LLM plan failed validation. Attempting self-correction...")
             log_replay_event(
@@ -151,11 +162,18 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
             )
 
             try:
-                scratchpad = await provider.get_structured_completion(
-                    messages=repair_messages,
-                    response_model=AgentScratchpad,
-                    runtime_config=state.runtime,
-                )
+                with span(
+                    "reflect_and_plan",
+                    run_id=state.task_id,
+                    ready_tools=(
+                        len(allowed_tools) if "allowed_tools" in locals() else None
+                    ),
+                ):
+                    scratchpad = await provider.get_structured_completion(
+                        messages=repair_messages,
+                        response_model=AgentScratchpad,
+                        runtime_config=state.runtime,
+                    )
                 logger.info("✅ Self-correction successful. Plan is now valid.")
             except Exception as final_e:
                 logger.error(

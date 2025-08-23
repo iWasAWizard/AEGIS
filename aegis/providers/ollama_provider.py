@@ -4,6 +4,7 @@ A concrete implementation of the BackendProvider for an Ollama backend.
 """
 import asyncio
 import json
+import os
 from typing import List, Dict, Any, Optional, Type, Union
 
 import httpx
@@ -14,6 +15,7 @@ from aegis.providers.base import BackendProvider
 from aegis.schemas.backend import OllamaBackendConfig
 from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.utils.logger import setup_logger
+from aegis.utils.tracing import log_generation
 
 logger = setup_logger(__name__)
 
@@ -85,6 +87,35 @@ class OllamaProvider(BackendProvider):
             async with httpx.AsyncClient() as client:
                 timeout = httpx.Timeout(runtime_config.llm_planning_timeout)
                 response = await client.post(url, json=payload, timeout=timeout)
+                try:
+                    _model = (
+                        response.get("model") if isinstance(response, dict) else None
+                    )
+                    _prompt = locals().get("messages", None) or locals().get(
+                        "prompt", None
+                    )
+                    _output = (
+                        response.get("message")
+                        if isinstance(response, dict)
+                        else str(response)
+                    )
+                    _usage = {}
+                    if isinstance(response, dict):
+                        if "prompt_eval_count" in response:
+                            _usage["prompt_tokens"] = response["prompt_eval_count"]
+                        if "eval_count" in response:
+                            _usage["completion_tokens"] = response["eval_count"]
+                    if os.getenv("AEGIS_TRACE_GENERATIONS", "1") != "0":
+                        log_generation(
+                            run_id=None,
+                            model=_model,
+                            prompt=_prompt,
+                            output=_output,
+                            usage=_usage,
+                            meta={"provider": "ollama"},
+                        )
+                except Exception:
+                    pass
 
                 if not response.is_success:
                     body = response.text
@@ -136,6 +167,35 @@ class OllamaProvider(BackendProvider):
             async with httpx.AsyncClient() as client:
                 timeout = httpx.Timeout(runtime_config.llm_planning_timeout)
                 response = await client.post(url, json=payload, timeout=timeout)
+                try:
+                    _model = (
+                        response.get("model") if isinstance(response, dict) else None
+                    )
+                    _prompt = locals().get("messages", None) or locals().get(
+                        "prompt", None
+                    )
+                    _output = (
+                        response.get("message")
+                        if isinstance(response, dict)
+                        else str(response)
+                    )
+                    _usage = {}
+                    if isinstance(response, dict):
+                        if "prompt_eval_count" in response:
+                            _usage["prompt_tokens"] = response["prompt_eval_count"]
+                        if "eval_count" in response:
+                            _usage["completion_tokens"] = response["eval_count"]
+                    if os.getenv("AEGIS_TRACE_GENERATIONS", "1") != "0":
+                        log_generation(
+                            run_id=None,
+                            model=_model,
+                            prompt=_prompt,
+                            output=_output,
+                            usage=_usage,
+                            meta={"provider": "ollama"},
+                        )
+                except Exception:
+                    pass
 
                 if not response.is_success:
                     body = response.text

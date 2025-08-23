@@ -4,6 +4,7 @@ A concrete implementation of the BackendProvider for OpenAI's API.
 """
 from typing import List, Dict, Any, Optional, Type
 import io
+import os
 
 import openai
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from aegis.providers.base import BackendProvider
 from aegis.schemas.backend import OpenAIBackendConfig
 from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.utils.logger import setup_logger
+from aegis.utils.tracing import log_generation
 
 try:
     import instructor
@@ -55,6 +57,43 @@ class OpenAIProvider(BackendProvider):
                 top_p=self.config.top_p,
                 timeout=runtime_config.llm_planning_timeout,
             )
+
+            try:
+                # model
+                _model = getattr(self.config, "model", None) or getattr(
+                    response, "model", None
+                )
+
+                # prompt/messages
+                _prompt = locals().get("messages", None)
+
+                # output: handle pydantic/structured or plain dicts/strings
+                if hasattr(response, "model_dump_json"):
+                    _output = response.model_dump_json()  # type: ignore[attr-defined]
+                elif hasattr(response, "model_dump"):
+                    _output = response.model_dump()  # type: ignore[attr-defined]
+                else:
+                    _output = getattr(response, "choices", None) or str(response)
+
+                # usage, best-effort
+                _usage = {}
+                _u = getattr(response, "usage", None)
+                for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    if hasattr(_u, k):
+                        _usage[k] = getattr(_u, k)
+
+                # run_id may be unknown here; pass None (will still log and may create an ephemeral trace)
+                log_generation(
+                    run_id=None,
+                    model=_model,
+                    prompt=_prompt,
+                    output=_output,
+                    usage=_usage,
+                    meta={"provider": "openai"},
+                )
+            except Exception:
+                pass
+
             content = response.choices[0].message.content
             return content or "[No content in OpenAI response]"
         except openai.APIError as e:

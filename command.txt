@@ -118,34 +118,3 @@ Confirm when you are ready to begin.
 
 
 =============================================================
-Detailed Progress by Horizon:
-Horizon 1: Foundational Hardening & Measurement
-
-Status: Largely Complete (Approximately 85% Complete)
-This was our highest priority, and it is now substantially finished. The system's foundation is rock-solid.
-    ✅ Production-Grade State Management: COMPLETE. We successfully migrated the storage of paused agent tasks from a volatile in-memory dictionary to the persistent Redis backend. The system is now resilient to restarts.
-    ✅ System Reliability & Stability: COMPLETE. This was a major focus. We have systematically identified and eliminated numerous critical bugs and inconsistencies:
-        Fixed all identified GPU utilization bugs in BEND (vLLM, koboldcpp, whisper).
-        Resolved all dependency and build-process failures in AEGIS (NumPy, Docker caching).
-        Refactored BEND to be Ollama-first, improving the out-of-the-box experience for all users.
-        Hardened the security guardrails, fixing crashes and adding sophisticated new rules (command chaining, secret detection, self-modification).
-        Improved model instruction-adherence by hardening system prompts, preventing final-step failures and ensuring artifacts are generated reliably.
-        Enhanced the agent's "situational awareness" by adding tools to discover and inspect its environment (list_available_machines, string_contains, etc.), preventing it from getting stuck in failure loops.
-    ✅ Task Repeatability & Introspection: PARTIALLY COMPLETE. The regression test runner has been massively improved with detailed failure reporting, and the ability to prime agent memory ensures a consistent state for RAG-based tests.
-    ❌ Advanced Observability (LangFuse): NOT STARTED. As discussed, this is a "Costco-sized can of worms" that we have intentionally deferred.
-    ❌ Advanced Evaluation Suite (A/B Testing): NOT STARTED. This is dependent on LangFuse.
-Horizon 2: Next-Generation Intelligence & Perception
-Status: Significantly Advanced (Approximately 60% Complete)
-We have made far more progress here than initially planned, successfully implementing the two key agentic intelligence features.
-    ✅ Hierarchical Planning: COMPLETE. We successfully implemented the decompose_task step, updated the TaskState, added the advance_to_next_sub_goal tool, and created the hierarchical_flow preset. The agent can now create and follow high-level strategic plans.
-    ✅ Dynamic Goal Management: COMPLETE. We successfully implemented the revise_goal tool and the corresponding logic in the execute_tool step. The agent can now autonomously self-correct from flawed user prompts.
-    ✅ Advanced Prompt Engineering Toolkit: PARTIALLY COMPLETE. We refactored the prompt-generation logic into a dedicated PromptBuilder class and added the tool_selection_threshold optimization.
-    ❌ Multimodal Perception (Vision): NOT STARTED. This remains the next major, unstarted feature for expanding the agent's sensory capabilities.
-Horizon 3: Ecosystem & Scalability
-Status: Significantly Advanced (Approximately 50% Complete)
-The extensive work on the CLI and documentation has created a professional-grade ecosystem for developers.
-    ✅ Agent SDK & Tooling Enhancements: LARGELY COMPLETE. The AEGIS shell is now a feature-complete CLI. It supports interactive and one-shot modes, a dynamic context-aware prompt, comprehensive help with examples and aliases, CRUD operations for presets, and scriptable JSON output. The tool new command now scaffolds both the tool and its test file.
-    ❌ Native Tool Integration: NOT STARTED. We have not yet implemented a proof-of-concept tool using a native Python library like boto3.
-    ❌ Advanced Model & Infrastructure Management: NOT STARTED. The more advanced hardware profiling and air-gapped deployment features have not been implemented.
-
-==========================================================

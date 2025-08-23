@@ -3,6 +3,7 @@
 A mock BackendProvider for replaying agent tasks from a log.
 """
 from typing import List, Dict, Any, Optional, Type, Union
+import os
 
 from pydantic import BaseModel
 
@@ -10,6 +11,7 @@ from aegis.exceptions import PlannerError
 from aegis.providers.base import BackendProvider
 from aegis.schemas.plan_output import AgentScratchpad
 from aegis.schemas.runtime import RuntimeExecutionConfig
+from aegis.utils.tracing import log_generation
 
 
 class ReplayProvider(BackendProvider):
@@ -38,6 +40,42 @@ class ReplayProvider(BackendProvider):
 
         # The 'plan' key was added during the replay log creation
         return response_model.model_validate(plan_data["plan"])
+        try:
+            # Try to pull metadata from the replay record if present
+            _rec = (
+                locals().get("record")
+                or locals().get("entry")
+                or locals().get("item")
+                or {}
+            )
+            _model = None
+            if isinstance(_rec, dict):
+                _model = _rec.get("model") or _rec.get("params", {}).get("model")
+            _prompt = (
+                locals().get("messages", None)
+                or getattr(_rec, "prompt", None)
+                or (isinstance(_rec, dict) and _rec.get("prompt"))
+            )
+            # Output: prefer the just-produced response variable from your method
+            _output = (
+                locals().get("response")
+                or locals().get("scratchpad")
+                or (isinstance(_rec, dict) and _rec.get("output"))
+            )
+            _usage = _rec.get("usage") if isinstance(_rec, dict) else None
+            _run_id = _rec.get("run_id") if isinstance(_rec, dict) else None
+
+            if os.getenv("AEGIS_TRACE_GENERATIONS", "1") != "0":
+                log_generation(
+                    run_id=_run_id,
+                    model=_model,
+                    prompt=_prompt,
+                    output=_output,
+                    usage=_usage,
+                    meta={"provider": "replay"},
+                )
+        except Exception:
+            pass
 
     async def get_completion(
         self,

@@ -4,6 +4,7 @@ A concrete implementation of the BackendProvider for a vLLM backend.
 """
 import asyncio
 import json
+import os
 from typing import List, Dict, Any, Optional, Type
 
 import httpx
@@ -14,6 +15,7 @@ from aegis.providers.base import BackendProvider
 from aegis.schemas.backend import VllmBackendConfig
 from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.utils.logger import setup_logger
+from aegis.utils.tracing import log_generation
 
 try:
     import instructor
@@ -82,6 +84,28 @@ class VllmProvider(BackendProvider):
                 response = await client.post(
                     self.config.llm_url, json=payload, timeout=timeout
                 )
+                try:
+                    _model = getattr(self.config, "model", None) or getattr(
+                        response, "model", None
+                    )
+                    _prompt = locals().get("messages", None)
+                    _output = getattr(response, "choices", None) or str(response)
+                    _usage = {}
+                    _u = getattr(response, "usage", None)
+                    for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                        if hasattr(_u, k):
+                            _usage[k] = getattr(_u, k)
+                    if os.getenv("AEGIS_TRACE_GENERATIONS", "1") != "0":
+                        log_generation(
+                            run_id=None,
+                            model=_model,
+                            prompt=_prompt,
+                            output=_output,
+                            usage=_usage,
+                            meta={"provider": "vllm"},
+                        )
+                except Exception:
+                    pass
 
                 if not response.is_success:
                     body = response.text

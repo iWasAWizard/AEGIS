@@ -11,6 +11,8 @@ from aegis.registry import get_tool
 from aegis.schemas.plan_output import AgentScratchpad
 from aegis.utils.llm_query import get_provider_for_profile
 from aegis.utils.logger import setup_logger
+from aegis.utils.tracing import span
+from aegis.utils.replay_logger import log_replay_event
 
 
 logger = setup_logger(__name__)
@@ -88,9 +90,16 @@ async def verify_outcome(state: TaskState) -> Dict[str, Any]:
             raise ConfigurationError("Backend profile is not set in task state.")
 
         provider = get_provider_for_profile(state.runtime.backend_profile)
-        response = await provider.get_structured_completion(
-            messages, VerificationJudgement, state.runtime
-        )
+        with span(
+            "verify",
+            run_id=state.task_id,
+            tool=plan.tool_name if "plan" in locals() else None,
+        ):
+            response = await provider.get_structured_completion(
+                messages=messages,
+                response_model=VerificationJudgement,
+                runtime_config=state.runtime,
+            )
         judgement = cast(VerificationJudgement, response)
         last_history_entry.verification_status = judgement.judgement
         logger.info(f"LLM verification result: '{judgement.judgement}'")

@@ -52,28 +52,30 @@ class RuntimeExecutionConfig(BaseModel):
         None,
         ge=0.0,
         le=1.0,
-        description="Nucleus sampling (top-p) parameter.",
+        description="Nucleus sampling parameter; considers tokens with cumulative probability up to this value.",
     )
-    top_k: Optional[int] = Field(
+    presence_penalty: Optional[float] = Field(
         None,
-        ge=0,
-        description="Top-k sampling parameter.",
+        ge=-2.0,
+        le=2.0,
+        description="Penalizes tokens based on whether they appear in the text so far.",
     )
-    repetition_penalty: Optional[float] = Field(
+    frequency_penalty: Optional[float] = Field(
         None,
-        ge=1.0,
-        description="Repetition penalty for LLM generation (typically >1.0).",
+        ge=-2.0,
+        le=2.0,
+        description="Penalizes tokens based on their frequency in the text so far.",
     )
-    safe_mode: Optional[bool] = Field(
-        None,
-        description="If true, enables calls to the external Guardrails service to vet agent actions.",
+    stop_sequences: Optional[List[str]] = Field(
+        None, description="Stop generation when any of these strings is generated."
     )
     tool_timeout: Optional[int] = Field(
         None,
-        description="Maximum runtime (in seconds) before aborting a tool execution.",
+        description="Timeout in seconds for tool execution, unless a tool specifies its own.",
     )
     tool_retries: Optional[int] = Field(
         None,
+        ge=0,
         description="Number of times to retry a failed tool execution.",
     )
     iterations: Optional[int] = Field(
@@ -86,11 +88,56 @@ class RuntimeExecutionConfig(BaseModel):
     )
     tool_selection_threshold: Optional[int] = Field(
         None,
-        description="If the number of available tools exceeds this, a preliminary LLM call is made to select a relevant subset.",
+        description="If the number of available tools exceeds this many candidates, a preliminary LLM call is made to select a relevant subset.",
+    )
+
+    # --- runtime safety and determinism ---
+    dry_run: Optional[bool] = Field(
+        None,
+        description="Force dry-run for side-effecting tools. Overrides env if set.",
+    )
+    seed: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Random seed for deterministic behavior where supported.",
+    )
+    wall_clock_timeout_s: Optional[int] = Field(
+        None,
+        description="Hard wall-clock timeout (seconds) for the entire task.",
     )
 
     class Config:
-        extra = "forbid"
+        extra = "ignore"
+        populate_by_name = True
+
+    @field_validator("temperature", mode="before")
+    @classmethod
+    def clamp_temperature(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        if v < 0.0:
+            return 0.0
+        if v > 2.0:
+            return 2.0
+        return v
+
+    @field_validator("max_context_length", "max_tokens_to_generate", mode="before")
+    @classmethod
+    def check_positive_int(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError("Must be a positive integer.")
+        return v
+
+    @field_validator("top_p", mode="before")
+    @classmethod
+    def clamp_top_p(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        if v < 0.0:
+            return 0.0
+        if v > 1.0:
+            return 1.0
+        return v
 
     @field_validator("tool_timeout", "llm_planning_timeout", mode="before")
     @classmethod

@@ -20,6 +20,11 @@ log_level = logging.DEBUG if is_debug_mode else logging.INFO
 # Set the root logger's level.
 logging.getLogger().setLevel(log_level)
 
+# Now that the log level is set, import and log the env knobs.
+from aegis.utils.env_report import log_env_knobs
+
+log_env_knobs()  # uses its own logger if none is provided
+
 # Now that the log level is set, we can import the rest of the application.
 from aegis.shell import AegisShell
 

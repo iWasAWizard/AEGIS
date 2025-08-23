@@ -4,6 +4,7 @@ A concrete implementation of the BackendProvider for the BEND stack using Kobold
 """
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Type
 
@@ -17,6 +18,7 @@ from aegis.schemas.runtime import RuntimeExecutionConfig
 from aegis.utils.logger import setup_logger
 from aegis.utils.model_manifest_loader import get_formatter_hint
 from aegis.utils.prompt_formatter import format_prompt
+from aegis.utils.tracing import log_generation
 
 logger = setup_logger(__name__)
 
@@ -140,6 +142,53 @@ class KoboldcppProvider(BackendProvider):
                 response = await client.post(
                     url, files=files, headers=headers, timeout=60.0
                 )
+                try:
+                    # model (prefer configured model; fall back to API response if present)
+                    _model = getattr(self.config, "model", None)
+                    if not _model and isinstance(response, dict):
+                        _model = response.get("model")
+
+                    # prompt/messages (whatever you passed in)
+                    _prompt = (
+                        locals().get("messages", None)
+                        or locals().get("prompt", None)
+                        or locals().get("payload", None)
+                    )
+
+                    # output: common KoboldCPP shapes
+                    _output = None
+                    if isinstance(response, dict):
+                        if "results" in response and response["results"]:
+                            _output = response["results"][0].get("text")
+                        elif "text" in response:
+                            _output = response.get("text")
+                        else:
+                            _output = response  # as-is
+                    else:
+                        _output = str(response)
+
+                    # usage (best-effort; keys differ across builds)
+                    _usage = {}
+                    if isinstance(response, dict):
+                        if "tokens_evaluated" in response:
+                            _usage["prompt_tokens"] = response["tokens_evaluated"]
+                        if "tokens_generated" in response:
+                            _usage["completion_tokens"] = response["tokens_generated"]
+                        if "token_count" in response:
+                            _usage["total_tokens"] = response["token_count"]
+
+                    if os.getenv("AEGIS_TRACE_GENERATIONS", "1") != "0":
+                        log_generation(
+                            run_id=None,  # provider usually doesn't know the task id; safe to leave None
+                            model=_model,
+                            prompt=_prompt,
+                            output=_output,
+                            usage=_usage,
+                            meta={"provider": "koboldcpp"},
+                        )
+                except Exception:
+                    pass
+
                 response.raise_for_status()
                 result = response.json()
                 return result.get("text", "[No text in transcription response]")

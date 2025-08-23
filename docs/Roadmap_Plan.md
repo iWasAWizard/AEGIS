@@ -1,37 +1,66 @@
-### **Tier 1: Foundational Fixes & Quick Wins**
+# Sprint 2 — Instrument & Compare (finish line)
 
-These items should be addressed first. They either fix critical reliability issues or provide a high return on investment for a low amount of engineering effort.
+**Goals:** turn the tracing/telemetry foundation into actionable visibility.
+**Deliverables:**
 
-1.  **Production-Grade State Management (Redis for Paused Tasks)**
-    *   **Why:** This is the highest priority. It fixes a critical bug where a server restart causes irreversible data loss for paused tasks. The impact on system reliability is immense, and the effort is relatively low since the BEND stack already provides Redis. This is a foundational prerequisite for any serious, long-running agentic work.
+* **Langfuse MVP**: spans for plan/tool/verify + generations (tokens/cost), all best-effort and redacted.
+* **A/B runner “happy path”**: `collect` + `compare` over two run dirs; results JSON and a short README.
+* **Provider coverage**: extend `log_generation(...)` to any other active providers (as applicable).
+* **Dash stubs**: one simple chart per run set (success%, avg steps/run, breaker trips/run).
+  **Exit criteria:** traces visible for multiple runs; A/B compare prints deltas; dashboards render basic metrics.
 
-2.  **Agent SDK & Tooling Enhancements (Improve `new-tool` script)**
-    *   **Why:** This is a classic "sharpen the saw" task. The effort to enhance the new tool scaffolding script is very low, but the impact on developer velocity and code consistency is high. Every new tool will be created faster and with fewer errors. It's a massive quality-of-life improvement for anyone extending the agent.
+# Sprint 3 — Goal Graph (DAG) Pilot
 
-3.  **Advanced Prompt Engineering Toolkit (Modular PromptBuilder)**
-    *   **Why:** Refactoring the current prompt string formatting into a dedicated `PromptBuilder` class is a low-effort, high-impact code quality improvement. It will make the planning step cleaner, more testable, and far easier to modify in the future when we implement more advanced context compression or dynamic role switching.
+**Goals:** enable parallelizable goals with safe gating.
+**Deliverables:**
 
-### **Tier 2: Core Capabilities & Observability**
+* **Data model**: `GoalNode{id,text,requires,status}` + `state.goal_graph`.
+* **Ready-set**: compute nodes with all prereqs `done`; planner only chooses from ready set.
+* **PromptBuilder nudge**: list “Ready nodes:” when a graph exists (fallback to linear mode otherwise).
+* **Provenance**: `NODE_START / NODE_DONE / NODE_BLOCKED` events.
+* **(Optional)** advisory guardrails hook in `policy.authorize(...)` (single call-site; advisory only).
+  **Exit criteria:** diamond graph (A→B, A→C, B\&C→D) runs with B/C in any order; D unlocks only when ready; unrelated branches keep moving if one is blocked/needs approval.
 
-These items represent the next major steps in maturing the framework. They require more effort than Tier 1 but are essential for enabling data-driven development and increasing agent robustness.
+# Sprint 4 — Model Capability Flags & Fallbacks
 
-1.  **Re-integrate Advanced Observability (LangFuse)**
-    *   **Why:** This is the gateway to truly understanding agent performance. While the effort is high due to the infrastructure complexity, its impact is a force multiplier. It makes debugging faster, provides invaluable insights, and is a hard dependency for the A/B testing suite. We cannot effectively measure improvement without it.
+**Goals:** pick the right model reliably and downgrade safely.
+**Deliverables:**
 
-2.  **Advanced Evaluation Suite (A/B Testing)**
-    *   **Why:** This is the *reason* for integrating LangFuse. Once observability is in place, this feature allows us to move from "I think this prompt is better" to "I can prove this prompt is 3% more effective on our benchmark dataset." It's the key to making the agent quantifiably better over time.
+* **`models.yaml` flags**: `ctx_window`, `json_mode`, `function_calling`, `cost_tier`.
+* **Selector**: never choose non-JSON for JSON prompts; detect projected overflow and **fallback** to a compatible model with a log note.
+* **Tests**: unit tests for selector; golden run showing fallback behavior.
+  **Exit criteria:** selector logs choice + reason; JSON prompts never hit non-JSON models; overflow triggers a deterministic fallback.
 
-3.  **Dynamic Goal Management (`revise_goal` tool)**
-    *   **Why:** Implementing the `revise_goal` tool is a relatively low-effort piece of the larger "Self-Reflection" feature. It provides an immediate, tangible boost to the agent's robustness by allowing it to self-correct from a flawed or ambiguous user prompt, which is a common failure mode.
+# Sprint 5 — Distributed Breakers & Deployment Polish
 
-### **Tier 3: Advanced Intelligence & Major Features**
+**Goals:** make breakers multi-worker safe and tighten ops.
+**Deliverables:**
 
-These are the horizon-defining, "level-up" features. They have the highest potential impact but also require the most significant engineering effort. They should be tackled after the foundational work in Tiers 1 and 2 is complete.
+* **Redis breaker state**: move `_failures/_cooldown_until` to Redis (atomic increments, TTL’d keys per `tool::host`).
+* **Telemetry**: `BREAKER_TRIPPED` emitted once at threshold; cooldown expiry logged.
+* **Compose healthchecks**: liveness/readiness for API/worker/model backends.
+* **Model lister**: `scripts/list-models.sh` or Python equivalent that prints available models per provider.
+* **(Optional)** `/transcribe` & `/speak` proxies if those endpoints are part of your stack.
+  **Exit criteria:** breaker trips correctly with two workers running concurrently; healthchecks turn containers healthy; model-lister prints a sensible inventory.
 
-1.  **Hierarchical Planning (Sub-goal Decomposition)**
-    *   **Why:** This fundamentally changes the agent's problem-solving ability, enabling it to tackle much larger and more complex tasks. However, it requires significant changes to the core `TaskState` and planning logic.
+---
 
-2.  **Multimodal Perception (Vision)**
-    *   **Why:** This opens up an entirely new domain of GUI automation, massively expanding the agent's capabilities. The effort is high as it involves adding a new VLM service to BEND, creating new providers, and developing new vision-based tools.
+## Dependencies
 
-In summary, the immediate focus should be on **stabilizing the core (Redis state), improving the developer loop (SDK), and refactoring for future growth (PromptBuilder).** Once that foundation is rock-solid, we can re-establish our advanced observability (LangFuse) and then use that to build and measure the next generation of truly advanced agent intelligence.
+* Sprint 2 precedes the A/B-focused comparisons in later sprints (you’ll use those metrics to judge DAG & selector quality).
+* Capability flags must land before selection/fallback logic.
+* Redis breaker depends on a Redis URL being available in the environment.
+
+## Ready-to-mint ticket titles (one-liners)
+
+* `dag: add GoalNode model + ready-set computation`
+* `dag: PromptBuilder "Ready nodes" + planner choice`
+* `dag: provenance events NODE_START/DONE/BLOCKED`
+* `models: add capability flags to models.yaml`
+* `models: implement selector + overflow fallback`
+* `policy: breaker → Redis (atomic, TTL)`
+* `deploy: compose healthchecks + model-lister`
+* `obs: Langfuse MVP (spans + generations)`
+* `eval: A/B runner README + example`
+
+When you’re back, we can start with DAG’s tiny data model and ready-set function (about a dozen lines) or jump straight to capability flags—your call.
