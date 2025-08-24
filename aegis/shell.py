@@ -13,6 +13,7 @@ from rich.console import Console
 
 from aegis.registry import TOOL_REGISTRY
 from aegis.utils.tool_loader import import_all_tools
+from aegis.cli import register_all_cli_commands
 
 
 @cmd2.with_default_category("AEGIS Shell")
@@ -32,6 +33,9 @@ class AegisShell(cmd2.Cmd):
         self.session_preset = None
         self.interrupted_tasks = {}
         self.tools_loaded = False  # Flag to ensure tools are loaded only once
+
+        # >>> Added: register executor CLI command sets <<<
+        register_all_cli_commands(self)
 
     @property
     @cmd2.with_category("cmd2")

@@ -1,4 +1,4 @@
-# aegis/tests/executors/test_ssh_executor.py
+# aegis/tests/executors/test_ssh_exec.py
 """
 Unit tests for the SSHExecutor class.
 """

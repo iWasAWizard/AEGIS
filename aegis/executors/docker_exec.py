@@ -11,8 +11,10 @@ from pathlib import Path
 import io
 import tarfile
 import json
-import time
-import re
+from aegis.utils.exec_common import (
+    now_ms as _common_now_ms,
+    map_exception_to_error_type as _common_map_error,
+)
 
 from aegis.exceptions import ToolExecutionError, ConfigurationError
 from aegis.utils.logger import setup_logger
@@ -47,13 +49,27 @@ def _sanitize_env(env: Dict[str, str] | List[str] | None) -> Any:
                 if "=" in item:
                     k, v = item.split("=", 1)
                     out[k] = v
+                else:
+                    out[item] = ""
             except Exception:
-                continue
+                out["?"] = "?"
         return redact_for_log(out)
-    return env
+    return None
 
 
-def _sanitize_auth(auth_config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _sanitize_ports(ports: Dict[str, Any] | List[str] | None) -> Any:
+    if ports is None:
+        return None
+    if isinstance(ports, dict):
+        return redact_for_log(ports)
+    if isinstance(ports, list):
+        return [str(p) for p in ports]
+    return None
+
+
+def _sanitize_auth_config(
+    auth_config: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
     if not auth_config:
         return None
     return redact_for_log(auth_config)
@@ -88,139 +104,265 @@ class DockerExecutor:
         name: str,
         tag: str = "latest",
         auth_config: Optional[Dict[str, Any]] = None,
-    ) -> str:
+    ) -> None:
         try:
-            img = self.client.images.pull(
-                repository=name, tag=tag, auth_config=auth_config
+            self.client.images.pull(repository=name, tag=tag, auth_config=auth_config)
+            logger.info(
+                "docker.pull ok",
+                extra={
+                    "name": name,
+                    "tag": tag,
+                    "auth": _sanitize_auth_config(auth_config),
+                },
             )
-            return img.id
         except ImageNotFound as e:
-            raise ToolExecutionError(f"Docker image not found: {name}:{tag}") from e
+            raise ToolExecutionError(f"Image not found: {name}:{tag}") from e
         except APIError as e:
-            raise ToolExecutionError(f"Docker API error (pull): {e}") from e
+            raise ToolExecutionError(f"Docker API error: {e}") from e
+        except DockerException as e:
+            raise ToolExecutionError(f"Docker error: {e}") from e
 
     def run_container(
         self,
         image: str,
         *,
         name: Optional[str] = None,
-        command: Optional[List[str] | str] = None,
+        command: Optional[str | List[str]] = None,
         environment: Optional[Dict[str, str] | List[str]] = None,
+        ports: Optional[Dict[str, Any] | List[str]] = None,
+        volumes: Optional[Dict[str, Dict[str, str]]] = None,
         detach: bool = True,
         auto_remove: bool = False,
-        network: Optional[str] = None,
-        volumes: Optional[Dict[str, Dict[str, str]]] = None,
-        ports: Optional[Dict[str, int | str]] = None,
-        user: Optional[str] = None,
         working_dir: Optional[str] = None,
+        user: Optional[str] = None,
+        stdin_open: bool = False,
+        tty: bool = False,
     ) -> str:
         try:
-            cont = self.client.containers.run(
+            container = self.client.containers.run(
                 image=image,
                 name=name,
                 command=command,
                 environment=environment,
+                ports=ports,
+                volumes=volumes,
                 detach=detach,
                 auto_remove=auto_remove,
-                network=network,
-                volumes=volumes,
-                ports=ports,
-                user=user,
                 working_dir=working_dir,
-                tty=False,
-                stdin_open=False,
+                user=user,
+                stdin_open=stdin_open,
+                tty=tty,
             )
-            return cont.id
-        except NotFound as e:
-            raise ToolExecutionError(f"Image or resource not found: {image}") from e
+            logger.info(
+                "docker.run ok",
+                extra={
+                    "image": image,
+                    "name": name,
+                    "env": _sanitize_env(environment),
+                    "ports": _sanitize_ports(ports),
+                    "volumes": redact_for_log(volumes) if volumes else None,
+                    "detach": detach,
+                    "auto_remove": auto_remove,
+                    "workdir": working_dir,
+                    "user": user,
+                    "stdin_open": stdin_open,
+                    "tty": tty,
+                },
+            )
+            return container.id
+        except ImageNotFound as e:
+            raise ToolExecutionError(f"Image not found: {image}") from e
         except APIError as e:
-            raise ToolExecutionError(f"Docker API error (run): {e}") from e
+            raise ToolExecutionError(f"Docker API error: {e}") from e
+        except DockerException as e:
+            raise ToolExecutionError(f"Docker error: {e}") from e
 
-    def stop_container(self, container_id_or_name: str, timeout: int = 10) -> bool:
+    def stop_container(self, container_id: str, timeout: int = 10) -> None:
         try:
-            cont = self.client.containers.get(container_id_or_name)
-            cont.stop(timeout=timeout)
-            return True
-        except NotFound:
-            return False
+            container = self.client.containers.get(container_id)
+            container.stop(timeout=timeout)
+            logger.info(
+                "docker.stop ok", extra={"id": container_id, "timeout": timeout}
+            )
+        except NotFound as e:
+            raise ToolExecutionError(f"Container not found: {container_id}") from e
         except APIError as e:
-            raise ToolExecutionError(f"Docker API error (stop): {e}") from e
+            raise ToolExecutionError(f"Docker API error: {e}") from e
+        except DockerException as e:
+            raise ToolExecutionError(f"Docker error: {e}") from e
 
     def exec_in_container(
         self,
-        container_id_or_name: str,
+        container_id: str,
         cmd: List[str] | str,
-        timeout: Optional[int] = None,
-    ) -> Tuple[int, str]:
+        *,
+        workdir: Optional[str] = None,
+        user: Optional[str] = None,
+    ) -> Tuple[int, str, str]:
         try:
-            cont = self.client.containers.get(container_id_or_name)
-            rc, output = cont.exec_run(cmd, tty=False, demux=False, stream=False)
-            # docker SDK returns combined bytes; normalize to str
-            text = (
-                output.decode("utf-8", "ignore")
-                if isinstance(output, (bytes, bytearray))
-                else str(output)
+            container = self.client.containers.get(container_id)
+            exec_id = self.client.api.exec_create(
+                container.id, cmd=cmd, workdir=workdir, user=user
             )
-            return (int(rc) if rc is not None else 0, text)
+            out = self.client.api.exec_start(exec_id)
+            rc = self.client.api.exec_inspect(exec_id).get("ExitCode", 1)
+            stdout = (
+                out.decode("utf-8", "replace")
+                if isinstance(out, (bytes, bytearray))
+                else str(out)
+            )
+            logger.info(
+                "docker.exec ok",
+                extra={
+                    "id": container_id,
+                    "cmd": cmd,
+                    "cwd": workdir,
+                    "user": user,
+                    "rc": rc,
+                },
+            )
+            return rc, stdout, "" if rc == 0 else stdout
         except NotFound as e:
-            raise ToolExecutionError("Container not found") from e
+            raise ToolExecutionError(f"Container not found: {container_id}") from e
         except APIError as e:
-            raise ToolExecutionError(f"Docker API error (exec): {e}") from e
+            raise ToolExecutionError(f"Docker API error: {e}") from e
+        except DockerException as e:
+            raise ToolExecutionError(f"Docker error: {e}") from e
 
     def copy_to_container(
-        self, container_id_or_name: str, src_path: str, dest_path: str
-    ) -> bool:
-        """
-        Copy a single file to container using put_archive.
-        """
+        self, container_id: str, src_path: str | Path, dest_path: str | Path
+    ) -> None:
         try:
-            cont = self.client.containers.get(container_id_or_name)
-            data = Path(src_path).read_bytes()
-            tar_stream = io.BytesIO()
-            with tarfile.open(fileobj=tar_stream, mode="w") as tarf:
-                info = tarfile.TarInfo(name=Path(dest_path).name)
-                info.size = len(data)
-                info.mtime = time.time()
-                tarf.addfile(info, io.BytesIO(data))
-            tar_stream.seek(0)
-            cont.put_archive(path=str(Path(dest_path).parent), data=tar_stream.read())
-            return True
-        except Exception as e:
-            raise ToolExecutionError(f"Docker copy_to_container error: {e}") from e
+            container = self.client.containers.get(container_id)
+            tar_stream = _make_tar_stream(src_path, arcname=Path(dest_path).name)
+            self.client.api.put_archive(
+                container.id,
+                path=str(Path(dest_path).parent),
+                data=tar_stream.getvalue(),
+            )
+            logger.info(
+                "docker.cp_to ok",
+                extra={
+                    "id": container_id,
+                    "src": str(src_path),
+                    "dest": str(dest_path),
+                },
+            )
+        except NotFound as e:
+            raise ToolExecutionError(f"Container not found: {container_id}") from e
+        except APIError as e:
+            raise ToolExecutionError(f"Docker API error: {e}") from e
+        except DockerException as e:
+            raise ToolExecutionError(f"Docker error: {e}") from e
 
     def copy_from_container(
-        self, container_id_or_name: str, src_path: str, dest_path: str
-    ) -> bool:
-        """
-        Copy file/dir from container using get_archive.
-        """
+        self, container_id: str, src_path: str | Path, dest_dir: str | Path
+    ) -> Path:
         try:
-            cont = self.client.containers.get(container_id_or_name)
-            stream, _ = cont.get_archive(src_path)
-            tar_bytes = b"".join(stream)
-            with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:*") as tarf:
-                member = tarf.getmember(Path(src_path).name)
-                with tarf.extractfile(member) as fsrc:
-                    Path(dest_path).write_bytes(fsrc.read())
-            return True
-        except Exception as e:
-            raise ToolExecutionError(f"Docker copy_from_container error: {e}") from e
+            container = self.client.containers.get(container_id)
+            bits, _ = self.client.api.get_archive(container.id, path=str(src_path))
+            _extract_tar_stream(bits, dest_dir)
+            dest = Path(dest_dir) / Path(src_path).name
+            logger.info(
+                "docker.cp_from ok",
+                extra={"id": container_id, "src": str(src_path), "dest": str(dest)},
+            )
+            return dest
+        except NotFound as e:
+            raise ToolExecutionError(f"Container not found: {container_id}") from e
+        except APIError as e:
+            raise ToolExecutionError(f"Docker API error: {e}") from e
+        except DockerException as e:
+            raise ToolExecutionError(f"Docker error: {e}") from e
+
+
+def _make_tar_stream(src: str | Path, arcname: Optional[str] = None) -> io.BytesIO:
+    """
+    Pack a file or directory into a tar stream that Docker's put_archive can consume.
+    """
+    src_path = Path(src)
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w") as tar:
+        if src_path.is_dir():
+            for p in src_path.rglob("*"):
+                tar.add(
+                    p,
+                    arcname=str(
+                        Path(arcname or src_path.name) / p.relative_to(src_path)
+                    ),
+                )
+        else:
+            tar.add(src_path, arcname=arcname or src_path.name)
+    stream.seek(0)
+    return stream
+
+
+def _extract_tar_stream(
+    bits: bytes | io.BufferedReader | Any, dest_dir: str | Path
+) -> None:
+    """
+    Extracts a tar stream returned by Docker to a destination directory.
+    - Accepts bytes, a file-like with .read(), or an **iterable of bytes chunks** (common).
+    - Uses a safe extractor to prevent path traversal outside dest_dir.
+    """
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+
+    # Normalize to bytes
+    if hasattr(bits, "read"):
+        data = bits.read()
+    elif isinstance(bits, (bytes, bytearray)):
+        data = bytes(bits)
+    else:
+        # Iterable / generator of chunks
+        data = b"".join(chunk for chunk in bits)
+
+    def _is_within_directory(directory: Path, target: Path) -> bool:
+        try:
+            directory = directory.resolve()
+            target = target.resolve()
+            return str(target).startswith(str(directory) + "/") or target == directory
+        except Exception:
+            return False
+
+    def _safe_extractall(tar_obj: tarfile.TarFile, path: Path) -> None:
+        for member in tar_obj.getmembers():
+            member_path = path / member.name
+            # Prevent absolute paths and traversal
+            if member.name.startswith("/") or ".." in Path(member.name).parts:
+                raise ToolExecutionError(f"Unsafe path in tar member: {member.name}")
+            # Ensure final resolved path is within destination
+            tmp_target = (path / member.name).resolve()
+            if not _is_within_directory(path, tmp_target):
+                raise ToolExecutionError(
+                    f"Refusing to extract outside destination: {member.name}"
+                )
+        tar_obj.extractall(path=path)
+
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tar:
+        _safe_extractall(tar, dest)
 
 
 # === ToolResult wrappers ===
 
 
 def _now_ms() -> int:
-    return int(time.time() * 1000)
+    return _common_now_ms()
 
 
 def _errtype(e: Exception) -> str:
     m = str(e).lower()
-    if "timeout" in m:
+    mapped = (_common_map_error(e) or "").lower()
+    if "timeout" in m or mapped == "timeout":
         return "Timeout"
-    if "auth" in m or "permission" in m or "denied" in m:
+    if (
+        "auth" in m
+        or "permission" in m
+        or "denied" in m
+        or mapped == "permission_denied"
+    ):
         return "Auth"
-    if "not found" in m or "no such" in m:
+    if "not found" in m or "no such" in m or mapped == "not_found":
         return "NotFound"
     if "parse" in m or "json" in m:
         return "Parse"
@@ -238,7 +380,13 @@ class DockerExecutorToolResultMixin:
         if dry_run.enabled:
             preview = dry_run.preview_payload(
                 tool="docker.pull",
-                args=redact_for_log({"name": name, "tag": tag, "auth": auth_config}),
+                args=redact_for_log(
+                    {
+                        "name": name,
+                        "tag": tag,
+                        "auth": _sanitize_auth_config(auth_config),
+                    }
+                ),
             )
             return ToolResult.ok_result(
                 stdout="[DRY-RUN] docker.pull",
@@ -246,9 +394,9 @@ class DockerExecutorToolResultMixin:
                 meta={"preview": preview},
             )
         try:
-            img_id = self.pull_image(name=name, tag=tag, auth_config=auth_config)
+            self.pull_image(name=name, tag=tag, auth_config=auth_config)
             return ToolResult.ok_result(
-                stdout=img_id,
+                stdout="ok",
                 exit_code=0,
                 latency_ms=_now_ms() - start,
                 meta={"name": name, "tag": tag},
@@ -266,31 +414,36 @@ class DockerExecutorToolResultMixin:
         image: str,
         *,
         name: Optional[str] = None,
-        command: Optional[List[str] | str] = None,
+        command: Optional[str | List[str]] = None,
         environment: Optional[Dict[str, str] | List[str]] = None,
+        ports: Optional[Dict[str, Any] | List[str]] = None,
+        volumes: Optional[Dict[str, Dict[str, str]]] = None,
         detach: bool = True,
         auto_remove: bool = False,
-        network: Optional[str] = None,
-        volumes: Optional[Dict[str, Dict[str, str]]] = None,
-        ports: Optional[Dict[str, int | str]] = None,
-        user: Optional[str] = None,
         working_dir: Optional[str] = None,
+        user: Optional[str] = None,
+        stdin_open: bool = False,
+        tty: bool = False,
     ) -> ToolResult:
         start = _now_ms()
         if dry_run.enabled:
-            preview_args = {
-                "image": image,
-                "name": name,
-                "command": command,
-                "environment": _sanitize_env(environment),
-                "network": network,
-                "volumes": volumes,
-                "ports": ports,
-                "user": user,
-                "working_dir": working_dir,
-            }
             preview = dry_run.preview_payload(
-                tool="docker.run", args=redact_for_log(preview_args)
+                tool="docker.run",
+                args=redact_for_log(
+                    {
+                        "image": image,
+                        "name": name,
+                        "env": _sanitize_env(environment),
+                        "ports": _sanitize_ports(ports),
+                        "volumes": volumes,
+                        "detach": detach,
+                        "auto_remove": auto_remove,
+                        "workdir": working_dir,
+                        "user": user,
+                        "stdin_open": stdin_open,
+                        "tty": tty,
+                    }
+                ),
             )
             return ToolResult.ok_result(
                 stdout="[DRY-RUN] docker.run",
@@ -303,13 +456,14 @@ class DockerExecutorToolResultMixin:
                 name=name,
                 command=command,
                 environment=environment,
+                ports=ports,
+                volumes=volumes,
                 detach=detach,
                 auto_remove=auto_remove,
-                network=network,
-                volumes=volumes,
-                ports=ports,
-                user=user,
                 working_dir=working_dir,
+                user=user,
+                stdin_open=stdin_open,
+                tty=tty,
             )
             return ToolResult.ok_result(
                 stdout=cid,
@@ -325,16 +479,12 @@ class DockerExecutorToolResultMixin:
                 meta={"image": image, "name": name},
             )
 
-    def stop_container_result(
-        self, container_id_or_name: str, timeout: int = 10
-    ) -> ToolResult:
+    def stop_container_result(self, container_id: str, timeout: int = 10) -> ToolResult:
         start = _now_ms()
         if dry_run.enabled:
             preview = dry_run.preview_payload(
                 tool="docker.stop",
-                args=redact_for_log(
-                    {"container": container_id_or_name, "timeout": timeout}
-                ),
+                args=redact_for_log({"id": container_id, "timeout": timeout}),
             )
             return ToolResult.ok_result(
                 stdout="[DRY-RUN] docker.stop",
@@ -342,34 +492,36 @@ class DockerExecutorToolResultMixin:
                 meta={"preview": preview},
             )
         try:
-            ok = self.stop_container(
-                container_id_or_name=container_id_or_name, timeout=timeout
-            )
+            self.stop_container(container_id=container_id, timeout=timeout)
             return ToolResult.ok_result(
-                stdout=str(ok),
+                stdout="ok",
                 exit_code=0,
                 latency_ms=_now_ms() - start,
-                meta={"container": container_id_or_name},
+                meta={"id": container_id},
             )
         except Exception as e:
             return ToolResult.err_result(
                 error_type=_errtype(e),
                 stderr=str(e),
                 latency_ms=_now_ms() - start,
-                meta={"container": container_id_or_name},
+                meta={"id": container_id},
             )
 
     def exec_in_container_result(
         self,
-        container_id_or_name: str,
+        container_id: str,
         cmd: List[str] | str,
-        timeout: Optional[int] = None,
+        *,
+        workdir: Optional[str] = None,
+        user: Optional[str] = None,
     ) -> ToolResult:
         start = _now_ms()
         if dry_run.enabled:
             preview = dry_run.preview_payload(
                 tool="docker.exec",
-                args=redact_for_log({"container": container_id_or_name, "cmd": cmd}),
+                args=redact_for_log(
+                    {"id": container_id, "cmd": cmd, "cwd": workdir, "user": user}
+                ),
             )
             return ToolResult.ok_result(
                 stdout="[DRY-RUN] docker.exec",
@@ -377,36 +529,43 @@ class DockerExecutorToolResultMixin:
                 meta={"preview": preview},
             )
         try:
-            rc, out = self.exec_in_container(
-                container_id_or_name=container_id_or_name, cmd=cmd, timeout=timeout
+            rc, stdout, stderr = self.exec_in_container(
+                container_id=container_id, cmd=cmd, workdir=workdir, user=user
             )
-            return ToolResult.ok_result(
-                stdout=out,
-                exit_code=int(rc),
+            meta = {
+                "id": container_id,
+                "cmd": cmd,
+                "cwd": workdir,
+                "user": user,
+                "rc": rc,
+            }
+            if rc == 0:
+                return ToolResult.ok_result(
+                    stdout=stdout, exit_code=rc, latency_ms=_now_ms() - start, meta=meta
+                )
+            return ToolResult.err_result(
+                error_type="Runtime",
+                stderr=stderr or stdout,
                 latency_ms=_now_ms() - start,
-                meta={"container": container_id_or_name},
+                meta=meta,
             )
         except Exception as e:
             return ToolResult.err_result(
                 error_type=_errtype(e),
                 stderr=str(e),
                 latency_ms=_now_ms() - start,
-                meta={"container": container_id_or_name},
+                meta={"id": container_id, "cmd": cmd},
             )
 
     def copy_to_container_result(
-        self, container_id_or_name: str, src_path: str, dest_path: str
+        self, container_id: str, src_path: str | Path, dest_path: str | Path
     ) -> ToolResult:
         start = _now_ms()
         if dry_run.enabled:
             preview = dry_run.preview_payload(
                 tool="docker.cp_to",
                 args=redact_for_log(
-                    {
-                        "container": container_id_or_name,
-                        "src": src_path,
-                        "dest": dest_path,
-                    }
+                    {"id": container_id, "src": str(src_path), "dest": str(dest_path)}
                 ),
             )
             return ToolResult.ok_result(
@@ -415,38 +574,32 @@ class DockerExecutorToolResultMixin:
                 meta={"preview": preview},
             )
         try:
-            ok = self.copy_to_container(
-                container_id_or_name=container_id_or_name,
-                src_path=src_path,
-                dest_path=dest_path,
+            self.copy_to_container(
+                container_id=container_id, src_path=src_path, dest_path=dest_path
             )
             return ToolResult.ok_result(
-                stdout=str(ok),
+                stdout="ok",
                 exit_code=0,
                 latency_ms=_now_ms() - start,
-                meta={"container": container_id_or_name, "dest": dest_path},
+                meta={"id": container_id, "src": str(src_path), "dest": str(dest_path)},
             )
         except Exception as e:
             return ToolResult.err_result(
                 error_type=_errtype(e),
                 stderr=str(e),
                 latency_ms=_now_ms() - start,
-                meta={"container": container_id_or_name},
+                meta={"id": container_id, "src": str(src_path), "dest": str(dest_path)},
             )
 
     def copy_from_container_result(
-        self, container_id_or_name: str, src_path: str, dest_path: str
+        self, container_id: str, src_path: str | Path, dest_dir: str | Path
     ) -> ToolResult:
         start = _now_ms()
         if dry_run.enabled:
             preview = dry_run.preview_payload(
                 tool="docker.cp_from",
                 args=redact_for_log(
-                    {
-                        "container": container_id_or_name,
-                        "src": src_path,
-                        "dest": dest_path,
-                    }
+                    {"id": container_id, "src": str(src_path), "dest": str(dest_dir)}
                 ),
             )
             return ToolResult.ok_result(
@@ -455,23 +608,21 @@ class DockerExecutorToolResultMixin:
                 meta={"preview": preview},
             )
         try:
-            ok = self.copy_from_container(
-                container_id_or_name=container_id_or_name,
-                src_path=src_path,
-                dest_path=dest_path,
+            dest = self.copy_from_container(
+                container_id=container_id, src_path=src_path, dest_dir=dest_dir
             )
             return ToolResult.ok_result(
-                stdout=str(ok),
+                stdout=str(dest),
                 exit_code=0,
                 latency_ms=_now_ms() - start,
-                meta={"container": container_id_or_name, "src": src_path},
+                meta={"id": container_id, "src": str(src_path), "dest": str(dest_dir)},
             )
         except Exception as e:
             return ToolResult.err_result(
                 error_type=_errtype(e),
                 stderr=str(e),
                 latency_ms=_now_ms() - start,
-                meta={"container": container_id_or_name},
+                meta={"id": container_id, "src": str(src_path), "dest": str(dest_dir)},
             )
 
 

@@ -13,6 +13,11 @@ from aegis.utils.dryrun import dry_run
 from aegis.utils.redact import redact_for_log
 import time
 import re
+from aegis.utils.exec_common import (
+    run_subprocess as _safe_run_subprocess,
+    now_ms as _common_now_ms,
+    map_exception_to_error_type as _common_map_error,
+)
 
 logger = setup_logger(__name__)
 
@@ -36,7 +41,7 @@ def _sanitize_cli(command_str: str) -> str:
         flags=re.IGNORECASE,
     )
 
-    # Authorization: Bearer xxxx  |  Authorization=Bearer xxxx
+    # Authorization: Bearer <token>
     s = re.sub(
         r"(Authorization[:=]\s*Bearer\s+)([^\s]+)",
         r"\1********",
@@ -82,33 +87,20 @@ class LocalExecutor:
         :return: A tuple of (returncode, stdout, stderr).
         :rtype: Tuple[int, str, str]
         """
-        # Prepare the command
-        if not shell:
-            cmd_to_log = shlex.split(command_str)
-            cmd_arg = cmd_to_log
-        else:
-            # When using shell=True, pass a string; for logging, keep the string as-is.
-            cmd_to_log = command_str
-            cmd_arg = command_str
 
-        # Redacted preview to logs only
+        # Use hardened shared runner; preserve original API (rc, stdout, stderr)
         try:
-            preview = _sanitize_cli(command_str if shell else " ".join(cmd_to_log))
-            logger.info(f"Executing local command (shell={shell}): {preview}")
-        except Exception:
-            logger.info(f"Executing local command (shell={shell})")
-
-        try:
-            result = subprocess.run(
-                cmd_arg,  # type: ignore
-                shell=shell,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-                encoding="utf-8",
-                errors="surrogateescape",
-            )
+            if not shell:
+                # If not using shell, tokenize so semantics remain the same
+                argv = shlex.split(command_str)
+                res = _safe_run_subprocess(
+                    argv, timeout=timeout, allow_shell=False, text_mode=True
+                )
+            else:
+                # Caller explicitly requested shell semantics—opt in
+                res = _safe_run_subprocess(
+                    command_str, timeout=timeout, allow_shell=True, text_mode=True
+                )
         except subprocess.TimeoutExpired as e:
             logger.error(
                 f"Local command timed out after {timeout} seconds: {_sanitize_cli(command_str)}"
@@ -116,27 +108,24 @@ class LocalExecutor:
             raise ToolExecutionError(
                 f"Local command timed out after {timeout} seconds"
             ) from e
-        except Exception as e:
-            logger.error(
-                f"Error executing local command: {_sanitize_cli(command_str)} -> {e}"
-            )
-            raise ToolExecutionError(f"Error executing local command: {e}") from e
 
-        stdout = result.stdout or ""
-        stderr = result.stderr or ""
-        return result.returncode, stdout, stderr
+        # Map back to prior tuple contract
+        rc = res.returncode if res.returncode is not None else 1
+        stdout = res.stdout.decode("utf-8", "replace")
+        stderr = res.stderr.decode("utf-8", "replace")
+        return rc, stdout, stderr
 
     def run(
         self, command: str, *, timeout: Optional[int] = None, shell: bool = False
     ) -> str:
         """
-        Execute a local command and return its output. Raises ToolExecutionError if RC != 0.
+        Execute a command and return combined stdout (and stderr on failure).
 
-        :param command: Command to execute.
+        :param command: The command to run.
         :type command: str
-        :param timeout: Optional timeout override; defaults to self.default_timeout.
+        :param timeout: Optional timeout in seconds. Defaults to instance's default_timeout.
         :type timeout: Optional[int]
-        :param shell: Execute the command within a shell.
+        :param shell: Whether to execute via system shell. Defaults to False.
         :type shell: bool
         :return: Combined stdout (and stderr on failure).
         :rtype: str
@@ -161,20 +150,21 @@ class LocalExecutor:
 
 
 # === ToolResult wrappers ===
-from typing import Optional
+from typing import Optional as _Opt
 
 
 def _now_ms() -> int:
-    return int(time.time() * 1000)
+    return _common_now_ms()
 
 
 def _error_type_from_exception(e: Exception) -> str:
     msg = str(e).lower()
-    if "timeout" in msg:
+    mapped = (_common_map_error(e) or "").lower()
+    if "timeout" in msg or mapped == "timeout":
         return "Timeout"
-    if "permission" in msg or "auth" in msg:
+    if "permission" in msg or "auth" in msg or mapped == "permission_denied":
         return "Auth"
-    if "not found" in msg or "no such file" in msg:
+    if "not found" in msg or "no such file" in msg or mapped == "not_found":
         return "NotFound"
     if "parse" in msg or "json" in msg:
         return "Parse"
@@ -183,14 +173,21 @@ def _error_type_from_exception(e: Exception) -> str:
 
 class LocalExecutorToolResultMixin:
     def run_result(
-        self, command: str, timeout: Optional[int] = None, shell: bool = False
+        self,
+        command: str,
+        *,
+        timeout: _Opt[int] = None,
+        shell: bool = False,
     ) -> ToolResult:
         start = _now_ms()
+
+        # Dry-run path returns a preview rather than executing
         if dry_run.enabled:
             preview = dry_run.preview_payload(
                 tool="local.exec",
                 args=redact_for_log(
                     {
+                        "executor": "local",
                         "command": _sanitize_cli(command),
                         "shell": shell,
                         "timeout": timeout,

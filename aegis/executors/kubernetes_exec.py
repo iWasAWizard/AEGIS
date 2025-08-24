@@ -15,6 +15,10 @@ from aegis.utils.logger import setup_logger
 from aegis.schemas.tool_result import ToolResult
 from aegis.utils.dryrun import dry_run
 from aegis.utils.redact import redact_for_log
+from aegis.utils.exec_common import (
+    now_ms as _common_now_ms,
+    map_exception_to_error_type as _common_map_error,
+)  # <-- added
 
 logger = setup_logger(__name__)
 
@@ -238,16 +242,26 @@ class KubernetesExecutor:
 
 
 def _now_ms() -> int:
-    return int(time.time() * 1000)
+    # Delegate to shared clock for consistency/testability
+    return _common_now_ms()
 
 
 def _errtype(e: Exception) -> str:
+    """
+    Preserve existing labels while consulting the shared mapper for consistency.
+    """
     m = str(e).lower()
-    if "timeout" in m:
+    mapped = (_common_map_error(e) or "").lower()
+    if "timeout" in m or mapped == "timeout":
         return "Timeout"
-    if "forbidden" in m or "unauthorized" in m or "auth" in m:
+    if (
+        "forbidden" in m
+        or "unauthorized" in m
+        or "auth" in m
+        or mapped == "permission_denied"
+    ):
         return "Auth"
-    if "not found" in m or "404" in m:
+    if "not found" in m or "404" in m or mapped == "not_found":
         return "NotFound"
     if "parse" in m or "json" in m:
         return "Parse"

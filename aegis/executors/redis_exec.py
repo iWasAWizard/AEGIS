@@ -10,6 +10,10 @@ from aegis.schemas.tool_result import ToolResult
 from aegis.utils.dryrun import dry_run
 from aegis.utils.redact import redact_for_log
 import time
+from aegis.utils.exec_common import (
+    now_ms as _common_now_ms,
+    map_exception_to_error_type as _common_map_error,
+)
 
 logger = setup_logger(__name__)
 
@@ -115,19 +119,26 @@ class RedisExecutor:
 
 # === ToolResult wrappers ===
 def _now_ms() -> int:
-    return int(time.time() * 1000)
+    # Delegate to shared clock for consistency/testability
+    return _common_now_ms()
 
 
 def _error_type_from_exception(e: Exception) -> str:
+    """
+    Preserve existing labels while consulting the shared mapper for consistency.
+    """
     msg = str(e).lower()
-    if "timeout" in msg:
+    mapped = (_common_map_error(e) or "").lower()
+
+    if "timeout" in msg or mapped == "timeout":
         return "Timeout"
-    if "permission" in msg or "auth" in msg:
+    if "permission" in msg or "auth" in msg or mapped == "permission_denied":
         return "Auth"
-    if "not found" in msg or "no such" in msg:
+    if "not found" in msg or "no such" in msg or mapped == "not_found":
         return "NotFound"
     if "parse" in msg or "json" in msg:
         return "Parse"
+    # Fall back to prior default
     return "Runtime"
 
 

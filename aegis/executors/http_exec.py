@@ -5,6 +5,7 @@ Provides a client for making HTTP requests.
 from typing import Optional, Dict, Any
 
 import httpx
+from aegis.utils.http_client import HttpClient
 
 from aegis.exceptions import ToolExecutionError
 from aegis.utils.logger import setup_logger
@@ -38,7 +39,7 @@ class HttpExecutor:
         *,
         headers: Optional[Dict[str, str]] = None,
         params: Optional[Dict[str, Any]] = None,
-        data: Optional[str | bytes] = None,
+        data: Optional[Any] = None,
         json_payload: Optional[Dict[str, Any]] = None,
         timeout: Optional[int] = None,
     ) -> httpx.Response:
@@ -76,17 +77,36 @@ class HttpExecutor:
             )
         )
 
+        # Use the shared HttpClient under the hood; return an httpx.Response to keep API stable.
+        client = HttpClient(
+            base_url=None,  # we pass a fully-resolved URL below
+            timeout=httpx.Timeout(
+                connect=5.0, read=float(eff_timeout), write=float(eff_timeout), pool=5.0
+            ),
+            max_retries=2,
+            backoff_factor=0.25,
+            verify=True,
+            headers=headers or {},
+        )
+
         try:
-            async with httpx.AsyncClient(timeout=eff_timeout) as client:
-                response = await client.request(
-                    method.upper(),
-                    target_url,
-                    headers=headers,
-                    params=params,
-                    data=data,
-                    json=json_payload,
-                )
-                return response
+            resp = await client.arequest(
+                method=method,
+                url=target_url,
+                params=params,
+                headers=headers,
+                data=data,
+                json_body=json_payload,
+                timeout=None,  # per-request timeout already set on the client above
+            )
+            # Build a real httpx.Response so upstream code relying on .status_code/.text continues to work.
+            req = httpx.Request(method.upper(), resp.url)
+            return httpx.Response(
+                resp.status_code,
+                content=(resp.text or "").encode("utf-8"),
+                headers=resp.headers,
+                request=req,
+            )
         except httpx.TimeoutException as e:
             logger.error(
                 "HTTP request timed out after %ss: %s %s | headers=%s params=%s",
@@ -104,15 +124,16 @@ class HttpExecutor:
                 "HTTP request failed: %s %s -> %s | headers=%s params=%s",
                 method.upper(),
                 target_url,
-                e,
+                str(e),
                 redact_for_log(headers or {}),
                 redact_for_log(params or {}),
             )
-            raise ToolExecutionError(f"HTTP request failed: {e}") from e
-
-
-# === ToolResult wrappers ===
-from typing import Optional, Dict, Any
+            raise ToolExecutionError(f"HTTP request failed: {str(e)}") from e
+        finally:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
 
 
 def _now_ms() -> int:
