@@ -14,21 +14,21 @@ The AEGIS framework is engineered as a modular, state-of-the-art autonomous agen
 
 An agent task in AEGIS progresses through a well-defined, observable lifecycle, orchestrated by a series of specialized components. This flow ensures that each stage of the agent's operation is both auditable and robust.
 
-```
+```text
 +------------------+   1. Launch Request    +----------------------+   2. Configuration Synthesis   +-----------------+
 |   Client (UI/CLI)|---------------------->|  FastAPI API Layer   |------------------------------>|  Config Loader  |
 +------------------+                        +----------------------+                              +-----------------+
-                                                        | 3. Graph Compilation                          ^
-                                                        v                                               |
+                                | 3. Graph Compilation                          ^
+                                v                                               |
 +------------------+   6. Final Response    +----------------------+                              +-----------------+
 | LaunchResponse   |<----------------------|  AgentGraph (Pregel) |<-------4. Invocation--------|    TaskState    |
 +------------------+                        +----------------------+                              +-----------------+
-                                                        | 5. Core Execution Loop (Stateful, Cyclical)
-                                                        v
-       +-------------------------+      +-------------------------+      +-------------------------+
-       |   reflect_and_plan()    |----->|      execute_tool()     |----->|     verify_outcome()    |
-       | (Instructor-Validated)  |      | (Executor-Powered)      |      | (Instructor-Validated)  |
-       +-------------------------+      +-------------------------+      +-------------------------+
+                                | 5. Core Execution Loop (Stateful, Cyclical)
+                                v
+    +-------------------------+      +-------------------------+      +-------------------------+
+    |   reflect_and_plan()    |----->|      execute_tool()     |----->|     verify_outcome()    |
+    | (Instructor-Validated)  |      | (Executor-Powered)      |      | (Instructor-Validated)  |
+    +-------------------------+      +-------------------------+      +-------------------------+
 ```
 
 1.  **Initiation (Launch Request):** A task is initiated via a `POST` request to the `/api/launch` endpoint. This request contains the `LaunchRequest` payload—a Pydantic model that encapsulates the task's high-level goal and all runtime configurations.

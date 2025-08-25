@@ -96,7 +96,7 @@ With both repositories configured, you can now start the AEGIS service.
 ```bash
 # Make sure you are in the AEGIS directory
 docker compose up --build -d
-```
+```bash
 
 ## Step 4: Run a Fully Local Task
 
@@ -129,3 +129,27 @@ To stop the entire stack, you can run the `down` command in both repositories:
 # In the BEND directory
 ./scripts/manage.sh down
 ```
+
+## Verification & Troubleshooting
+
+- Confirm network connectivity between AEGIS and BEND by inspecting Docker networks:
+
+```bash
+docker network ls
+docker network inspect bend_default  # or the network created by BEND
+```
+
+- Verify services are healthy:
+
+```bash
+# BEND health
+./scripts/manage.sh healthcheck
+
+# AEGIS
+docker compose logs aegis --tail=200
+curl -s http://localhost:8000/api/backends | jq .
+```
+
+- If model downloads are slow or fail, check available disk space and network; large GGUF/model files can be 10s of GB.
+
+- If AEGIS cannot reach `vllm` or `redis`, inspect the `backends.yaml` entries and ensure hostnames match Docker service names in the BEND compose network.

@@ -12,7 +12,7 @@ The AEGIS framework provides a powerful set of building blocks. This guide goes 
 Instead of assuming a tool worked correctly, this pattern adds a verification step.
 
 1.  **Plan:** The agent's LLM generates a plan that includes not just the main action, but also a `verification_tool_name`.
-    -   *Example Plan:* "I will use `run_remote_command` to start the web service. For verification, I will use `check_port_status` on port 80."
+    - *Example Plan:* "I will use `run_remote_command` to start the web service. For verification, I will use `check_port_status` on port 80."
 2.  **Execute:** AEGIS runs the main tool (`run_remote_command`).
 3.  **Verify:** The `verify_outcome` step then runs the specified verification tool (`check_port_status`). It sends the original goal, the main tool's output, and the verification tool's output to the LLM and asks for a simple judgment: `success` or `failure`.
 4.  **Remediate (If Needed):** If the judgment is `failure`, the graph routes to the `remediate_plan` step. The agent is shown the error and asked to formulate a new plan to fix the problem.
@@ -47,9 +47,9 @@ A high-level "Orchestrator" agent is given a complex goal. Its primary job is no
 
 -   **Goal:** `"Perform a security audit on the machine 'ubuntu-qemu'. First, discover its open ports and running services. Then, check its configuration against the company's security baseline document. Finally, generate a report."`
 -   **Agents:**
-    -   `OrchestratorAgent` (using `orchestrator.yaml`)
-    -   `DiscoveryAgent` (a preset with only `nmap` and `scapy` tools)
-    -   `ComplianceAgent` (a preset with only `read_remote_file` and `retrieve_knowledge` tools)
+    - `OrchestratorAgent` (using `orchestrator.yaml`)
+    - `DiscoveryAgent` (a preset with only `nmap` and `scapy` tools)
+    - `ComplianceAgent` (a preset with only `read_remote_file` and `retrieve_knowledge` tools)
 -   **Execution Flow:**
     1.  **Orchestrator** receives the goal. It plans its first step: delegate discovery.
     2.  It calls `dispatch_subtask_to_agent(prompt="Find all open ports and services on 'ubuntu-qemu'", preset="discovery_agent")`.

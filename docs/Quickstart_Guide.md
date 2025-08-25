@@ -30,7 +30,7 @@ First, clone the AEGIS repository to your local machine and navigate into the di
 ```bash
 git clone https://github.com/your-username/AEGIS.git
 cd AEGIS
-```
+```bash
 
 ## Step 2: Configure Your Backend Connection
 
@@ -66,6 +66,7 @@ AEGIS needs to know how to connect to your chosen AI backend. All backend config
 
 You're now ready to build and run the AEGIS container. This command reads your `docker-compose.yml` and `.env` files to start the server correctly.
 
+docker compose up --build -d
 ```bash
 docker compose up --build -d
 ```
@@ -78,7 +79,23 @@ Once the service is running, you can access the AEGIS dashboard in your browser.
 
 -   Navigate to **`http://localhost:8000`**
 
-You should see the main dashboard. To verify that the agent is ready, click on the **"Tools"** tab. You should see a long list of all the built-in capabilities the agent has, like `run_local_command`, `read_file`, and `get_public_ip`. This confirms that the application has started and the tool registry is populated.
+You should see the main dashboard. To verify that the agent is ready:
+
+- Open the **"Tools"** tab and confirm the tool registry is populated (you should see `run_local_command`, `read_file`, `get_public_ip`, etc.).
+- Inspect the logs for successful startup messages. If running with Docker Compose:
+
+docker compose logs aegis --tail=200
+```bash
+docker compose logs aegis --tail=200
+```
+
+- Confirm the HTTP API responds:
+
+```bash
+curl -s http://localhost:8000/api/backends | jq .
+```
+
+If any of these checks fail, consult the `logs/` directory and the container logs for stack traces.
 
 ## Step 5: Run Your First Task
 
@@ -109,3 +126,9 @@ To stop the AEGIS service at any time, run:
 ```bash
 docker compose down
 ```
+
+## Troubleshooting common startup issues
+
+- Ports already in use: Ensure `8000` is free or change `docker-compose.yml` to map to a different host port.
+- Missing environment variables: Ensure `.env` has the required keys and that `docker compose` is started from the repo root.
+- Slow model pull: If the backend needs to download models (BEND), the first start may take many minutes; check network activity and the BEND logs.

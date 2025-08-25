@@ -4,10 +4,10 @@ This document provides a detailed reference for all the core YAML configuration 
 
 ## Table of Contents
 
-1.  [`config.yaml`](#1-configyaml) - System-wide defaults and paths.
-2.  [`backends.yaml`](#2-backendsyaml) - Defines connections to AI backends.
-3.  [`machines.yaml`](#3-machinesyaml) - Defines remote machines for tools.
-4.  [Agent Presets (`presets/*.yaml`)](#4-agent-presets-presetsyaml) - Defines agent workflows.
+1. **`config.yaml`** - System-wide defaults and paths.
+2. **`backends.yaml`** - Defines connections to AI backends.
+3. **`machines.yaml`** - Defines remote machines for tools.
+4. **Agent Presets (`presets/*.yaml`)** - Defines agent workflows.
 
 ---
 
@@ -19,20 +19,20 @@ This is the main configuration file for the AEGIS application. It defines system
 
 This section specifies the default runtime parameters for any agent task. These values are used unless they are overridden by a specific agent preset or a launch-time request.
 
--   **`backend_profile`** `(string)`: The default backend profile to use from `backends.yaml`.
-    -   *Example:* `vllm_local`
--   **`llm_model_name`** `(string)`: The default model key from `models.yaml` to use for prompt formatting.
-    -   *Example:* `llama3`
--   **`iterations`** `(integer)`: The default maximum number of plan-execute steps an agent can take before the task is automatically terminated.
-    -   *Example:* `15`
--   **`llm_planning_timeout`** `(integer)`: The default timeout in seconds for waiting for a response from the LLM.
-    -   *Example:* `300`
--   **`max_tokens_to_generate`** `(integer)`: The default maximum number of new tokens the LLM should generate for a plan.
-    -   *Example:* `2048`
--   **`tool_timeout`** `(integer)`: The default timeout in seconds for any tool execution.
-    -   *Example:* `120`
--   **`safe_mode`** `(boolean)`: The default safety mode. If `true`, tools marked as unsafe cannot be run.
-    -   *Example:* `true`
+- **`backend_profile`** `(string)`: The default backend profile to use from `backends.yaml`.
+    - *Example:* `vllm_local`
+- **`llm_model_name`** `(string)`: The default model key from `models.yaml` to use for prompt formatting.
+    - *Example:* `llama3`
+- **`iterations`** `(integer)`: The default maximum number of plan-execute steps an agent can take before the task is automatically terminated.
+    - *Example:* `15`
+- **`llm_planning_timeout`** `(integer)`: The default timeout in seconds for waiting for a response from the LLM.
+    - *Example:* `300`
+- **`max_tokens_to_generate`** `(integer)`: The default maximum number of new tokens the LLM should generate for a plan.
+    - *Example:* `2048`
+- **`tool_timeout`** `(integer)`: The default timeout in seconds for any tool execution.
+    - *Example:* `120`
+- **`safe_mode`** `(boolean)`: The default safety mode. If `true`, tools marked as unsafe cannot be run.
+    - *Example:* `true`
 
 ### `paths`
 
@@ -44,21 +44,47 @@ This section defines the relative paths where AEGIS will store its output.
 -   **`logs`**: Directory for structured `.jsonl` log files.
 -   **`index`**: Directory for the RAG memory index files.
 
+### Verification & troubleshooting
+
+- To verify that AEGIS is reading `config.yaml`, start the service and check the startup logs for a `Loaded config` line. If you have `docker compose` running, use:
+
+docker compose logs aegis | tail -n 200
+```bash
+docker compose logs aegis | tail -n 200
+```
+
+- If the application cannot find a path (for example, `reports/`), it will attempt to create the directory at startup and will emit an `ERROR` log if it fails due to permissions.
+
 ### `services`
 
 This section defines the internal URLs for connecting to services provided by a backend stack like BEND.
 
--   **`redis_url`** `(string)`: The connection URL for the Redis server used for long-term memory.
-    -   *Example:* `redis://redis:6379/0`
--   **`guardrails_url`** `(string)`: The URL for the NeMo Guardrails server's chat completion endpoint.
-    -   *Example:* `http://nemoguardrails:8000/v1/chat/completions`
+- **`redis_url`** `(string)`: The connection URL for the Redis server used for long-term memory.
+    - *Example:* `redis://redis:6379/0`
+- **`guardrails_url`** `(string)`: The URL for the NeMo Guardrails server's chat completion endpoint.
+    - *Example:* `http://nemoguardrails:8000/v1/chat/completions`
 
 ### `logging`
 
--   **`level`** `(string)`: The minimum log level to output.
-    -   *Values:* `debug`, `info`, `warning`, `error`
+- **`level`** `(string)`: The minimum log level to output.
+    - *Values:* `debug`, `info`, `warning`, `error`
 
 ---
+
+## Quick config keys reference
+
+This compact table lists common `config.yaml` keys, types, and typical examples for quick copy-paste.
+
+| Key | Type | Example | Notes |
+|---|---:|---|---|
+| `defaults.backend_profile` | string | `vllm_local` | Default backend profile from `backends.yaml` |
+| `defaults.llm_model_name` | string | `llama3` | Model key from `models.yaml` |
+| `defaults.iterations` | int | `15` | Max plan-execute cycles |
+| `paths.reports` | string | `reports/` | Where provenance and summaries are stored |
+| `paths.artifacts` | string | `artifacts/` | Tool-created files go here |
+| `logging.level` | string | `info` | Log verbosity |
+| `logging.redaction` | object | `paths: ['/secrets/']` | Rules for redacting logs |
+
 
 ## 2. `backends.yaml`
 
@@ -66,33 +92,33 @@ This file defines all the AI backends that AEGIS can connect to. Each entry is a
 
 ### Common Fields for All Profiles
 
--   **`profile_name`** `(string)`: A unique, human-readable name for the profile.
-    -   *Example:* `vllm_local`
--   **`type`** `(string)`: The type of provider to use. This determines which other fields are required.
-    -   *Values:* `vllm`, `ollama`, `openai`
+- **`profile_name`** `(string)`: A unique, human-readable name for the profile.
+    - *Example:* `vllm_local`
+- **`type`** `(string)`: The type of provider to use. This determines which other fields are required.
+    - *Values:* `vllm`, `ollama`, `openai`
 
 ### `vllm` Provider
 
 -   **`llm_url`** `(string)`: The full URL to the vLLM server's OpenAI-compatible chat completions endpoint.
-    -   *Example:* `http://vllm:8000/v1/chat/completions`
+    - *Example:* `http://vllm:8000/v1/chat/completions`
 -   **`model`** `(string)`: The model name that vLLM is serving.
-    -   *Example:* `aegis-agent-model`
+    - *Example:* `aegis-agent-model`
 -   *(...and other optional LLM parameters like `temperature`, `top_p`, etc.)*
 
 ### `ollama` Provider
 
--   **`llm_url`** `(string)`: The base URL for the Ollama API.
-    -   *Example:* `http://ollama:11434/api/chat`
--   **`model`** `(string)`: The name of the model to use from Ollama (e.g., 'llama3:instruct').
--   *(...and other optional LLM parameters)*
+- **`llm_url`** `(string)`: The base URL for the Ollama API.
+    - *Example:* `http://ollama:11434/api/chat`
+- **`model`** `(string)`: The name of the model to use from Ollama (e.g., 'llama3:instruct').
+- *(...and other optional LLM parameters)*
 
 ### `openai` Provider
 
 -   **`model`** `(string)`: The OpenAI model name to use.
-    -   *Example:* `gpt-4-turbo`
--   **`api_key`** `(string)`: Your OpenAI API key. Should use environment variable substitution.
-    -   *Example:* `${OPENAI_API_KEY}`
--   *(...and other fields for TTS/STT models)*
+    - *Example:* `gpt-4-turbo`
+- **`api_key`** `(string)`: Your OpenAI API key. Should use environment variable substitution.
+    - *Example:* `${OPENAI_API_KEY}`
+- *(...and other fields for TTS/STT models)*
 
 ---
 
@@ -100,13 +126,18 @@ This file defines all the AI backends that AEGIS can connect to. Each entry is a
 
 This file defines remote physical or virtual machines that the agent can target with certain tools (e.g., `run_remote_command`). Each top-level key is a unique machine name.
 
--   **`name`** `(string)`: The agent-facing name of the machine.
--   **`ip`** `(string)`: The IP address or hostname.
--   **`platform`** `(string)`: The operating system. *Values:* `linux`, `windows`, `mac`.
--   **`username`** `(string)`: The username for SSH/WinRM connections.
--   **`password`** `(string)`: The password. Should use environment variable substitution.
-    -   *Example:* `${ROOT_PASSWORD}`
--   **`ssh_port`** `(integer, optional)`: The SSH port if not 22.
+- **`name`** `(string)`: The agent-facing name of the machine.
+- **`ip`** `(string)`: The IP address or hostname.
+- **`platform`** `(string)`: The operating system. *Values:* `linux`, `windows`, `mac`.
+- **`username`** `(string)`: The username for SSH/WinRM connections.
+- **`password`** `(string)`: The password. Should use environment variable substitution.
+    - *Example:* `${ROOT_PASSWORD}`
+- **`ssh_port`** `(integer, optional)`: The SSH port if not 22.
+
+### Validation tips
+
+- Use `ssh -vvv` from the host that runs AEGIS to verify connectivity to `machines.yaml` entries.
+- For Windows targets, ensure WinRM is configured and the `platform` field is set to `windows`.
 
 ---
 

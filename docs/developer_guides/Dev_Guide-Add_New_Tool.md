@@ -56,7 +56,7 @@ class GetPublicIpInput(BaseModel):
     service_url: str = Field(
         default="https://api.ipify.org",
         description="The URL of the API service to query for the public IP address."
-    )```
+        )
 
 By using a Pydantic model, we get free validation, type safety, and clear documentation. The agent's planner *must* provide a valid string for this argument, or the tool will fail with a clear validation error before it even runs.
 
@@ -142,59 +142,73 @@ def get_public_ip(input_data: GetPublicIpInput) -> str:
 
 You don't need to run the full agent to make sure your tool is working.
 
-1.  **Validate the File:**
     Use the CLI to check for syntax errors and correct registration.
-    ```bash
-    python -m aegis.cli validate-tool plugins/get_public_ip.py
-    ```
-    You should see a `Validation Successful!` message.
 
-2.  **Write a Simple Unit Test:**
-    Create a new file in `aegis/tests/tools/plugins/` (you may need to create the `plugins` folder) named `test_get_public_ip.py`. Here's a simple test using `pytest` and mocking.
+```bash
+python -m aegis.cli validate-tool plugins/get_public_ip.py
+```
 
-    ```python
-    # aegis/tests/tools/plugins/test_get_public_ip.py
-    from unittest.mock import MagicMock
-    import pytest
-    from plugins.get_public_ip import get_public_ip, GetPublicIpInput
+You should see a `Validation Successful!` message.
 
-    @pytest.fixture
-    def mock_http_executor(monkeypatch):
-        mock_instance = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = "123.45.67.89"
-        mock_instance.request.return_value = mock_response
+Create a new file in `aegis/tests/tools/plugins/` (you may need to create the `plugins` folder) named `test_get_public_ip.py`. Here's a simple test using `pytest` and mocking.
 
-        mock_class = MagicMock(return_value=mock_instance)
-        monkeypatch.setattr("plugins.get_public_ip.HttpExecutor", mock_class)
-        return mock_instance
+```python
+# aegis/tests/tools/plugins/test_get_public_ip.py
+from unittest.mock import MagicMock
+import pytest
+from plugins.get_public_ip import get_public_ip, GetPublicIpInput
 
-    def test_get_public_ip_success(mock_http_executor):
-        input_data = GetPublicIpInput()
-        result = get_public_ip(input_data)
-        assert result == "123.45.67.89"
-        mock_http_executor.request.assert_called_once_with(method="GET", url="https://api.ipify.org")
-    ```
-    You can run this test with `pytest aegis/tests/tools/plugins/test_get_public_ip.py`.
 
+@pytest.fixture
+def mock_http_executor(monkeypatch):
+    mock_instance = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = "123.45.67.89"
+    mock_instance.request.return_value = mock_response
+
+    mock_class = MagicMock(return_value=mock_instance)
+    monkeypatch.setattr("plugins.get_public_ip.HttpExecutor", mock_class)
+    return mock_instance
+
+
+def test_get_public_ip_success(mock_http_executor):
+    input_data = GetPublicIpInput()
+    result = get_public_ip(input_data)
+    assert result == "123.45.67.89"
+    mock_http_executor.request.assert_called_once_with(method="GET", url="https://api.ipify.org")
+
+You can run this test with `pytest aegis/tests/tools/plugins/test_get_public_ip.py`.
+
+- Go to `http://localhost:8000` and click the **"Tools"** tab.
+- You should see your new tool, `get_public_ip`, in the inventory.
+- Go to the **"Launch"** tab.
+- Give the agent a prompt that requires your new tool:
+
+    > `What is my public IP address?`
+- Launch the task.
 ## Step 5: Use Your Tool
 
 Now, your tool is ready to be used by the agent.
 
-1.  **Start AEGIS:**
-    ```bash
-    docker compose up --build
-    ```
+1. **Start AEGIS:**
 
-2.  **Verify Registration in the UI:**
-    -   Go to `http://localhost:8000` and click the **"Tools"** tab.
-    -   You should see your new tool, `get_public_ip`, in the inventory.
+```bash
+docker compose up --build
+```
 
-3.  **Give the Agent a Task:**
-    -   Go to the **"Launch"** tab.
-    -   Give the agent a prompt that requires your new tool:
+
+1. **Verify Registration in the UI:**
+
+    - Go to `http://localhost:8000` and click the **"Tools"** tab.
+    - You should see your new tool, `get_public_ip`, in the inventory.
+
+1. **Give the Agent a Task:**
+
+    - Go to the **"Launch"** tab.
+    - Give the agent a prompt that requires your new tool:
+
         > `What is my public IP address?`
-    -   Launch the task.
+    - Launch the task.
 
 The agent will see your new tool in its list of capabilities and correctly choose it to solve the task.
 

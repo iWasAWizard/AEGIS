@@ -40,7 +40,8 @@ class ExampleComBackendConfig(BaseBackendConfig):
     )
     api_key: str = Field(..., description="The API key for the Example.com service.")
     model: str = Field("example-model-v1", description="The model name to use.")
-    temperature: float = Field(0.5)```
+    temperature: float = Field(0.5)
+```
 
 ## Step 2: Implement the Provider Class
 
@@ -167,24 +168,28 @@ The final step is to teach AEGIS's factory functions how to recognize and instan
 
 Your new provider is now fully integrated. To use it:
 
-1.  **Add a Profile to `backends.yaml`:**
-    ```yaml
-    # aegis/backends.yaml
-    - profile_name: example_com_default
-      type: example_com
-      llm_url: "https://api.example.com/v1/completion"
-      api_key: ${EXAMPLE_COM_API_KEY}
-      model: "example-model-v1"
-    ```
+1. **Add a Profile to `backends.yaml`:**
 
-2.  **Add the Secret to `.env`:**
-    ```env
-    # AEGIS/.env
-    EXAMPLE_COM_API_KEY=ec-xxxxxxxxxxxx
-    ```
+```yaml
+# aegis/backends.yaml
+- profile_name: example_com_default
+    type: example_com
+    llm_url: "https://api.example.com/v1/completion"
+    api_key: ${EXAMPLE_COM_API_KEY}
+    model: "example-model-v1"
+```
 
-3.  **Use it:**
-    You can now select `"example_com_default"` as the "Backend Profile" in the AEGIS UI or in your task files. The framework will automatically load your new provider and use it to power the agent's reasoning.
+1. **Add the Secret to `.env`:**
+
+```env
+# AEGIS/.env
+EXAMPLE_COM_API_KEY=ec-xxxxxxxxxxxx
+```
+
+1. **Use it:**
+
+You can now select "example_com_default" as the "Backend Profile" in the AEGIS UI or in your task files. The framework will automatically load your new provider and use it to power the agent's reasoning.
+
 
 ---
 

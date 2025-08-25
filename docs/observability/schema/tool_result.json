@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AEGIS ToolResult",
+  "type": "object",
+  "properties": {
+    "tool_name": {"type": "string"},
+    "status": {"type": "string", "enum": ["success","failure","partial"]},
+    "output": {"type": ["string","object","null"]},
+    "stdout": {"type": ["string","null"]},
+    "stderr": {"type": ["string","null"]},
+    "exit_code": {"type": ["integer","null"]},
+    "artifacts": {"type": ["array","null"], "items": {"type":"string"}}
+  },
+  "additionalProperties": true
+}

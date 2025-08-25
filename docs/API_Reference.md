@@ -2,112 +2,104 @@
 
 The AEGIS API provides a set of RESTful endpoints for launching and managing autonomous agent tasks. It is served by a FastAPI application and uses Pydantic for strict data validation and serialization.
 
-The base URL for all endpoints described below is `http://localhost:8000/api`.
+Base URL: `http://localhost:8000/api`
 
 ---
 
-## **Primary Endpoint**
+## Primary endpoint
 
-### `POST /launch`
+### POST /launch
 
-This is the main endpoint for initiating a new agent task. It accepts a comprehensive JSON payload that defines the agent's goal and its complete configuration for the run. The request is synchronous and will hold the connection open until the agent has finished its task (or paused for human input), returning the final result.
+Initiate a new agent task. Accepts a `LaunchRequest` JSON payload. The endpoint is blocking: it will return when the agent completes or pauses waiting for human input.
 
-#### Request Body
+Request JSON (high-level)
 
-The request body must be a JSON object conforming to the `LaunchRequest` schema.
+- `task` (object, required)
+  - `prompt` (string, required)
+  - `task_id` (string, optional)
+- `config` (string|object, required)
+  - If a string, this must be a preset ID (for example, `verified_flow`).
+  - If an object, it must conform to `AgentConfig`.
+- `execution` (object, optional)
+  - `backend_profile` (string)
+  - `llm_model_name` (string)
+  - `iterations` (integer)
+  - `safe_mode` (boolean)
+  - `tool_allowlist` (array[string])
 
--   **`task`** `(object)`: **Required.** Contains the core details of the task.
-    -   `prompt` `(string)`: **Required.** The high-level, natural language goal for the agent.
-    -   `task_id` `(string, optional)`: A unique ID for the task. If not provided, a UUID will be generated.
--   **`config`** `(string or object)`: **Required.** Defines the agent's workflow.
-    -   If a `string`, it must be the ID of a preset from the `presets/` directory (e.g., `"default"`, `"verified_flow"`).
-    -   If an `object`, it must be a complete agent configuration that conforms to the `AgentConfig` schema.
--   **`execution`** `(object, optional)`: An object containing runtime overrides for this specific task. Any fields provided here will take precedence over the defaults in the chosen preset or `config.yaml`.
-    -   `backend_profile` `(string)`: The name of the backend profile from `backends.yaml` to use.
-    -   `llm_model_name` `(string)`: The key of the model from `models.yaml` to use.
-    -   `iterations` `(integer)`: The maximum number of steps the agent can take.
-    -   `safe_mode` `(boolean)`: Whether to block unsafe tools for this run.
-    -   `tool_allowlist` `(array of strings)`: A list of tool names to restrict the agent to for this run.
-    -   *(...and other fields from the `RuntimeExecutionConfig` schema)*
-
-#### Example Request
+Example request (JSON):
 
 ```json
 {
-  "task": {
-    "prompt": "Create a file named 'report.txt' and write the current date into it."
-  },
+  "task": { "prompt": "Create a file named 'report.txt' and write the current date into it." },
   "config": "verified_flow",
-  "execution": {
-    "backend_profile": "vllm_local",
-    "llm_model_name": "llama3",
-    "iterations": 10
-  }
+  "execution": { "backend_profile": "vllm_local", "iterations": 10 }
 }
-```
+```json
 
-#### Responses
+Responses
 
--   **`200 OK`**: The task completed successfully (or was successfully paused). The response body will be a `LaunchResponse` object.
+- 200 OK — `LaunchResponse` object
+  - `task_id` (string)
+  - `summary` (string, markdown)
+  - `status` (string: `COMPLETED` | `PAUSED` | `FAILURE`)
+  - `history` (array of step objects: `thought`, `tool_name`, `tool_args`, `tool_output`)
+- 400 Bad Request — payload validation error
+- 500 Internal Server Error — runtime error (e.g., PlannerError, ToolExecutionError)
 
-    -   **`task_id`** `(string)`: The unique ID for the completed task.
-    -   **`summary`** `(string)`: A human-readable, Markdown-formatted summary of the entire task. For a paused task, this will contain the agent's question to the human.
-    -   **`status`** `(string)`: The final status. Will be `"COMPLETED"` for a normal run, or `"PAUSED"` if the agent is waiting for human input.
-    -   **`history`** `(array of objects)`: A step-by-step log of the agent's execution. Each object in the array represents one step and contains:
-        -   `thought` `(string)`: The agent's reasoning for the step.
-        -   `tool_name` `(string)`: The name of the tool that was executed.
-        -   `tool_args` `(object)`: The arguments passed to the tool.
-        -   `tool_output` `(string)`: The stringified result from the tool.
+Quick example (curl, blocking launch):
 
--   **`400 Bad Request`**: The request payload failed validation (e.g., missing required fields, invalid preset name). The response detail will contain information about the error.
--   **`500 Internal Server Error`**: The agent encountered a critical, unrecoverable error during execution (e.g., a `PlannerError` or a `ToolExecutionError`). The response detail will contain the error message.
+```bash
+curl -s -X POST http://localhost:8000/api/launch \
+  -H "Content-Type: application/json" \
+  -d '{"task": {"prompt": "Write the current date to /tmp/date.txt"}, "config": "verified_flow", "execution": {"backend_profile": "vllm_local", "iterations": 5}}'
+```bash
 
 ---
 
-## **Human-in-the-Loop Endpoint**
+## Human-in-the-loop endpoint
 
-### `POST /resume`
+### POST /resume
 
-This endpoint is used to continue a task that has been paused by the agent using the `ask_human_for_input` tool.
+Resume a paused task (agent requested human input via `ask_human_for_input`).
 
-#### Request Body
+Request body
 
--   **`task_id`** `(string)`: **Required.** The ID of the paused task you wish to resume.
--   **`human_feedback`** `(string)`: **Required.** The text you want to provide to the agent as its new "observation."
+- `task_id` (string, required)
+- `human_feedback` (string, required)
 
-#### Example Request
+Example:
 
 ```json
 {
   "task_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
-  "human_feedback": "Yes, you have my permission to proceed with deleting the file."
+  "human_feedback": "Yes, you have my permission to proceed."
 }
-```
+```json
 
-#### Responses
+Responses
 
--   **`200 OK`**: The task was successfully resumed and has now completed. The response body will be a `LaunchResponse` object, identical in structure to the `/launch` endpoint's success response.
--   **`404 Not Found`**: The specified `task_id` does not correspond to a currently paused task.
+- 200 OK — resumed and completed; returns `LaunchResponse`
+- 404 Not Found — `task_id` not paused or unknown
 
 ---
 
-## **Informational Endpoints**
+## Informational endpoints
 
-These are `GET` endpoints used by the UI to populate its various panels.
+These `GET` endpoints are used by the UI.
 
--   **`GET /inventory`**: Returns a list of all available tools and their metadata, including their input schemas.
--   **`GET /presets`**: Returns a list of all available agent configuration presets.
--   **`GET /backends`**: Returns a list of all available backend profiles from `backends.yaml`.
--   **`GET /models?backend_profile=<name>`**: Returns the list of models available from the specified backend.
--   **`GET /artifacts`**: Returns a list of all completed tasks that have generated reports or artifacts.
--   **`GET /artifacts/{task_id}/summary`**: Returns the raw Markdown summary for a specific task.
--   **`GET /artifacts/{task_id}/provenance`**: Returns the raw JSON provenance report for a specific task.
+- GET `/inventory` — list tools and their input schemas
+- GET `/presets` — list agent presets
+- GET `/backends` — list backend profiles
+- GET `/models?backend_profile=<name>` — models for a backend
+- GET `/artifacts` — list artifact entries
+- GET `/artifacts/{task_id}/summary` — human-readable markdown summary
+- GET `/artifacts/{task_id}/provenance` — raw provenance JSON
 
-## **WebSocket Endpoint**
+---
 
-### `GET /ws/logs`
+## WebSocket
 
-Establishes a WebSocket connection for receiving real-time logs from the agent as it executes a task.
+### GET /ws/logs
 
--   **Protocol:** `ws` or `wss`
--   **Messages:** The server pushes plain text log messages to the client as they are generated. The connection is one-way (server-to-client).s
+WebSocket for real-time logs. Protocol: `ws` or `wss`. The server pushes JSON or plain text log messages. The connection is server-to-client.

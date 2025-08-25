@@ -8,9 +8,9 @@ The web UI is the easiest way to get started with AEGIS. It's a comprehensive da
 
 ### Accessing the UI
 
-Once you have the AEGIS stack running, simply open your browser and navigate to:
+Once you have the AEGIS stack running, open your browser and navigate to:
 
--   **`http://localhost:8000`**
+- **`http://localhost:8000`**
 
 ### Exploring the Tabs
 
@@ -26,20 +26,22 @@ This is your main landing page. It provides an at-a-glance view of the system, i
 
 This is the most important tab—it's the agent's control panel. Here's how to use it:
 
-1.  **Agent Preset:** Choose the agent's "personality" or workflow from this dropdown. The `Verified Agent Flow`, for example, is a robust workflow that double-checks its own work.
-2.  **Backend Profile:** Select which AI backend you want the agent to use for this task (e.g., `vllm_local` to use your BEND stack, or `openai_gpt4` to use OpenAI).
-3.  **Agent Model:** Choose which specific model you want the agent to use. This list is dynamically populated from the selected backend.
-4.  **Task Prompt:** This is where you give the agent its high-level goal. Be as descriptive as you need to be.
-5.  **Enable Safe Mode:** A checkbox that, when enabled, prevents the agent from using any tools marked as "unsafe" (like `run_local_command`).
-6.  **Advanced: Execution Overrides:** An optional text box where you can provide a JSON object to override runtime settings for this specific task (e.g., `{"iterations": 20}`).
+1. **Agent Preset:** Choose the agent's "personality" or workflow from this dropdown. The `Verified Agent Flow`, for example, is a robust workflow that double-checks its own work.
+2. **Backend Profile:** Select which AI backend you want the agent to use for this task (e.g., `vllm_local` to use your BEND stack, or `openai_gpt4` to use OpenAI).
+3. **Agent Model:** Choose which specific model you want the agent to use. This list is dynamically populated from the selected backend.
+4. **Task Prompt:** This is where you give the agent its high-level goal. Be as descriptive as you need to be.
+5. **Enable Safe Mode:** A checkbox that, when enabled, prevents the agent from using any tools marked as "unsafe" (like `run_local_command`).
+6. **Advanced: Execution Overrides:** An optional text box where you can provide a JSON object to override runtime settings for this specific task (e.g., `{"iterations": 20}`).
 
 Once you click **"Launch Task"**, the right-hand **"Live Task Logs"** panel will stream the agent's internal monologue in real-time. When the task is complete, the final summary and a step-by-step history will appear on the left.
 
 **Human-in-the-Loop (HITL) Mode:**
+
 If you run a task with a preset like `human_in_the_loop`, the launch panel will transform when the agent needs your help.
--   The main form will be replaced by a **"Task Paused"** panel.
--   It will display the **Agent's Question**.
--   You can type your answer or instructions into the **"Your Response"** text area and click **"Resume Task"** to let the agent continue.
+
+- The main form will be replaced by a **"Task Paused"** panel.
+- It will display the **Agent's Question**.
+- You can type your answer or instructions into the **"Your Response"** text area and click **"Resume Task"** to let the agent continue.
 
 #### 🗺️ Graph
 
@@ -59,13 +61,14 @@ This provides a way to live-edit the core YAML configuration files (`backends.ya
 
 #### 📦 Artifacts
 
-This tab is an archive of all past task runs. You can see a list of every task and expand any of them to view:
--   **Summary:** A human-readable report of the task.
--   **Provenance:** A machine-readable JSON file containing a detailed, step-by-step log of the entire task, perfect for auditing and analysis.
+- **Summary:** A human-readable report of the task.
+- **Provenance:** A machine-readable JSON file containing a detailed, step-by-step log of the entire task, perfect for auditing and analysis.
 
 ---
 
-## Part 2: The Interactive Shell
+```text
+(aegis) > task run my_task.yaml
+```
 
 The interactive shell is a powerful tool for scripting and automation. Launch it with `python -m aegis`. All commands use a `noun verb` structure.
 
@@ -73,24 +76,27 @@ The interactive shell is a powerful tool for scripting and automation. Launch it
 
 Runs an agent task based on a YAML file.
 
-1.  **Create a Task File:**
-    Create a file named `my_task.yaml` with the following structure:
-    ```yaml
-    # my_task.yaml
-    task:
-      prompt: "Write a haiku about autonomous agents to a file named haiku.txt."
+1. **Create a Task File:**
+   Create a file named `my_task.yaml` with the following structure:
 
-    config: "default" # The preset to use (e.g., default, verified_flow)
+   ```yaml
+   # my_task.yaml
+   task:
+     prompt: "Write a haiku about autonomous agents to a file named haiku.txt."
 
-    execution:
-      backend_profile: "vllm_local" # The backend to use
-      llm_model_name: "llama3" # The model to use
-      iterations": 5
-    ```
+   config: "default" # The preset to use (e.g., default, verified_flow)
 
-2.  **Run the Task:**
-    ```    (aegis) > task run my_task.yaml
-    ```
+   execution:
+     backend_profile: "vllm_local" # The backend to use
+     llm_model_name: "llama3" # The model to use
+     iterations: 5
+   ```
+
+2. **Run the Task:**
+
+```text
+(aegis) > task run my_task.yaml
+```
 
 ### `task resume <task_id>`
 
@@ -105,4 +111,16 @@ Lists all available tools in a clean table format.
 A crucial safety check. This command proactively loads and validates all of your YAML configuration files and reports any errors.
 
 ### Other Commands
+
 The shell includes many other commands for managing presets, artifacts, and configuration. Use `help` to see them all, or `help <command>` for details on a specific command.
+
+## Quick CLI command reference
+
+| Command | Purpose |
+|---|---|
+| `task run <file.yaml>` | Run a task defined in YAML |
+| `task resume <task_id>` | Resume a paused task with human input |
+| `tool list` | Show all registered tools and input schemas |
+| `config validate` | Validate YAML config files and emit errors |
+| `artifact show <task_id>` | Open an artifact entry in the shell UI |
+| `preset list` | List available presets |

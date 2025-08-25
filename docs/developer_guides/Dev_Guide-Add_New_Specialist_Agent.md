@@ -34,8 +34,8 @@ Agent presets are defined as YAML files in the `presets/` directory.
 2.  **Define the Basic Structure:**
     Every preset needs a basic graph structure. For most specialists, the `default.yaml` preset is a perfect starting point. Copy its contents into your new file.
 
-    ```yaml
-    # presets/database_agent.yaml
+  ```yaml
+  # presets/database_agent.yaml
     name: "Database Specialist Agent"
     description: "A specialist agent that can only see and use database-related tools. It can answer questions by querying a SQL database."
     state_type: "aegis.agents.task_state.TaskState"
@@ -57,7 +57,7 @@ Agent presets are defined as YAML files in the `presets/` directory.
     condition_map:
       continue: "plan"
       end: "summarize"
-    ```
+  ```
 
 ## Step 3: Define the `tool_allowlist`
 
