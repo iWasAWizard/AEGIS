@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import sys
 import logging
-import argparse
 
-# --- CLI Log Level Configuration ---
+# --- CLI Log Level & Intercepted Flags ---
 # This logic MUST run before any other aegis modules are imported.
-# It ensures that the root logger is configured with the correct level
-# before any module-level loggers are instantiated.
+# It ensures the root logger is configured before module-level loggers exist.
 
-# Check if --debug flag is present in the arguments
+# Flags intercepted here (removed before passing to command processing):
+#   --debug      : sets root logger to DEBUG
+#   --dry-run    : enables global dry-run mode (no side-effectful executor calls)
+_INTERCEPT_FLAGS = {"--debug", "--dry-run"}
+
 is_debug_mode = "--debug" in sys.argv
 log_level = logging.DEBUG if is_debug_mode else logging.INFO
 
@@ -24,73 +26,71 @@ log_level = logging.DEBUG if is_debug_mode else logging.INFO
 logging.getLogger().setLevel(log_level)
 
 # Now that the log level is set, import and log the env knobs.
-from aegis.utils.env_report import log_env_knobs
+from aegis.utils.env_report import log_env_knobs  # noqa: E402
 
 log_env_knobs()  # uses its own logger if none is provided
 
-# Now that the log level is set, we can import the rest of the application.
-from aegis.shell import AegisShell
+# Import remaining pieces after logging has been configured.
+from aegis.shell import AegisShell  # noqa: E402
+
+try:
+    # Optional: only needed if --dry-run is used
+    from aegis.utils.dryrun import dry_run  # noqa: E402
+except Exception:  # pragma: no cover
+    dry_run = None  # type: ignore
+
+
+def _extract_flags(argv: list[str]) -> tuple[list[str], set[str]]:
+    """
+    Split out our process-level flags from the user command tokens.
+
+    Returns:
+        (cli_args_without_intercepted_flags, seen_flags)
+    """
+    seen = {flag for flag in argv if flag in _INTERCEPT_FLAGS}
+    filtered = [a for a in argv if a not in _INTERCEPT_FLAGS]
+    return filtered, seen
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Launches the AEGIS shell in interactive or one-shot mode.
+
+    Returns an integer exit code suitable for sys.exit().
     """
-    Launches the AEGIS shell in interactive or one-shot mode.
-    - Supports your original passthrough mode: `python -m aegis docker pull alpine`
-    - Supports explicit `-c/--command "..."` one-shot execution
-    - Supports `--no-intro` to suppress the banner
-    - Keeps `--debug` handling exactly as before
-    """
-    # Use provided argv or sys.argv[1:]
     argv = list(sys.argv[1:] if argv is None else argv)
 
-    # Strip our debug flag so it doesn't confuse argparse or cmd2
-    argv_wo_debug = [arg for arg in argv if arg != "--debug"]
+    # Strip intercept flags and record which were present
+    cli_args, seen = _extract_flags(argv)
 
-    # Top-level flags that affect launcher behavior only
-    parser = argparse.ArgumentParser(prog="python -m aegis", add_help=True)
-    parser.add_argument(
-        "-c",
-        "--command",
-        dest="command",
-        help='Run a single AEGIS CLI command and exit (e.g., -c "docker pull alpine")',
-    )
-    parser.add_argument(
-        "--no-intro",
-        action="store_true",
-        help="Suppress the intro banner in interactive mode",
-    )
-    # Parse only known flags; anything left is treated as a passthrough command
-    args, remainder = parser.parse_known_args(argv_wo_debug)
+    # Apply global dry-run if requested (before shell construction)
+    if "--dry-run" in seen and dry_run is not None:
+        try:
+            dry_run.enabled = True
+        except Exception:
+            # Non-fatal; continue without toggling
+            pass
 
     # Create an instance of the shell
     app = AegisShell()
-    if args.no_intro:
-        app.intro = None
 
+    # One-shot mode when arguments (other than our intercept flags) are present
+    if cli_args:
+        command_to_run = " ".join(cli_args)
+        # Use onecmd_plus_hooks to ensure startup() and other hooks run
+        app.onecmd_plus_hooks(command_to_run)
+        # Propagate status determined by CLI handlers via print_result()
+        return int(getattr(app, "_last_exit_code", 0))
+
+    # Interactive mode: start the command loop
     try:
-        # Explicit one-shot via -c/--command
-        if args.command:
-            app.onecmd_plus_hooks(args.command)
-            return 0
-
-        # Back-compat passthrough: any remaining tokens become a command
-        if remainder:
-            command_to_run = " ".join(remainder)
-            app.onecmd_plus_hooks(command_to_run)
-            return 0
-
-        # Interactive mode
         app.cmdloop()
-        return 0
-    except (KeyboardInterrupt, EOFError):
-        # Graceful exit on Ctrl+C / Ctrl+D
-        return 0
-    finally:
-        # Ensure cmd2 cleanup if available
+        return int(getattr(app, "_last_exit_code", 0))
+    except SystemExit as e:
+        # If cmd loop raised SystemExit, honor its code
         try:
-            app.shutdown()
+            return int(e.code)  # type: ignore[arg-type]
         except Exception:
-            pass
+            return 0
 
 
 if __name__ == "__main__":

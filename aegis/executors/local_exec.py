@@ -13,11 +13,7 @@ from aegis.utils.dryrun import dry_run
 from aegis.utils.redact import redact_for_log
 import time
 import re
-from aegis.utils.exec_common import (
-    run_subprocess as _safe_run_subprocess,
-    now_ms as _common_now_ms,
-    map_exception_to_error_type as _common_map_error,
-)
+from aegis.utils.exec_common import run_subprocess as _safe_run_subprocess
 
 logger = setup_logger(__name__)
 
@@ -150,21 +146,20 @@ class LocalExecutor:
 
 
 # === ToolResult wrappers ===
-from typing import Optional as _Opt
+from typing import Optional
 
 
 def _now_ms() -> int:
-    return _common_now_ms()
+    return int(time.time() * 1000)
 
 
 def _error_type_from_exception(e: Exception) -> str:
     msg = str(e).lower()
-    mapped = (_common_map_error(e) or "").lower()
-    if "timeout" in msg or mapped == "timeout":
+    if "timeout" in msg:
         return "Timeout"
-    if "permission" in msg or "auth" in msg or mapped == "permission_denied":
+    if "permission" in msg or "auth" in msg:
         return "Auth"
-    if "not found" in msg or "no such file" in msg or mapped == "not_found":
+    if "not found" in msg or "no such file" in msg:
         return "NotFound"
     if "parse" in msg or "json" in msg:
         return "Parse"
@@ -176,7 +171,7 @@ class LocalExecutorToolResultMixin:
         self,
         command: str,
         *,
-        timeout: _Opt[int] = None,
+        timeout: Optional[int] = None,
         shell: bool = False,
     ) -> ToolResult:
         start = _now_ms()
@@ -187,8 +182,7 @@ class LocalExecutorToolResultMixin:
                 tool="local.exec",
                 args=redact_for_log(
                     {
-                        "executor": "local",
-                        "command": _sanitize_cli(command),
+                        "cmd": _sanitize_cli(command),
                         "shell": shell,
                         "timeout": timeout,
                     }
@@ -196,13 +190,13 @@ class LocalExecutorToolResultMixin:
             )
             return ToolResult.ok_result(
                 stdout="[DRY-RUN] local.exec",
+                exit_code=0,
                 latency_ms=_now_ms() - start,
                 meta={"preview": preview},
             )
+
         try:
-            out = self.run(
-                command, timeout=timeout, shell=shell
-            )  # reuse existing behavior
+            out = self.run(command, timeout=timeout, shell=shell)
             return ToolResult.ok_result(
                 stdout=out,
                 exit_code=0,

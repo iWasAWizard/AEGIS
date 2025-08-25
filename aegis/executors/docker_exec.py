@@ -11,6 +11,8 @@ from pathlib import Path
 import io
 import tarfile
 import json
+import time
+import re
 from aegis.utils.exec_common import (
     now_ms as _common_now_ms,
     map_exception_to_error_type as _common_map_error,
@@ -297,50 +299,60 @@ def _make_tar_stream(src: str | Path, arcname: Optional[str] = None) -> io.Bytes
     return stream
 
 
-def _extract_tar_stream(
-    bits: bytes | io.BufferedReader | Any, dest_dir: str | Path
-) -> None:
+def _extract_tar_stream(bits: bytes | io.BufferedReader, dest_dir: str | Path) -> None:
     """
-    Extracts a tar stream returned by Docker to a destination directory.
-    - Accepts bytes, a file-like with .read(), or an **iterable of bytes chunks** (common).
-    - Uses a safe extractor to prevent path traversal outside dest_dir.
+    Extracts a tar stream returned by Docker to a destination directory safely.
+    Prevents path traversal by validating each member path.
     """
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
 
-    # Normalize to bytes
-    if hasattr(bits, "read"):
-        data = bits.read()
-    elif isinstance(bits, (bytes, bytearray)):
-        data = bytes(bits)
-    else:
-        # Iterable / generator of chunks
-        data = b"".join(chunk for chunk in bits)
+    # read all bytes
+    data = bits.read() if hasattr(bits, "read") else bits
 
-    def _is_within_directory(directory: Path, target: Path) -> bool:
+    def _is_within_dir(base: Path, target: Path) -> bool:
         try:
-            directory = directory.resolve()
-            target = target.resolve()
-            return str(target).startswith(str(directory) + "/") or target == directory
+            target.resolve().relative_to(base.resolve())
+            return True
         except Exception:
             return False
 
-    def _safe_extractall(tar_obj: tarfile.TarFile, path: Path) -> None:
-        for member in tar_obj.getmembers():
-            member_path = path / member.name
-            # Prevent absolute paths and traversal
-            if member.name.startswith("/") or ".." in Path(member.name).parts:
-                raise ToolExecutionError(f"Unsafe path in tar member: {member.name}")
-            # Ensure final resolved path is within destination
-            tmp_target = (path / member.name).resolve()
-            if not _is_within_directory(path, tmp_target):
-                raise ToolExecutionError(
-                    f"Refusing to extract outside destination: {member.name}"
-                )
-        tar_obj.extractall(path=path)
-
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tar:
-        _safe_extractall(tar, dest)
+        for member in tar.getmembers():
+            # skip absolute paths and parent traversals
+            member_path = dest / member.name
+            if member.islnk() or member.issym():
+                # skip hardlinks/symlinks for safety
+                continue
+            if not _is_within_dir(dest, member_path):
+                # drop any entry that would escape the destination
+                continue
+            # ensure parent exists
+            member_path.parent.mkdir(parents=True, exist_ok=True)
+            tar.extract(member, path=dest)
+
+
+def _safe_tar_extract(tar: tarfile.TarFile, dest: Path) -> None:
+    """
+    Safely extract a tar file to 'dest' by validating each member.
+    - Rejects absolute paths, path traversal via '..', and symlink/hardlink entries.
+    """
+    base = dest.resolve()
+    members: List[tarfile.TarInfo] = tar.getmembers()
+
+    for m in members:
+        # Disallow links entirely (symlinks/hardlinks) to prevent escaping.
+        if m.issym() or m.islnk():
+            raise ToolExecutionError(f"Refusing to extract link entry: {m.name}")
+
+        # Compute the final target path and ensure it stays under base.
+        target = (base / m.name).resolve()
+        if not str(target).startswith(str(base)):
+            raise ToolExecutionError(f"Unsafe path in tar entry: {m.name}")
+
+    # If all entries passed validation, perform extraction.
+    tar.extractall(path=base)
+    # No return value; exceptions bubble up.
 
 
 # === ToolResult wrappers ===

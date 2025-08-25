@@ -17,6 +17,7 @@ from aegis.exceptions import ToolExecutionError
 from aegis.executors.http_exec import HttpExecutor
 from aegis.registry import register_tool
 from aegis.utils.logger import setup_logger
+from aegis.utils.exec_common import run_subprocess  # centralized, hardened runner
 
 logger = setup_logger(__name__)
 
@@ -119,24 +120,24 @@ def send_wake_on_lan(input_data: WakeOnLANInput) -> str:
     """
     logger.info(f"Sending Wake-on-LAN packet to MAC: {input_data.mac_address}")
     try:
-        result = subprocess.run(
+        exec_res = run_subprocess(
             ["wakeonlan", input_data.mac_address],
-            capture_output=True,
-            text=True,
             timeout=10,
-            check=False,
+            allow_shell=False,
+            text_mode=True,
         )
-        output = result.stdout.strip()
-        if result.stderr:
-            output += f"\n[STDERR]\n{result.stderr.strip()}"
+        output = (exec_res.stdout_text() or "").strip()
+        stderr = (exec_res.stderr_text() or "").strip()
+        if stderr:
+            output = f"{output}\n[STDERR]\n{stderr}".strip()
 
-        if result.returncode != 0:
+        if exec_res.returncode != 0:
             logger.error(
-                f"'wakeonlan' command failed for MAC {input_data.mac_address} with RC {result.returncode}. "
+                f"'wakeonlan' command failed for MAC {input_data.mac_address} with RC {exec_res.returncode}. "
                 f"Output: {output}"
             )
             raise ToolExecutionError(
-                f"'wakeonlan' command failed with RC {result.returncode}. Output: {output}"
+                f"'wakeonlan' command failed with RC {exec_res.returncode}. Output: {output}"
             )
 
         logger.info(

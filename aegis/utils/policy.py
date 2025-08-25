@@ -42,6 +42,11 @@ class PolicyDecision:
     simulated: bool = False
     metadata: Dict[str, Any] | None = None
 
+    # Back-compat: older code sometimes expected `.meta`
+    @property
+    def meta(self) -> Dict[str, Any] | None:
+        return self.metadata
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()

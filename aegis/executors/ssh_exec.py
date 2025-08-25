@@ -19,10 +19,46 @@ from aegis.utils.logger import setup_logger
 from aegis.schemas.tool_result import ToolResult
 from aegis.utils.dryrun import dry_run
 from aegis.utils.redact import redact_for_log
+from aegis.utils.exec_common import run_subprocess
+import math
+import random
 import time
 import re
 
 logger = setup_logger(__name__)
+
+_TRANSIENT_PATTERNS = (
+    "connection timed out",
+    "connection reset",
+    "connection refused",
+    "network is unreachable",
+    "no route to host",
+    "temporary failure in name resolution",
+    "connection closed by remote host",
+    "ssh_exchange_identification",
+)
+
+# clear non-retryable signals
+_FATAL_PATTERNS = (
+    "host key verification failed",
+    "remote host identification has changed",
+    "permission denied",
+    "no such file or directory",  # usually command on remote
+)
+
+
+def _looks_transient(stderr: str, rc: int) -> bool:
+    s = (stderr or "").lower()
+    if any(p in s for p in _FATAL_PATTERNS):
+        return False
+    return any(p in s for p in _TRANSIENT_PATTERNS)
+
+
+def _sleep_backoff(base: float, attempt: int) -> None:
+    # exponential backoff w/ small jitter
+    delay = base * (2**attempt)
+    delay += random.uniform(0, min(0.25, base))
+    time.sleep(delay)
 
 
 def _sanitize_cli_list(argv: list[str]) -> str:
@@ -63,6 +99,9 @@ class SSHExecutor:
         password: Optional[str] = None,
         timeout: int = 120,
         interface_name: Optional[str] = None,
+        max_retries: int = 2,
+        backoff_factor: float = 0.25,
+        retry_on_transport_errors: bool = True,
     ):
         """
         Initialize the SSH executor with connection details.
@@ -91,6 +130,9 @@ class SSHExecutor:
         self.private_key_path = private_key_path
         self.default_timeout = timeout
         self.interface_name = interface_name or "unspecified"
+        self.max_retries = int(max_retries)
+        self.backoff_factor = float(backoff_factor)
+        self.retry_on_transport_errors = bool(retry_on_transport_errors)
 
         if manifest:
             address, nic_port, nic_name = resolve_target_host_port(
@@ -125,43 +167,83 @@ class SSHExecutor:
                 "No private_key_path or password provided; relying on agent/ssh config."
             )
 
-    def _run_subprocess(
-        self, command_list: list[str], timeout: int
-    ) -> Tuple[int, str, str]:
-        """
-        Internal method to execute a subprocess (ssh/scp) with robust error handling.
-        """
-        try:
-            logger.info(f"Running SSH subprocess: {_sanitize_cli_list(command_list)}")
-        except Exception:
-            logger.info("Running SSH subprocess.")
 
+def _run_subprocess(
+    self, command_list: list[str], timeout: int
+) -> Tuple[int, str, str]:
+    try:
+        logger.info(f"Running SSH subprocess: {_sanitize_cli_list(command_list)}")
+    except Exception:
+        logger.info("Running SSH subprocess.")
+
+    last_err = None
+    attempts = self.max_retries + 1 if self.retry_on_transport_errors else 1
+
+    for attempt in range(attempts):
         try:
-            # Match test expectations: capture_output, text, timeout, check; no extra kwargs
-            result = subprocess.run(
+            exec_res = run_subprocess(
                 command_list,
-                capture_output=True,
-                text=True,
                 timeout=timeout,
-                check=False,
+                allow_shell=False,
+                text_mode=True,
             )
+            stdout = exec_res.stdout_text() or ""
+            stderr = exec_res.stderr_text() or ""
+            rc = exec_res.returncode
+
+            # Retry only on clear transport-level failures
+            if (
+                self.retry_on_transport_errors
+                and rc != 0
+                and _looks_transient(stderr, rc)
+                and attempt < attempts - 1
+            ):
+                logger.warning(
+                    "Transient SSH error (rc=%s). Retrying attempt %d/%d: %s",
+                    rc,
+                    attempt + 1,
+                    attempts - 1,
+                    _sanitize_cli_list(command_list),
+                )
+                _sleep_backoff(self.backoff_factor, attempt)
+                continue
+
+            return rc, stdout, stderr
+
         except subprocess.TimeoutExpired as e:
+            # Optionally retry timeouts (connection establishment), but not forever
+            if self.retry_on_transport_errors and attempt < attempts - 1:
+                logger.warning(
+                    "SSH timeout after %ss. Retrying attempt %d/%d: %s",
+                    timeout,
+                    attempt + 1,
+                    attempts - 1,
+                    _sanitize_cli_list(command_list),
+                )
+                _sleep_backoff(self.backoff_factor, attempt)
+                continue
             logger.error(
                 f"SSH command timed out after {timeout} seconds: {_sanitize_cli_list(command_list)}"
             )
-            # For run(), upload(), download() we return strings, but timeout is exceptional
             raise ToolExecutionError(
                 f"SSH command timed out after {timeout} seconds"
             ) from e
+
         except Exception as e:
+            last_err = e
+            # Most non-timeout exceptions during spawn are not retriable; bail
             logger.error(
                 f"Error executing SSH command: {_sanitize_cli_list(command_list)} -> {e}"
             )
             raise ToolExecutionError(f"Error executing SSH command: {e}") from e
 
-        stdout = result.stdout or ""
-        stderr = result.stderr or ""
-        return result.returncode, stdout, stderr
+    # If we somehow looped without returning:
+    if last_err:
+        raise ToolExecutionError(
+            f"Error executing SSH command: {last_err}"
+        ) from last_err
+    # Should not reach here; return a conservative failure
+    return 1, "", "[unknown ssh error]"
 
     def _base_ssh_args(self) -> list[str]:
         args = [
@@ -193,8 +275,17 @@ class SSHExecutor:
 
     def run(self, command: str, *, timeout: Optional[int] = None) -> str:
         """
-        Run a command over SSH and return stdout.
-        On non-zero exit, return combined stdout + "[STDERR]\\n" + stderr (no exception).
+        Run a command over SSH and return stdout (plus [STDERR] if rc!=0), preserving legacy behavior.
+        """
+        _, combined_output = self.run_with_rc(command, timeout=timeout)
+        return combined_output
+
+    def run_with_rc(
+        self, command: str, *, timeout: Optional[int] = None
+    ) -> Tuple[int, str]:
+        """
+        Run a command over SSH and return (rc, combined_output).
+        combined_output mirrors `run()` behavior: stdout plus a [STDERR] section if present.
         """
         eff_timeout = timeout or self.default_timeout
 
@@ -204,13 +295,10 @@ class SSHExecutor:
         ]
 
         rc, stdout, stderr = self._run_subprocess(ssh_cmd, eff_timeout)
-        if rc == 0:
-            return stdout
-        # Return combined output with stderr section (matches test expectations)
         combined_output = stdout
         if stderr:
             combined_output = f"{stdout}\n[STDERR]\n{stderr}".strip()
-        return combined_output
+        return rc, combined_output
 
     def upload(
         self, local_path: str, remote_path: str, *, timeout: Optional[int] = None
@@ -313,14 +401,25 @@ class SSHExecutorToolResultMixin:
                 meta={"preview": preview},
             )
         try:
-            out = self.run(command, timeout=timeout)
-            return ToolResult.ok_result(
-                stdout=out,
-                exit_code=0,
+            rc, out = self.run_with_rc(command, timeout=timeout)
+            meta = {"command": command}
+            if rc == 0:
+                return ToolResult.ok_result(
+                    stdout=out,
+                    exit_code=0,
+                    latency_ms=_now_ms() - start,
+                    target_host=str(getattr(self, "ssh_target", None)),
+                    interface=str(getattr(self, "interface_name", None)),
+                    meta=meta,
+                )
+            # Non-zero is a failure: carry combined output in stderr for visibility
+            return ToolResult.err_result(
+                error_type="Runtime",
+                stderr=out,
                 latency_ms=_now_ms() - start,
                 target_host=str(getattr(self, "ssh_target", None)),
                 interface=str(getattr(self, "interface_name", None)),
-                meta={"command": command},
+                meta=meta,
             )
         except Exception as e:
             return ToolResult.err_result(

@@ -4,7 +4,7 @@ CLI command-set bootstrap for AEGIS.
 
 Call `register_all_cli_commands(app)` during cmd2 shell init to register all
 executors' commands. Each import is guarded so partial environments
-(e.g., missing docker/k8s libs) won't crash the shell.
+(e.g., missing docker/kubernetes libs) won't crash the shell.
 """
 from __future__ import annotations
 

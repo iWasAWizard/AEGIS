@@ -21,6 +21,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from aegis.utils.logger import setup_logger
+
+logger = setup_logger(__name__)
+
 
 def _base_dir() -> Path:
     return Path(os.environ.get("AEGIS_ARTIFACT_DIR", "./artifacts")).resolve()
@@ -61,29 +65,42 @@ def write_blob(
     if os.environ.get("AEGIS_DISABLE_ARTIFACTS", "").strip() == "1":
         return None
 
-    root = _base_dir()
-    rid = run_id or "session"
-    tool_dir = _safe(tool_name.replace(".", "_"))
-    sub = _safe(subdir) if subdir else None
+    try:
+        root = _base_dir()
+        rid = run_id or "session"
+        tool_dir = _safe(tool_name.replace(".", "_"))
+        sub = _safe(subdir) if subdir else None
 
-    outdir = root / _safe(rid) / tool_dir
-    if sub:
-        outdir = outdir / sub
-    outdir.mkdir(parents=True, exist_ok=True)
+        outdir = root / _safe(rid) / tool_dir
+        if sub:
+            outdir = outdir / sub
+        outdir.mkdir(parents=True, exist_ok=True)
 
-    fname = f"{_ts_ms()}-{_safe(preferred_name)}"
-    path = outdir / fname
+        # Include a small random hex suffix to avoid rare filename collisions.
+        rand_hex = os.urandom(4).hex()
+        fname = f"{_ts_ms()}-{_safe(preferred_name)}-{rand_hex}"
+        final_path = outdir / fname
+        tmp_path = outdir / (fname + ".tmp")
 
-    h = hashlib.sha256()
-    h.update(data)
-    sha256 = h.hexdigest()
-    path.write_bytes(data)
+        # Compute SHA first on the provided buffer.
+        sha256 = hashlib.sha256(data).hexdigest()
 
-    mime, _ = mimetypes.guess_type(str(path))
-    return ArtifactRef(
-        path=str(path),
-        size_bytes=len(data),
-        sha256=sha256,
-        mime=mime,
-        name=preferred_name,
-    )
+        # Atomic write: write to tmp then replace.
+        tmp_path.write_bytes(data)
+        os.replace(tmp_path, final_path)
+
+        mime, _ = mimetypes.guess_type(str(final_path))
+        return ArtifactRef(
+            path=str(final_path),
+            size_bytes=len(data),
+            sha256=sha256,
+            mime=mime,
+            name=preferred_name,
+        )
+    except Exception as e:
+        # Never fail the caller due to artifact persistence issues.
+        try:
+            logger.warning(f"Artifact write failed for {preferred_name}: {e}")
+        except Exception:
+            pass
+        return None

@@ -42,55 +42,66 @@ async def _select_relevant_tools(
 
     provider = get_provider_for_profile(state.runtime.backend_profile)
 
-    # Note: We create a temporary PromptBuilder here just to get the formatted tool schemas.
-    # This logic is now centralized in the builder.
+    # Build temporary summaries for the catalog
     temp_builder = PromptBuilder(state, tool_names_to_consider, provider)
-    tool_signatures = temp_builder._get_tool_schemas()
+    tool_summaries = await temp_builder.get_tool_summaries()
 
-    system_prompt = "You are an expert at selecting the correct tools for a job. Your only task is to analyze a user's goal and a list of available tools, and then return a JSON object containing the names of the most relevant tools."
+    system_prompt = (
+        "You are a careful planner. Given the task and tool catalog, "
+        "select only the tools that are plausibly relevant. Return JSON only."
+    )
+
     user_prompt = f"""
-    Based on the user's goal, select the 5-7 most relevant tools from the list below.
+        You are given a task, a short recent history, and a catalog of tools (name + description).
+        Pick the smallest set of tools that could help take the next step.
 
-    ## User's Goal
-    {state.task_prompt}
+        ## Task
+        {state.task}
 
-    ## Available Tools
-    {tool_signatures}
+        ## Last Observation (if any)
+        {state.latest_observation or ''}
 
-    ## Required JSON Output Format
-    You MUST respond with a single JSON object containing a single key, "tool_names", which is a list of strings. Do not add any other text, explanation, or markdown.
+        ## History (summarized)
+        {state.get_history_summary(max_items=4)}
 
-    ### Example
-    ```json
-    {{
-      "tool_names": ["tool_name_1", "tool_name_2", "tool_name_3"]
-    }}
-    ```
+        ## Available Tools
+        {json.dumps(tool_summaries, indent=2)}
+
+        ## Required JSON Output Format
+        You MUST respond with a single JSON object containing a key "tool_names" with a list
+        of strings. Do not add any other text, explanation, or markdown.
+
+        ### Example
+        ```json
+        {{
+        "tool_names": ["tool_name_1", "tool_name_2", "tool_name_3"]
+        }}
     """
+
     try:
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
         with span(
-            "reflect_and_plan",
+            "planner.preselect",
             run_id=state.task_id,
-            ready_tools=len(allowed_tools) if "allowed_tools" in locals() else None,
+            ready_tools=len(tool_names_to_consider),
         ):
             selected_tools_model = await provider.get_structured_completion(
                 messages, RelevantTools, state.runtime
             )
-        # Filter the LLM's response to ensure it only returns tools that were actually available.
+        # Only keep tools that were in the original catalog
         valid_selected_tools = [
             name
             for name in selected_tools_model.tool_names
             if name in tool_names_to_consider
         ]
         logger.info(f"Pre-selected relevant tools: {valid_selected_tools}")
-        return valid_selected_tools
-    except Exception as e:
+        return valid_selected_tools or tool_names_to_consider
+    except (ValidationError, json.JSONDecodeError) as e:
         logger.warning(
-            f"Tool pre-selection failed: {e}. Falling back to using all available tools for this step."
+            f"Tool pre-selection failed validation/JSON parse; falling back to full list. Error: {e}"
         )
         return tool_names_to_consider
 
@@ -118,6 +129,9 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
         else:
             relevant_tool_names = available_tool_names
 
+        # Track allowed tools for telemetry
+        allowed_tools = list(relevant_tool_names)
+
         builder = PromptBuilder(state, relevant_tool_names, provider)
         messages = await builder.build()
 
@@ -129,9 +143,9 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
 
         try:
             with span(
-                "reflect_and_plan",
+                "planner.plan",
                 run_id=state.task_id,
-                ready_tools=len(allowed_tools) if "allowed_tools" in locals() else None,
+                ready_tools=len(allowed_tools),
             ):
                 scratchpad = await provider.get_structured_completion(
                     messages=messages,
@@ -140,20 +154,11 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
                 )
         except ValidationError as e:
             logger.warning("LLM plan failed validation. Attempting self-correction...")
-            log_replay_event(
-                state.task_id,
-                "PLANNER_VALIDATION_ERROR",
-                {
-                    "error": str(e),
-                    "json_body": (
-                        e.json()
-                        if hasattr(e, "json")
-                        else "No JSON body available in exception."
-                    ),
-                },
+            remediation_prompt = (
+                f"The last JSON response you produced did not validate:\n\n{e}\n\n"
+                "Respond again with a corrected JSON object that strictly matches the expected schema. "
+                "Your response MUST be only the corrected JSON object and nothing else."
             )
-
-            remediation_prompt = f"The last JSON response you provided was malformed... Your response MUST be only the corrected JSON object..."
             repair_messages = messages[:-1] + [
                 {"role": "user", "content": remediation_prompt}
             ]
@@ -163,11 +168,9 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
 
             try:
                 with span(
-                    "reflect_and_plan",
+                    "planner.repair",
                     run_id=state.task_id,
-                    ready_tools=(
-                        len(allowed_tools) if "allowed_tools" in locals() else None
-                    ),
+                    ready_tools=len(allowed_tools),
                 ):
                     scratchpad = await provider.get_structured_completion(
                         messages=repair_messages,
@@ -177,9 +180,9 @@ async def reflect_and_plan(state: TaskState) -> Dict[str, Any]:
                 logger.info("✅ Self-correction successful. Plan is now valid.")
             except Exception as final_e:
                 logger.error(
-                    f"Self-correction failed. Raising original error. Final error: {final_e}"
+                    f"Planner remediation attempt failed; aborting planning step. Error: {final_e}"
                 )
-                raise e
+                raise
 
         log_replay_event(
             state.task_id, "PLANNER_OUTPUT", {"plan": scratchpad.model_dump()}

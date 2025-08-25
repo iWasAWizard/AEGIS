@@ -118,6 +118,13 @@ def _truncate_text_with_artifact(
     return head.decode("utf-8", errors="replace"), True, ref
 
 
+def _args_as_pretty_json(args: Dict[str, Any] | None) -> str:
+    try:
+        return json.dumps(redact_for_log(args or {}), ensure_ascii=False, indent=2)
+    except Exception:
+        return str(args or {})
+
+
 async def _run_tool(tool_func: Callable, input_data: Any, state: TaskState) -> Any:
     """Helper to run the tool's function, inspecting its signature."""
     sig = inspect.signature(tool_func)
@@ -392,7 +399,6 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
         # Guard must never crash routing—fail open and continue.
         pass
 
-
     # 0b. Degeneracy guard
     try:
         if _degenerate_repeat(current_history, plan.tool_name, plan.tool_args, k=3):
@@ -434,150 +440,167 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
             or _args.get("address")
         )
         interface = _args.get("interface") or _args.get("iface") or _args.get("nic")
-    # --- policy gate ---
-    decision = authorize(
-        actor="agent",
-        tool=plan.tool_name,
-        target_host=target_host,
-        interface=interface,
-        args=_args,
-    )
 
-    if decision.effect == "DENY":
-        observation = f"[POLICY DENIED] {decision.reason}"
-        status = "failure"
-        log_replay_event(
-            state.task_id,
-            "POLICY_DENY",
-            {
-                "tool": plan.tool_name,
-                "reason": decision.reason,
-                "meta": decision.metadata,
-            },
+        # --- policy gate ---
+        decision = authorize(
+            actor="agent",
+            tool=plan.tool_name,
+            target_host=target_host,
+            interface=interface,
+            args=_args,
         )
-        end_time = time.time()
-        history_entry = HistoryEntry(
-            plan=plan,
-            observation=observation,
-            status=status,
-            start_time=start_time,
-            end_time=end_time,
-            duration_ms=(end_time - start_time) * 1000,
-        )
-        updated_state_dict["history"].append(history_entry)
-        try:
-            provenance.record_step(
-                run_id=state.task_id,
-                step_index=len(updated_state_dict["history"]) - 1,
-                tool=plan.tool_name,
-                tool_args=plan.tool_args,
-                target_host=target_host,
-                interface=interface,
-                status=status,
-                observation=observation,
-                duration_ms=int((end_time - start_time) * 1000),
-            )
-        except Exception:
-            pass
-        return updated_state_dict
 
-    elif decision.effect == "REQUIRE_APPROVAL":
-        # Simple blast-radius heuristic for preview
-        risk = "LOW"
-        try:
-            import re
-            cmd = str(_args.get("cmd") or _args.get("command") or "")
-            payload = f"{plan.tool_name} {cmd}".lower()
-            high = [
-                r"rm\s+-rf\s+/", r"\bmkfs\b", r"\bshutdown\b", r"\breboot\b",
-                r"\biptables\b", r"\bfirewall-cmd\b", r"systemctl\s+(stop|restart|disable)\b",
-                r"dd\s+if=", r"\bkubectl\s+(delete|apply)\b",
-                r"\bdocker\s+(system\s+prune|stop|kill|rm)\b",
-            ]
-            medium = [
-                r"systemctl\s+reload\b", r"chmod\s+-r\b", r"chown\s+-r\b",
-                r"mv\s+/etc\b", r"sed\s+-i\b",
-            ]
-            if any(re.search(p, payload) for p in high):
-                risk = "HIGH"
-            elif any(re.search(p, payload) for p in medium):
-                risk = "MEDIUM"
-        except Exception:
-            pass
-
-        preview_args = _args_as_pretty_json(_args)
-
-        # Detect likely filesystem paths in the command for preview
-        paths = []
-        rollback_hint = "n/a"
-        try:
-            import re
-            cmd = str(_args.get("cmd") or _args.get("command") or "")
-            path_rx = re.compile(r"(?:/[\w.\-+@%:/*]+)")  # naive absolute-path finder
-            paths = sorted(set(path_rx.findall(cmd)))[:8]
-            if paths:
-                rollback_hint = f"review backups or revert files: {', '.join(paths[:3])}"
-        except Exception:
-            pass
-
-        # Impact heuristic for preview (delete/modify/create)
-        impact = "neutral"
-        try:
-            import re
-            cmd_lc = (str(_args.get("cmd") or _args.get("command") or "")).lower()
-            if re.search(r"\brm(\s|$)", cmd_lc):
-                impact = "delete"
-            elif re.search(r"\b(mv|sed\s+-i|chmod|chown)\b", cmd_lc):
-                impact = "modify"
-            elif re.search(r"\b(touch|mkdir|tee(\s|$))\b", cmd_lc):
-                impact = "create"
-        except Exception:
-            pass
-
-        observation = (
-            "[APPROVAL REQUIRED] [INTERRUPT]\n"
-            "Preflight Preview:\n"
-            f"- tool: {plan.tool_name}\n"
-            f"- target_host: {target_host or 'N/A'}\n"
-            f"- interface: {interface or 'N/A'}\n"
-            f"- blast_radius: {risk}\n"
-            f"- impact: {impact}\n"
-            f"- args:\n{preview_args}\n"
-            f"- paths_detected: {paths or '[]'}\n"
-            f"- rollback_hint: {rollback_hint}\n"
-        )
-        status = "failure"
-
-        try:
+        if decision.effect == "DENY":
+            observation = f"[POLICY DENIED] {decision.reason}"
+            status = "failure"
             log_replay_event(
                 state.task_id,
-                "POLICY_REQUIRE_APPROVAL_PREVIEW",
+                "POLICY_DENY",
                 {
                     "tool": plan.tool_name,
-                    "target_host": target_host,
-                    "interface": interface,
-                    "args_redacted": redact_for_log(_args),
-                    # New: capture WHY we needed approval (breaker, allowlist, rate limit, etc.)
-                    "effect": getattr(decision, "effect", "REQUIRE_APPROVAL"),
-                    "policy_id": getattr(decision, "policy_id", None),
-                    "reason": getattr(decision, "reason", None),
+                    "reason": decision.reason,
+                    "meta": decision.metadata,
                 },
             )
-        except Exception:
-            pass
+            end_time = time.time()
+            history_entry = HistoryEntry(
+                plan=plan,
+                observation=observation,
+                status=status,
+                start_time=start_time,
+                end_time=end_time,
+                duration_ms=(end_time - start_time) * 1000,
+            )
+            updated_state_dict["history"].append(history_entry)
+            try:
+                provenance.record_step(
+                    run_id=state.task_id,
+                    step_index=len(updated_state_dict["history"]) - 1,
+                    tool=plan.tool_name,
+                    tool_args=plan.tool_args,
+                    target_host=target_host,
+                    interface=interface,
+                    status=status,
+                    observation=observation,
+                    duration_ms=int((end_time - start_time) * 1000),
+                )
+            except Exception:
+                pass
+            return updated_state_dict
 
-        end_time = time.time()
-        history_entry = HistoryEntry(
-            plan=plan,
-            observation=observation,
-            status=status,
-            start_time=start_time,
-            end_time=end_time,
-            duration_ms=(end_time - start_time) * 1000,
-        )
-        updated_state_dict["history"].append(history_entry)
-        return updated_state_dict
-    # --- end policy gate ---
+        elif decision.effect == "REQUIRE_APPROVAL":
+            # Simple blast-radius heuristic for preview
+            risk = "LOW"
+            try:
+                import re
+
+                cmd = str(_args.get("cmd") or _args.get("command") or "")
+                payload = f"{plan.tool_name} {cmd}".lower()
+                high = [
+                    r"rm\s+-rf\s+/",
+                    r"\bmkfs\b",
+                    r"\bshutdown\b",
+                    r"\breboot\b",
+                    r"\biptables\b",
+                    r"\bfirewall-cmd\b",
+                    r"systemctl\s+(stop|restart|disable)\b",
+                    r"dd\s+if=",
+                    r"\bkubectl\s+(delete|apply)\b",
+                    r"\bdocker\s+(system\s+prune|stop|kill|rm)\b",
+                ]
+                medium = [
+                    r"systemctl\s+reload\b",
+                    r"chmod\s+-r\b",
+                    r"chown\s+-r\b",
+                    r"mv\s+/etc\b",
+                    r"sed\s+-i\b",
+                ]
+                if any(re.search(p, payload) for p in high):
+                    risk = "HIGH"
+                elif any(re.search(p, payload) for p in medium):
+                    risk = "MEDIUM"
+            except Exception:
+                pass
+
+            preview_args = _args_as_pretty_json(_args)
+
+            # Detect likely filesystem paths in the command for preview
+            paths = []
+            rollback_hint = "n/a"
+            try:
+                import re
+
+                cmd = str(_args.get("cmd") or _args.get("command") or "")
+                path_rx = re.compile(
+                    r"(?:/[\w.\-+@%:/*]+)"
+                )  # naive absolute-path finder
+                paths = sorted(set(path_rx.findall(cmd)))[:8]
+                if paths:
+                    rollback_hint = (
+                        f"review backups or revert files: {', '.join(paths[:3])}"
+                    )
+            except Exception:
+                pass
+
+            # Impact heuristic for preview (delete/modify/create)
+            impact = "neutral"
+            try:
+                import re
+
+                cmd_lc = (str(_args.get("cmd") or _args.get("command") or "")).lower()
+                if re.search(r"\brm(\s|$)", cmd_lc):
+                    impact = "delete"
+                elif re.search(r"\b(mv|sed\s+-i|chmod|chown)\b", cmd_lc):
+                    impact = "modify"
+                elif re.search(r"\b(touch|mkdir|tee(\s|$))\b", cmd_lc):
+                    impact = "create"
+            except Exception:
+                pass
+
+            observation = (
+                "[APPROVAL REQUIRED] [INTERRUPT]\n"
+                "Preflight Preview:\n"
+                f"- tool: {plan.tool_name}\n"
+                f"- target_host: {target_host or 'N/A'}\n"
+                f"- interface: {interface or 'N/A'}\n"
+                f"- blast_radius: {risk}\n"
+                f"- impact: {impact}\n"
+                f"- args:\n{preview_args}\n"
+                f"- paths_detected: {paths or '[]'}\n"
+                f"- rollback_hint: {rollback_hint}\n"
+            )
+            status = "failure"
+
+            try:
+                log_replay_event(
+                    state.task_id,
+                    "POLICY_REQUIRE_APPROVAL_PREVIEW",
+                    {
+                        "tool": plan.tool_name,
+                        "target_host": target_host,
+                        "interface": interface,
+                        "args_redacted": redact_for_log(_args),
+                        # New: capture WHY we needed approval (breaker, allowlist, rate limit, etc.)
+                        "effect": getattr(decision, "effect", "REQUIRE_APPROVAL"),
+                        "policy_id": getattr(decision, "policy_id", None),
+                        "reason": getattr(decision, "reason", None),
+                    },
+                )
+            except Exception:
+                pass
+
+            end_time = time.time()
+            history_entry = HistoryEntry(
+                plan=plan,
+                observation=observation,
+                status=status,
+                start_time=start_time,
+                end_time=end_time,
+                duration_ms=(end_time - start_time) * 1000,
+            )
+            updated_state_dict["history"].append(history_entry)
+            return updated_state_dict
+        # --- end policy gate ---
 
     except Exception as _e:
         logger.error(f"Policy check error: {_e}. Failing open (allowing).")
@@ -603,12 +626,16 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
         updated_state_dict["history"] = []
     elif plan.tool_name == "revise_goal":
         # Optional guard: require a reason for goal edits
-        if os.getenv("AEGIS_GOAL_EDIT_REQUIRE_REASON") and not plan.tool_args.get("reason"):
+        if os.getenv("AEGIS_GOAL_EDIT_REQUIRE_REASON") and not plan.tool_args.get(
+            "reason"
+        ):
             observation, status = "[INVALID] revise_goal requires 'reason'", "failure"
         else:
             new_goal = plan.tool_args.get("new_goal", "")
             reason = plan.tool_args.get("reason", "No reason provided.")
-            observation = f"Goal has been revised. Reason: {reason}. New Goal: {new_goal}"
+            observation = (
+                f"Goal has been revised. Reason: {reason}. New Goal: {new_goal}"
+            )
             status = "success"
             updated_state_dict["task_prompt"] = new_goal
     elif plan.tool_name == "advance_to_next_sub_goal":
@@ -675,10 +702,14 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
         else:
             # Optional HITL gate for goal edits
             if os.getenv("AEGIS_REQUIRE_APPROVAL_GOAL_CHANGES"):
-                observation = "[APPROVAL REQUIRED]\n" + goal_ops.format_preview(_before, _after)
+                observation = "[APPROVAL REQUIRED]\n" + goal_ops.format_preview(
+                    _before, _after
+                )
                 status = "failure"
             else:
-                observation = "[GOAL UPDATED] " + goal_ops.summarize_diff(_before, _after)
+                observation = "[GOAL UPDATED] " + goal_ops.summarize_diff(
+                    _before, _after
+                )
                 status = "success"
         # Provenance/replay: structured before/after snapshot of the goal edit
         try:
@@ -696,7 +727,9 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
                         "sub_goals": _after.sub_goals,
                         "current_index": _after.current_index,
                     },
-                    "require_approval": bool(os.getenv("AEGIS_REQUIRE_APPROVAL_GOAL_CHANGES")),
+                    "require_approval": bool(
+                        os.getenv("AEGIS_REQUIRE_APPROVAL_GOAL_CHANGES")
+                    ),
                 },
             )
         except Exception:
@@ -706,61 +739,38 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
         # 3. Execute ordinary tool via registry
         try:
             tool_entry = get_tool(plan.tool_name)
-
-        # 3a. Dry-run short-circuit: preview without executing
-        if dry_run.enabled:
-            # _preview left here in case you want to log it later
-            _preview = {
-                "tool": plan.tool_name,
-                "args": plan.tool_args,
-                "mode": "dry-run",
-            }
-            observation, status = (
-                f"[DRY-RUN] would execute {plan.tool_name} with args {json.dumps(plan.tool_args)}",
-                "success",
-            )
+        except ToolNotFoundError as e:
+            observation, status = f"[ERROR] {type(e).__name__}: {e}", "failure"
+            logger.error(observation)
+        else:
+            if dry_run.enabled:
+                # Dry-run short-circuit: preview without executing
+                observation, status = (
+                    f"[DRY-RUN] would execute {plan.tool_name} with args {json.dumps(plan.tool_args)}",
+                    "success",
+                )
             else:
                 # 3b. Run (wrapped in a tracing span)
                 _span_meta = {}
-
                 try:
                     _af = plan.tool_args if isinstance(plan.tool_args, dict) else {}
                     _span_meta = {
                         "tool": plan.tool_name,
-                        "target_host": _af.get("target") or _af.get("host") or _af.get("ip") or _af.get("address"),
-                        "interface": _af.get("interface") or _af.get("iface") or _af.get("nic"),
+                        "target_host": _af.get("target")
+                        or _af.get("host")
+                        or _af.get("ip")
+                        or _af.get("address"),
+                        "interface": _af.get("interface")
+                        or _af.get("iface")
+                        or _af.get("nic"),
                     }
                 except Exception:
                     pass
 
                 with span("execute_tool", run_id=state.task_id, **_span_meta):
-                    callable_ = _tool_wrapper(tool_entry.callable)
-                    result: ToolResult = await callable_(**(plan.tool_args or {}))
-                    result = _coerce_to_tool_result(result)
-
-                    # Truncate large outputs to artifacts if necessary
-                    max_stdio_bytes = get_config().get("limits", {}).get("max_stdio_bytes", 64 * 1024)
-                    if result and (result.stdout or result.stderr):
-                        result.enforce_truncation(max_stdio_bytes)
-
-                    observation = _stringify(
-                        {
-                            "success": result.success,
-                            "stdout": result.stdout,
-                            "stderr": result.stderr,
-                            "exit_code": result.exit_code,
-                            "error_type": result.error_type,
-                            "latency_ms": result.latency_ms,
-                            "target_host": result.target_host,
-                            "interface": result.interface,
-                            "artifact_refs": [ref.__dict__ for ref in (result.artifact_refs or [])],
-                            "args_redaction_hash": args_redaction_hash,
-                        }
+                    observation, status = await _run_tool_with_error_handling(
+                        tool_entry, plan, state
                     )
-                    status = "success" if result.success else "failure"
-        except ToolNotFoundError as e:
-            observation, status = f"[ERROR] {type(e).__name__}: {e}", "failure"
-            logger.error(observation)
 
     # 4. Log the ground truth for replay (keep as-is; replay is internal)
     log_replay_event(
@@ -794,6 +804,7 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
             )
             # Pass run_id so we can emit a BREAKER_TRIPPED event at trip time
             from aegis.utils import policy as _policy
+
             _policy.record_failure(
                 tool=plan.tool_name,
                 target_host=_target,
@@ -801,7 +812,6 @@ async def execute_tool(state: TaskState) -> Dict[str, Any]:
             )
         except Exception:
             pass
-
 
     end_time = time.time()
     history_entry = HistoryEntry(

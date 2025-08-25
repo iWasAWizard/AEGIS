@@ -8,6 +8,14 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Union, Tuple, Dict
 
+__all__ = [
+    "now_ms",
+    "ExecResult",
+    "RunResult",  # backwards-compat alias
+    "map_exception_to_error_type",
+    "run_subprocess",
+]
+
 # ---- Time helpers ----------------------------------------------------------
 
 
@@ -37,6 +45,10 @@ class ExecResult:
 
     def stderr_text(self, encoding: str = "utf-8", errors: str = "replace") -> str:
         return self.stderr.decode(encoding, errors)
+
+
+# Backwards-compat for any legacy imports/tests
+RunResult = ExecResult
 
 
 # ---- Exceptions -> error_type mapping -------------------------------------
@@ -70,6 +82,22 @@ def _truncate(data: bytes, max_bytes: Optional[int]) -> Tuple[bytes, bool]:
     if max_bytes is None or len(data) <= max_bytes:
         return data, False
     return data[:max_bytes], True
+
+
+def _coerce_to_bytes(buf: object) -> bytes:
+    """Best-effort convert subprocess outputs to bytes."""
+    if buf is None:
+        return b""
+    if isinstance(buf, (bytes, bytearray)):
+        return bytes(buf)
+    if isinstance(buf, str):
+        # Default to utf-8; callers can request text_mode for normalize->bytes before truncation
+        return buf.encode("utf-8", "replace")
+    # Fallback: try bytes() constructor
+    try:
+        return bytes(buf)  # type: ignore[arg-type]
+    except Exception:
+        return b""
 
 
 # ---- Main runner -----------------------------------------------------------
@@ -143,24 +171,17 @@ def run_subprocess(
             check=False,
         )
         ended = now_ms()
-        out = (
-            proc.stdout
-            if isinstance(proc.stdout, (bytes, bytearray))
-            else bytes(proc.stdout or b"")
-        )
-        err = (
-            proc.stderr
-            if isinstance(proc.stderr, (bytes, bytearray))
-            else bytes(proc.stderr or b"")
-        )
+        out = _coerce_to_bytes(proc.stdout)
+        err = _coerce_to_bytes(proc.stderr)
         returncode: Optional[int] = proc.returncode
         timed_out = False
     except subprocess.TimeoutExpired as te:
         ended = now_ms()
-        out = te.output if isinstance(te.output, (bytes, bytearray)) else b""
-        err = te.stderr if isinstance(te.stderr, (bytes, bytearray)) else b""
+        out = _coerce_to_bytes(getattr(te, "output", b""))
+        err = _coerce_to_bytes(getattr(te, "stderr", b""))
         returncode = None
         timed_out = True
+        # Raise to let callers decide policy; our callers map this to ToolExecutionError where needed.
         raise
     except Exception:
         ended = now_ms()

@@ -40,19 +40,67 @@ from aegis.utils.config_loader import load_agent_config
 from aegis.utils.log_sinks import task_id_context
 from aegis.utils.memory_indexer import update_memory_index
 from aegis.utils.tool_loader import import_all_tools
+from aegis.utils.dryrun import dry_run
+from aegis.registry import TOOL_REGISTRY, ensure_discovered
+from aegis.utils.tool_loader import import_all_tools
+import cmd2
 
 
-def _ensure_tools_loaded(self):
-    """A helper to lazily load tools only when needed."""
-    if not self.tools_loaded:
-        self.poutput("Loading tools for the first time...")
-        import_all_tools()
-        self.poutput(
-            cmd2.ansi.style(
-                f"✅ Tool registry loaded with {len(TOOL_REGISTRY)} tools.", fg="green"
-            )
+def _ensure_tools_loaded(self: cmd2.Cmd):
+    """Lazy, race-free tool discovery. Safe to call many times."""
+    if getattr(self, "tools_loaded", False):
+        return
+    # ensure_discovered runs importer only once per process
+    ensure_discovered(import_all_tools)
+    self.poutput(
+        cmd2.ansi.style(
+            f"✅ Tool registry loaded with {len(TOOL_REGISTRY)} tools.", fg="green"
         )
-        self.tools_loaded = True
+    )
+    self.tools_loaded = True
+
+
+def _print_failure_details(self, report: dict, task_id: str) -> None:
+    """Pretty-print a concise failure summary from an agent provenance report.
+
+    Parameters
+    ----------
+    self : AegisShell
+        The shell instance for output helpers.
+    report : dict
+        Parsed JSON provenance report for the task.
+    task_id : str
+        The task identifier.
+    """
+    try:
+        status = report.get("final_status", "UNKNOWN")
+        thought = report.get("last_plan", {}).get("thought") or report.get(
+            "latest_plan", {}
+        ).get("thought")
+        tool = report.get("last_plan", {}).get("tool_name") or report.get(
+            "latest_plan", {}
+        ).get("tool_name")
+        error = report.get("error") or report.get("last_error")
+        observation = report.get("last_observation") or report.get("observation")
+
+        self.poutput(
+            f"  {cmd2.ansi.style('FAIL:', fg='red', bold=True)} Agent reported status: {status}"
+        )
+        if tool:
+            self.poutput(f"  Tool: {tool}")
+        if thought:
+            self.poutput(f"  Thought: {thought}")
+        if observation:
+            trimmed = observation[:500]
+            suffix = "…" if observation and len(observation) > 500 else ""
+            self.poutput(f"  Observation: {trimmed}{suffix}")
+        if error:
+            self.perror(f"  Error: {error}")
+        self.poutput(
+            f"  See provenance: .aegis/{task_id}/provenance.jsonl (if enabled)"
+        )
+    except Exception as e:
+        self.perror(f"  FAIL: Unable to render failure details: {e}")
 
 
 # --- Task Handlers ---
@@ -155,32 +203,52 @@ async def _async_task_resume_handler(self: cmd2.Cmd, args):
 
 
 def _tool_list_handler(self: cmd2.Cmd, args):
+    from inspect import getdoc
+
     _ensure_tools_loaded(self)
 
-    if args.json:
-        tools_data = [
-            {
-                "name": name,
-                "category": tool.category or "N/A",
-                "description": tool.description,
-                "safe_mode": tool.safe_mode,
-            }
-            for name, tool in sorted(TOOL_REGISTRY.items())
-        ]
+    # JSON mode: structured and script-friendly
+    if getattr(args, "json", False):
+        tools_data = []
+        for name, entry in sorted(TOOL_REGISTRY.items()):
+            func = entry.func
+            tools_data.append(
+                {
+                    "name": entry.name,
+                    "timeout": entry.timeout,
+                    "module": getattr(func, "__module__", "unknown"),
+                    "qualname": getattr(
+                        func, "__qualname__", getattr(func, "__name__", "func")
+                    ),
+                    "input_model": entry.input_model.__name__,
+                    "schema": entry.input_model.model_json_schema(),
+                    "summary": (
+                        (getdoc(func) or "").strip().splitlines()[0]
+                        if getdoc(func)
+                        else ""
+                    ),
+                }
+            )
         self.poutput(json.dumps(tools_data, indent=2))
         return
 
-    table = Table(title="🛠️ AEGIS Registered Tools", expand=True)
+    # Pretty table mode
+    table = Table(title="🛠️  AEGIS Registered Tools", expand=True)
     table.add_column("Name", style="cyan", no_wrap=True)
-    table.add_column("Category", style="magenta")
-    table.add_column("Description", style="white")
-    table.add_column("Safe Mode", style="yellow")
+    table.add_column("Timeout", style="magenta", no_wrap=True)
+    table.add_column("Module", style="white")
+    table.add_column("Summary", style="yellow")
+
     if not TOOL_REGISTRY:
         self.pwarning("No tools are registered.")
     else:
-        for name, tool in sorted(TOOL_REGISTRY.items()):
-            safe_str = "✅" if tool.safe_mode else "❌"
-            table.add_row(name, tool.category or "N/A", tool.description, safe_str)
+        for name, entry in sorted(TOOL_REGISTRY.items()):
+            func = entry.func
+            mod = getattr(func, "__module__", "unknown")
+            summary = (
+                (getdoc(func) or "").strip().splitlines()[0] if getdoc(func) else ""
+            )
+            table.add_row(entry.name, str(entry.timeout or "—"), mod, summary or "—")
         self.console.print(table)
 
 
@@ -228,20 +296,35 @@ def _tool_view_handler(self: cmd2.Cmd, args):
     if not args.tool_name or args.tool_name == "help":
         self.do_help("tool view")
         return
+
     _ensure_tools_loaded(self)
-    tool = TOOL_REGISTRY.get(args.tool_name)
-    if not tool:
+    entry = TOOL_REGISTRY.get(args.tool_name)
+    if not entry:
         self.perror(f"Tool '{args.tool_name}' not found.")
         return
+
+    func = entry.func
+    doc = (func.__doc__ or "").strip()
+    module = getattr(func, "__module__", "unknown")
+    qualname = getattr(func, "__qualname__", getattr(func, "__name__", "func"))
+    timeout = entry.timeout or "—"
+
     self.poutput(
-        f"--- Details for Tool: {cmd2.ansi.style(tool.name, fg='cyan', bold=True)} ---"
+        f"--- Details for Tool: {cmd2.ansi.style(entry.name, fg='cyan', bold=True)} ---"
     )
-    self.poutput(f"Description: {tool.description}")
-    self.poutput(f"Category: {tool.category or 'N/A'}")
-    self.poutput(f"Tags: {', '.join(tool.tags)}")
-    self.poutput(f"Safe Mode: {'✅' if tool.safe_mode else '❌'}")
-    self.poutput("Input Schema:")
-    self.console.print(JSON(json.dumps(tool.input_model.model_json_schema())))
+    self.poutput(f"Module: {module}")
+    self.poutput(f"Callable: {qualname}")
+    self.poutput(f"Timeout: {timeout}s")
+    if doc:
+        self.poutput("\nSummary:")
+        self.console.print(Markdown(doc))
+
+    try:
+        schema = entry.input_model.model_json_schema()
+        self.poutput("\nInput Schema:")
+        self.console.print(JSON(json.dumps(schema, indent=2)))
+    except Exception as e:
+        self.pwarning(f"(Could not render input schema: {e})")
 
 
 # --- Config Handlers ---
@@ -440,6 +523,7 @@ def _list_presets_handler(self: cmd2.Cmd, args):
     table.add_column("Name", style="white")
     table.add_column("Description", style="yellow")
     for item in presets_data:
+        self.console.print  # no-op to satisfy linters if needed
         table.add_row(item["id"], item["name"], item["description"])
     self.console.print(table)
 
@@ -584,14 +668,55 @@ def _machine_list_handler(self: cmd2.Cmd, args):
 # --- Session Handlers ---
 
 
-def _session_set_handler(self: cmd2.Cmd, args):
-    if not args.key or not args.value or args.key == "help":
-        self.do_help("session set")
+def _session_set_handler(app, args):
+    key = (args.key or "").strip()
+    val = (args.value or "").strip()
+
+    if not key:
+        app.do_help("session set")
         return
-    if args.key == "backend":
-        self.session_backend = args.value
-    elif args.key == "preset":
-        self.session_preset = args.value
+
+    if key == "dryrun":
+        v = val.lower()
+        if v in {"on", "true", "1", "yes"}:
+            dry_run.enabled = True
+            app.poutput("Dry-run mode ENABLED")
+        elif v in {"off", "false", "0", "no"}:
+            dry_run.enabled = False
+            app.poutput("Dry-run mode DISABLED")
+        else:
+            app.perror("Expected: on|off")
+        return
+
+    if key == "backend":
+        if not val:
+            app.perror("Expected a backend profile name.")
+            return
+        choices = _provide_backend_choices(app)
+        if choices and val not in choices:
+            app.pwarning(
+                f"Backend '{val}' not found in backends.yaml. "
+                f"Available: {', '.join(choices) or '[none]'}"
+            )
+        app.session_backend = val
+        app.poutput(f"Session backend set to: {cmd2.ansi.style(val, fg='cyan')}")
+        return
+
+    if key == "preset":
+        if not val:
+            app.perror("Expected a preset id (filename without .yaml).")
+            return
+        choices = _provide_preset_choices(app)
+        if choices and val not in choices:
+            app.pwarning(
+                f"Preset '{val}' not found under presets/. "
+                f"Available: {', '.join(choices) or '[none]'}"
+            )
+        app.session_preset = val
+        app.poutput(f"Session preset set to: {cmd2.ansi.style(val, fg='cyan')}")
+        return
+
+    app.perror(f"Unknown session key: {key}")
 
 
 def _session_view_handler(self: cmd2.Cmd, args):
@@ -903,6 +1028,8 @@ def _session_set_value_completer(self, text, line, begidx, endidx):
                 return [p for p in _provide_backend_choices(self) if p.startswith(text)]
             elif key == "preset":
                 return [p for p in _provide_preset_choices(self) if p.startswith(text)]
+            elif key == "dryrun":
+                return [v for v in ["on", "off"] if v.startswith(text.lower())]
     except Exception:
         pass
     return []

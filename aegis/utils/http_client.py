@@ -4,9 +4,11 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union, Sequence
 
 import httpx
+import random
+import asyncio
 
 DEFAULT_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=30.0, pool=5.0)
 
@@ -40,6 +42,16 @@ def _redact_headers(
 ) -> Dict[str, str]:
     sf = {k.lower() for k in sensitive_fields}
     return {k: ("******" if k.lower() in sf else v) for k, v in headers.items()}
+
+
+# Common transient exceptions we will retry for idempotent methods
+_RETRYABLE_EXC: Tuple[type[BaseException], ...] = (
+    httpx.TimeoutException,  # covers read/connect/pool timeouts
+    httpx.ConnectError,
+    httpx.ReadError,
+    httpx.WriteError,
+    httpx.RemoteProtocolError,
+)
 
 
 class HttpClient:
@@ -83,11 +95,12 @@ class HttpClient:
         headers: Optional[Mapping[str, str]] = None,
         data: Optional[Union[bytes, str, Mapping[str, Any]]] = None,
         json_body: Optional[Any] = None,
-        timeout: Optional[httpx.Timeout] = None,
+        timeout: Optional[Union[float, httpx.Timeout]] = None,
         sensitive_headers: Iterable[str] = ("authorization", "x-api-key"),
         retry_on: Tuple[int, ...] = (408, 429, 500, 502, 503, 504),
     ) -> HttpResponse:
         started = _now_ms()
+        allow_retry = method.upper() in ("GET", "HEAD", "OPTIONS")
         merged_headers = dict(self._headers)
         if headers:
             merged_headers.update(headers)
@@ -104,8 +117,15 @@ class HttpClient:
                     json=json_body,
                     timeout=timeout or self._timeout,
                 )
-                if resp.status_code in retry_on and attempt < self._max_retries:
-                    time.sleep(self._backoff * (2**attempt))
+                if (
+                    allow_retry
+                    and (resp.status_code in retry_on)
+                    and attempt < self._max_retries
+                ):
+                    _delay = self._backoff * (2**attempt) + random.uniform(
+                        0, self._backoff
+                    )
+                    time.sleep(_delay)
                     continue
                 ended = _now_ms()
                 return HttpResponse(
@@ -118,15 +138,13 @@ class HttpClient:
                     started_ms=started,
                     ended_ms=ended,
                 )
-            except (
-                httpx.ConnectError,
-                httpx.ReadTimeout,
-                httpx.WriteError,
-                httpx.RemoteProtocolError,
-            ) as e:
+            except _RETRYABLE_EXC as e:
                 last_exc = e
-                if attempt < self._max_retries:
-                    time.sleep(self._backoff * (2**attempt))
+                if allow_retry and attempt < self._max_retries:
+                    _delay = self._backoff * (2**attempt) + random.uniform(
+                        0, self._backoff
+                    )
+                    time.sleep(_delay)
                     continue
                 raise
         # If we somehow exit the loop without returning/raising earlier:
@@ -144,13 +162,12 @@ class HttpClient:
         headers: Optional[Mapping[str, str]] = None,
         data: Optional[Union[bytes, str, Mapping[str, Any]]] = None,
         json_body: Optional[Any] = None,
-        timeout: Optional[httpx.Timeout] = None,
+        timeout: Optional[Union[float, httpx.Timeout]] = None,
         sensitive_headers: Iterable[str] = ("authorization", "x-api-key"),
         retry_on: Tuple[int, ...] = (408, 429, 500, 502, 503, 504),
     ) -> HttpResponse:
-        import asyncio
-
         started = _now_ms()
+        allow_retry = method.upper() in ("GET", "HEAD", "OPTIONS")
         merged_headers = dict(self._headers)
         if headers:
             merged_headers.update(headers)
@@ -167,8 +184,15 @@ class HttpClient:
                     json=json_body,
                     timeout=timeout or self._timeout,
                 )
-                if resp.status_code in retry_on and attempt < self._max_retries:
-                    await asyncio.sleep(self._backoff * (2**attempt))
+                if (
+                    allow_retry
+                    and (resp.status_code in retry_on)
+                    and attempt < self._max_retries
+                ):
+                    _delay = self._backoff * (2**attempt) + random.uniform(
+                        0, self._backoff
+                    )
+                    await asyncio.sleep(_delay)
                     continue
                 ended = _now_ms()
                 return HttpResponse(
@@ -181,21 +205,17 @@ class HttpClient:
                     started_ms=started,
                     ended_ms=ended,
                 )
-            except (
-                httpx.ConnectError,
-                httpx.ReadTimeout,
-                httpx.WriteError,
-                httpx.RemoteProtocolError,
-            ) as e:
+            except _RETRYABLE_EXC as e:
                 last_exc = e
-                if attempt < self._max_retries:
-                    await asyncio.sleep(self._backoff * (2**attempt))
+                if allow_retry and attempt < self._max_retries:
+                    _delay = self._backoff * (2**attempt) + random.uniform(
+                        0, self._backoff
+                    )
+                    await asyncio.sleep(_delay)
                     continue
                 raise
         if last_exc:
             raise last_exc  # pragma: no cover
-
-    # ------------------------- Utilities --------------------
 
     @staticmethod
     def redact_headers_for_log(

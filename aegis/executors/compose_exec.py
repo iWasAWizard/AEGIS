@@ -15,12 +15,15 @@ Supported ops:
 - down
 - ps
 - logs
+- build
+- pull
+- exec
+- run
 """
 from __future__ import annotations
 
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Union
 from pathlib import Path
-import json
 import re
 
 from aegis.exceptions import ToolExecutionError
@@ -33,11 +36,22 @@ from aegis.utils.exec_common import run_subprocess, now_ms as _now_ms
 logger = setup_logger(__name__)
 
 
+def _shlex_quote(s: str) -> str:
+    # Minimal portable quoting for logs only
+    if not s:
+        return "''"
+    if re.fullmatch(r"[A-Za-z0-9_@%+=:,./-]+", s):
+        return s
+    return "'" + s.replace("'", "'\"'\"'") + "'"
+
+
 def _sanitize_cli_list(argv: List[str]) -> str:
     """
     Redact common sensitive bits for logging without changing argument structure.
     """
     s = " ".join(_shlex_quote(a) for a in argv)
+    # Mask env injection flags: -e/--env KEY=VALUE
+    s = re.sub(r"((?:--env|-e)\s+)(\w+)=\S+", r"\1\2=********", s, flags=re.IGNORECASE)
     # Basic token redactions: tokens that look like KEY=SECRET or --token xxx
     s = re.sub(
         r"(\b(password|passwd|token|api[_-]?key|secret)\s*=\s*)([^ \t]+)",
@@ -50,13 +64,17 @@ def _sanitize_cli_list(argv: List[str]) -> str:
     return s
 
 
-def _shlex_quote(s: str) -> str:
-    # Minimal portable quoting for logs only
-    if not s:
-        return "''"
-    if re.fullmatch(r"[A-Za-z0-9_@%+=:,./-]+", s):
-        return s
-    return "'" + s.replace("'", "'\"'\"'") + "'"
+def _redact_env(env: Dict[str, str] | None) -> Dict[str, str]:
+    if not env:
+        return {}
+    return {
+        k: (
+            "********"
+            if re.search(r"(password|passwd|token|api[_-]?key|secret)", k, re.I)
+            else v
+        )
+        for k, v in env.items()
+    }
 
 
 class ComposeExecutor:
@@ -86,6 +104,7 @@ class ComposeExecutor:
         *,
         timeout: Optional[int] = None,
         allow_follow: bool = False,
+        env: Optional[Dict[str, str]] = None,
     ) -> Tuple[int, bytes, bytes]:
         """
         Execute a compose command using the first working candidate.
@@ -106,11 +125,22 @@ class ComposeExecutor:
                     allow_shell=False,
                     text_mode=False,  # we will decode explicitly
                     cwd=str(self.project_dir) if self.project_dir else None,
+                    env=env or None,
                 )
-                # Normalize to tuple (returncode, stdout, stderr)
                 rc = res.returncode if res.returncode is not None else 1
                 out = res.stdout or b""
                 err = res.stderr or b""
+
+                # If `docker` exists but 'compose' subcommand isn't available, try next candidate
+                if rc != 0:
+                    err_txt = (err or b"").decode("utf-8", "ignore").lower()
+                    if "compose" in err_txt and (
+                        "not a docker command" in err_txt
+                        or "unknown command" in err_txt
+                    ):
+                        last_err = ToolExecutionError(err_txt.strip().splitlines()[0])
+                        continue
+
                 return rc, out, err
             except FileNotFoundError as e:
                 # Try next candidate (e.g., docker-compose not installed or vice versa)
@@ -142,6 +172,7 @@ class ComposeExecutor:
         project_name: Optional[str] = None,
         scales: Optional[Dict[str, int]] = None,
         timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> str:
         args: List[str] = ["up"]
         if detach:
@@ -160,11 +191,10 @@ class ComposeExecutor:
             args += ["--profile", p]
         for svc, n in (scales or {}).items():
             args += ["--scale", f"{svc}={int(n)}"]
-        # Services go last
         if services:
             args += list(services)
 
-        rc, out, err = self._compose(args, timeout=timeout)
+        rc, out, err = self._compose(args, timeout=timeout, env=env)
         if rc != 0:
             raise ToolExecutionError(
                 f"compose up failed with exit code {rc}. STDERR: {err.decode('utf-8','replace')}"
@@ -179,6 +209,7 @@ class ComposeExecutor:
         remove_orphans: bool = False,
         project_name: Optional[str] = None,
         timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> str:
         args: List[str] = ["down"]
         if volumes:
@@ -190,7 +221,7 @@ class ComposeExecutor:
         if project_name:
             args += ["-p", project_name]
 
-        rc, out, err = self._compose(args, timeout=timeout)
+        rc, out, err = self._compose(args, timeout=timeout, env=env)
         if rc != 0:
             raise ToolExecutionError(
                 f"compose down failed with exit code {rc}. STDERR: {err.decode('utf-8','replace')}"
@@ -203,6 +234,7 @@ class ComposeExecutor:
         file: Optional[str] = None,
         project_name: Optional[str] = None,
         timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> str:
         """
         Returns JSON when supported (docker compose ps --format json). If the JSON
@@ -216,13 +248,13 @@ class ComposeExecutor:
 
         # Try JSON first
         args_json = ["ps", "--format", "json"] + base_args
-        rc, out, err = self._compose(args_json, timeout=timeout)
+        rc, out, err = self._compose(args_json, timeout=timeout, env=env)
         if rc == 0:
             return out.decode("utf-8", "replace")
 
         # Fallback to plain text
         args_txt = ["ps"] + base_args
-        rc2, out2, err2 = self._compose(args_txt, timeout=timeout)
+        rc2, out2, err2 = self._compose(args_txt, timeout=timeout, env=env)
         if rc2 != 0:
             raise ToolExecutionError(
                 f"compose ps failed with exit code {rc2}. STDERR: {err2.decode('utf-8','replace')}"
@@ -239,6 +271,7 @@ class ComposeExecutor:
         timestamps: bool = False,
         follow: bool = False,
         timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> str:
         """
         Returns log text. If follow=True, this call may block; pass a timeout if desired.
@@ -257,10 +290,117 @@ class ComposeExecutor:
         if services:
             args += list(services)
 
-        rc, out, err = self._compose(args, timeout=timeout, allow_follow=follow)
+        rc, out, err = self._compose(
+            args, timeout=timeout, allow_follow=follow, env=env
+        )
         if rc != 0:
             raise ToolExecutionError(
                 f"compose logs failed with exit code {rc}. STDERR: {err.decode('utf-8','replace')}"
+            )
+        return out.decode("utf-8", "replace")
+
+    def build(
+        self,
+        services: Optional[List[str]] = None,
+        *,
+        no_cache: bool = False,
+        pull: bool = False,
+        timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
+    ) -> str:
+        args: List[str] = ["build"]
+        if no_cache:
+            args.append("--no-cache")
+        if pull:
+            args.append("--pull")
+        if services:
+            args += services
+        rc, out, err = self._compose(args, timeout=timeout, env=env)
+        if rc != 0:
+            raise ToolExecutionError(
+                f"compose build failed with exit code {rc}. STDERR: {err.decode('utf-8','replace')}"
+            )
+        return out.decode("utf-8", "replace")
+
+    def pull(
+        self,
+        services: Optional[List[str]] = None,
+        *,
+        timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
+    ) -> str:
+        args: List[str] = ["pull"]
+        if services:
+            args += services
+        rc, out, err = self._compose(args, timeout=timeout, env=env)
+        if rc != 0:
+            raise ToolExecutionError(
+                f"compose pull failed with exit code {rc}. STDERR: {err.decode('utf-8','replace')}"
+            )
+        return out.decode("utf-8", "replace")
+
+    def exec(
+        self,
+        service: str,
+        command: Union[str, List[str]],
+        *,
+        user: Optional[str] = None,
+        workdir: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None,
+        no_tty: bool = True,
+        timeout: Optional[int] = None,
+    ) -> str:
+        args: List[str] = ["exec"]
+        if no_tty:
+            args.append("-T")
+        if user:
+            args += ["-u", str(user)]
+        if workdir:
+            args += ["-w", workdir]
+        if env:
+            for k, v in env.items():
+                args += ["-e", f"{k}={v}"]
+        args.append(service)
+        if isinstance(command, list):
+            args += command
+        else:
+            args.append(command)
+
+        rc, out, err = self._compose(args, timeout=timeout)
+        if rc != 0:
+            raise ToolExecutionError(
+                f"compose exec failed with exit code {rc}. STDERR: {err.decode('utf-8','replace')}"
+            )
+        return out.decode("utf-8", "replace")
+
+    def run(
+        self,
+        service: str,
+        command: Union[str, List[str]],
+        *,
+        rm: bool = True,
+        no_deps: bool = True,
+        env: Optional[Dict[str, str]] = None,
+        timeout: Optional[int] = None,
+    ) -> str:
+        args: List[str] = ["run"]
+        if rm:
+            args.append("--rm")
+        if no_deps:
+            args.append("--no-deps")
+        if env:
+            for k, v in env.items():
+                args += ["-e", f"{k}={v}"]
+        args.append(service)
+        if isinstance(command, list):
+            args += command
+        else:
+            args.append(command)
+
+        rc, out, err = self._compose(args, timeout=timeout)
+        if rc != 0:
+            raise ToolExecutionError(
+                f"compose run failed with exit code {rc}. STDERR: {err.decode('utf-8','replace')}"
             )
         return out.decode("utf-8", "replace")
 
@@ -296,6 +436,7 @@ class ComposeExecutorToolResultMixin:
         project_name: Optional[str] = None,
         scales: Optional[Dict[str, int]] = None,
         timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> ToolResult:
         start = _now_ms()
         if dry_run.enabled:
@@ -313,6 +454,7 @@ class ComposeExecutorToolResultMixin:
                         "project_name": project_name,
                         "scales": scales,
                         "cwd": str(project_dir) if project_dir else None,
+                        "env": _redact_env(env),
                     }
                 ),
             )
@@ -334,6 +476,7 @@ class ComposeExecutorToolResultMixin:
                 project_name=project_name,
                 scales=scales,
                 timeout=timeout,
+                env=env,
             )
             return ToolResult.ok_result(
                 stdout=out,
@@ -358,6 +501,7 @@ class ComposeExecutorToolResultMixin:
         remove_orphans: bool = False,
         project_name: Optional[str] = None,
         timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> ToolResult:
         start = _now_ms()
         if dry_run.enabled:
@@ -370,6 +514,7 @@ class ComposeExecutorToolResultMixin:
                         "remove_orphans": remove_orphans,
                         "project_name": project_name,
                         "cwd": str(project_dir) if project_dir else None,
+                        "env": _redact_env(env),
                     }
                 ),
             )
@@ -386,6 +531,7 @@ class ComposeExecutorToolResultMixin:
                 remove_orphans=remove_orphans,
                 project_name=project_name,
                 timeout=timeout,
+                env=env,
             )
             return ToolResult.ok_result(
                 stdout=out,
@@ -408,6 +554,7 @@ class ComposeExecutorToolResultMixin:
         file: Optional[str] = None,
         project_name: Optional[str] = None,
         timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> ToolResult:
         start = _now_ms()
         if dry_run.enabled:
@@ -418,6 +565,7 @@ class ComposeExecutorToolResultMixin:
                         "file": file,
                         "project_name": project_name,
                         "cwd": str(project_dir) if project_dir else None,
+                        "env": _redact_env(env),
                     }
                 ),
             )
@@ -428,7 +576,7 @@ class ComposeExecutorToolResultMixin:
             )
         try:
             exe = ComposeExecutor(project_dir=project_dir)
-            out = exe.ps(file=file, project_name=project_name, timeout=timeout)
+            out = exe.ps(file=file, project_name=project_name, timeout=timeout, env=env)
             return ToolResult.ok_result(
                 stdout=out,
                 exit_code=0,
@@ -454,6 +602,7 @@ class ComposeExecutorToolResultMixin:
         timestamps: bool = False,
         follow: bool = False,
         timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> ToolResult:
         start = _now_ms()
         if dry_run.enabled:
@@ -468,6 +617,7 @@ class ComposeExecutorToolResultMixin:
                         "timestamps": timestamps,
                         "follow": follow,
                         "cwd": str(project_dir) if project_dir else None,
+                        "env": _redact_env(env),
                     }
                 ),
             )
@@ -486,6 +636,7 @@ class ComposeExecutorToolResultMixin:
                 timestamps=timestamps,
                 follow=follow,
                 timeout=timeout,
+                env=env,
             )
             return ToolResult.ok_result(
                 stdout=out,
@@ -501,9 +652,193 @@ class ComposeExecutorToolResultMixin:
                 meta={"project_name": project_name, "file": file},
             )
 
+    def build_result(
+        self,
+        *,
+        project_dir: str | Path | None = None,
+        services: Optional[List[str]] = None,
+        no_cache: bool = False,
+        pull: bool = False,
+        timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="compose.build",
+                args=redact_for_log(
+                    {
+                        "services": services,
+                        "no_cache": no_cache,
+                        "pull": pull,
+                        "cwd": str(project_dir) if project_dir else None,
+                        "env": _redact_env(env),
+                    }
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] compose.build",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            exe = ComposeExecutor(project_dir=project_dir)
+            out = exe.build(
+                services=services,
+                no_cache=no_cache,
+                pull=pull,
+                timeout=timeout,
+                env=env,
+            )
+            return ToolResult.ok_result(
+                stdout=out, exit_code=0, latency_ms=_now_ms() - start
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_errtype(e), stderr=str(e), latency_ms=_now_ms() - start
+            )
+
+    def pull_result(
+        self,
+        *,
+        project_dir: str | Path | None = None,
+        services: Optional[List[str]] = None,
+        timeout: Optional[int] = None,
+        env: Optional[Dict[str, str]] = None,
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            preview = dry_run.preview_payload(
+                tool="compose.pull",
+                args=redact_for_log(
+                    {
+                        "services": services,
+                        "cwd": str(project_dir) if project_dir else None,
+                        "env": _redact_env(env),
+                    }
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] compose.pull",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            exe = ComposeExecutor(project_dir=project_dir)
+            out = exe.pull(services=services, timeout=timeout, env=env)
+            return ToolResult.ok_result(
+                stdout=out, exit_code=0, latency_ms=_now_ms() - start
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_errtype(e), stderr=str(e), latency_ms=_now_ms() - start
+            )
+
+    def exec_result(
+        self,
+        *,
+        project_dir: str | Path | None = None,
+        service: str,
+        command: Union[str, List[str]],
+        user: Optional[str] = None,
+        workdir: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None,
+        no_tty: bool = True,
+        timeout: Optional[int] = None,
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            cmd_str = command if isinstance(command, str) else " ".join(command)
+            preview = dry_run.preview_payload(
+                tool="compose.exec",
+                args=redact_for_log(
+                    {
+                        "service": service,
+                        "command": cmd_str,
+                        "user": user,
+                        "workdir": workdir,
+                        "no_tty": no_tty,
+                        "cwd": str(project_dir) if project_dir else None,
+                        "env": _redact_env(env),
+                    }
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] compose.exec",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            exe = ComposeExecutor(project_dir=project_dir)
+            out = exe.exec(
+                service,
+                command,
+                user=user,
+                workdir=workdir,
+                env=env,
+                no_tty=no_tty,
+                timeout=timeout,
+            )
+            return ToolResult.ok_result(
+                stdout=out, exit_code=0, latency_ms=_now_ms() - start
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_errtype(e), stderr=str(e), latency_ms=_now_ms() - start
+            )
+
+    def run_result(
+        self,
+        *,
+        project_dir: str | Path | None = None,
+        service: str,
+        command: Union[str, List[str]],
+        rm: bool = True,
+        no_deps: bool = True,
+        env: Optional[Dict[str, str]] = None,
+        timeout: Optional[int] = None,
+    ) -> ToolResult:
+        start = _now_ms()
+        if dry_run.enabled:
+            cmd_str = command if isinstance(command, str) else " ".join(command)
+            preview = dry_run.preview_payload(
+                tool="compose.run",
+                args=redact_for_log(
+                    {
+                        "service": service,
+                        "command": cmd_str,
+                        "rm": rm,
+                        "no_deps": no_deps,
+                        "cwd": str(project_dir) if project_dir else None,
+                        "env": _redact_env(env),
+                    }
+                ),
+            )
+            return ToolResult.ok_result(
+                stdout="[DRY-RUN] compose.run",
+                latency_ms=_now_ms() - start,
+                meta={"preview": preview},
+            )
+        try:
+            exe = ComposeExecutor(project_dir=project_dir)
+            out = exe.run(
+                service, command, rm=rm, no_deps=no_deps, env=env, timeout=timeout
+            )
+            return ToolResult.ok_result(
+                stdout=out, exit_code=0, latency_ms=_now_ms() - start
+            )
+        except Exception as e:
+            return ToolResult.err_result(
+                error_type=_errtype(e), stderr=str(e), latency_ms=_now_ms() - start
+            )
+
 
 # Bind mixin methods to class (non-destructive append-only style)
 ComposeExecutor.up_result = ComposeExecutorToolResultMixin.up_result
 ComposeExecutor.down_result = ComposeExecutorToolResultMixin.down_result
 ComposeExecutor.ps_result = ComposeExecutorToolResultMixin.ps_result
 ComposeExecutor.logs_result = ComposeExecutorToolResultMixin.logs_result
+ComposeExecutor.build_result = ComposeExecutorToolResultMixin.build_result
+ComposeExecutor.pull_result = ComposeExecutorToolResultMixin.pull_result
+ComposeExecutor.exec_result = ComposeExecutorToolResultMixin.exec_result
+ComposeExecutor.run_result = ComposeExecutorToolResultMixin.run_result

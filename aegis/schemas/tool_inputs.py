@@ -88,19 +88,19 @@ class _ClusterBase(BaseModel):
     in_cluster: bool = Field(False, description="Use in-cluster auth")
 
 
-class K8sListPodsInput(_ClusterBase):
+class KubernetesListPodsInput(_ClusterBase):
     namespace: str = "default"
     label_selector: Optional[str] = None
 
 
-class K8sPodLogsInput(_ClusterBase):
+class KubernetesPodLogsInput(_ClusterBase):
     name: str
     namespace: str = "default"
     container: Optional[str] = None
     tail_lines: Optional[int] = None
 
 
-class K8sExecInput(_ClusterBase):
+class KubernetesExecInput(_ClusterBase):
     name: str
     namespace: str
     command: List[str]
@@ -108,17 +108,17 @@ class K8sExecInput(_ClusterBase):
     tty: bool = False
 
 
-class K8sApplyManifestInput(_ClusterBase):
+class KubernetesApplyManifestInput(_ClusterBase):
     manifest: Dict[str, Any]
 
 
-class K8sDeleteObjectInput(_ClusterBase):
+class KubernetesDeleteObjectInput(_ClusterBase):
     kind: str
     name: str
     namespace: str = "default"
 
 
-class K8sCreateJobInput(_ClusterBase):
+class KubernetesCreateJobInput(_ClusterBase):
     namespace: str
     name: str
     image: str

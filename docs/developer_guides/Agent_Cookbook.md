@@ -1,9 +1,3 @@
-Excellent. This is a crucial document. The others explain *how* the framework works; this one explains *how to think* with it. It's the bridge from being a user to being an architect.
-
-Here is the Agent Design Patterns & Cookbook.
-
----
-
 # Agent Design Patterns & Cookbook
 
 The AEGIS framework provides a powerful set of building blocks. This guide goes beyond the technical details to show you *how to compose* those blocks into sophisticated, reliable, and effective autonomous agents. These are the "recipes" and design patterns that will help you solve complex problems.

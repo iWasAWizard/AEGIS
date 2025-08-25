@@ -1,4 +1,6 @@
 # aegis/tools/wrappers/fuzz.py
+# (complete file)
+# aegis/tools/wrappers/fuzz.py
 """
 Wrapper tools for performing fuzz testing on various targets.
 
@@ -12,6 +14,7 @@ import random
 import string
 import subprocess
 import tempfile
+import shlex
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -23,6 +26,7 @@ from aegis.exceptions import ToolExecutionError, ToolNotFoundError
 from aegis.registry import ToolEntry, register_tool, get_tool
 from aegis.schemas.emoji import EMOJI_SET
 from aegis.utils.logger import setup_logger
+from aegis.utils.exec_common import run_subprocess
 
 logger = setup_logger(__name__)
 
@@ -56,6 +60,10 @@ class FuzzExternalCommandInput(BaseModel):
     max_length: int = Field(
         100, ge=1, le=1000, description="Maximum length of the generated payload."
     )
+    allow_shell: bool = Field(
+        False,
+        description="If true, run via /bin/sh -lc; otherwise '{}' must be a standalone argv token.",
+    )
 
 
 class FuzzFileInputInput(BaseModel):
@@ -85,20 +93,14 @@ class FuzzFileInputInput(BaseModel):
     iterations: int = Field(
         5, ge=1, description="Number of temporary files to generate and test."
     )
+    allow_shell: bool = Field(
+        False,
+        description="If true, run via /bin/sh -lc; otherwise '{}' must be a standalone argv token.",
+    )
 
 
 class FuzzAPIRequestInput(BaseModel):
-    """Input for fuzzing a web API endpoint.
-
-    :ivar url: The target API endpoint URL.
-    :vartype url: str
-    :ivar method: The HTTP method to use (e.g., 'POST', 'PUT').
-    :vartype method: str
-    :ivar mode: Payload mode for the request body.
-    :vartype mode: str
-    :ivar iterations: Number of API requests to send.
-    :vartype iterations: int
-    """
+    """Input for fuzzing a JSON-based HTTP API."""
 
     url: str = Field(..., description="The target API endpoint URL.")
     method: str = Field(
@@ -109,50 +111,52 @@ class FuzzAPIRequestInput(BaseModel):
 
 
 class FuzzToolRegistryInput(BaseModel):
-    """Input for fuzzing an internal tool from the AEGIS registry.
+    """Input for fuzzing internal tools in the AEGIS registry."""
 
-    :ivar tool_name: The name of the registered internal tool to fuzz.
-    :vartype tool_name: str
-    :ivar iterations: Number of times to invoke the tool with fuzzed input.
-    :vartype iterations: int
-    """
-
-    tool_name: str = Field(
-        ..., description="The name of the registered internal tool to fuzz."
-    )
-    iterations: int = Field(
-        5, ge=1, description="Number of times to invoke the tool with fuzzed input."
+    tool_name: str = Field(..., description="Registered tool name to invoke.")
+    iterations: int = Field(5, ge=1, description="Number of calls to make.")
+    mode: str = Field(
+        "json",
+        description="Payload mode. Valid: 'json' for dict-like, 'ascii'/'emoji'/'bytes' for free-form fields.",
     )
 
 
-# === Helper Function ===
+# === Utility: payload generators ===
 
 
-def generate_payload(mode: str, max_length: int) -> str:
-    """Generates a random payload string based on the specified mode.
-
-    :param mode: The type of payload to generate ('ascii', 'emoji', 'json', 'bytes').
-    :type mode: str
-    :param max_length: The maximum length of the payload.
-    :type max_length: int
-    :return: A randomly generated payload string.
-    :rtype: str
-    """
-    length = random.randint(1, max_length)
+def generate_payload(mode: str, max_len: int) -> str:
+    mode = (mode or "ascii").lower()
     if mode == "ascii":
-        return "".join(random.choices(string.ascii_letters + string.digits, k=length))
-    if mode == "emoji":
-        return "".join(random.choices(EMOJI_SET, k=length // 2 or 1))
-    if mode == "json":
-        # Generate a simple, randomized JSON object string.
-        return json.dumps(
-            {f"key_{i}": random.randint(0, 999) for i in range(random.randint(1, 5))}
+        return "".join(
+            random.choice(string.ascii_letters + string.digits + string.punctuation)
+            for _ in range(random.randint(1, max_len))
         )
+    if mode == "emoji":
+        return "".join(
+            random.choice(EMOJI_SET) for _ in range(random.randint(1, max_len // 2 + 1))
+        )
+    if mode == "json":
+        # produce noisy but valid-ish JSON-ish structure
+        obj = {
+            "s": "".join(
+                random.choice(string.ascii_letters)
+                for _ in range(random.randint(0, max_len // 2))
+            ),
+            "n": random.randint(-10_000, 10_000),
+            "b": random.choice([True, False]),
+            "arr": [random.randint(0, 100) for _ in range(random.randint(0, 10))],
+        }
+        return json.dumps(obj)
     if mode == "bytes":
-        # Generate a string of random bytes (0-255).
-        return "".join(chr(random.randint(0, 255)) for _ in range(length))
-    logger.warning(f"Unknown payload generation mode '{mode}'. Using default.")
-    return "DEFAULT_FUZZ_PAYLOAD"
+        # return as latin-1 encodable string (caller decides how to write/encode)
+        return "".join(
+            chr(random.randint(0, 255)) for _ in range(random.randint(1, max_len))
+        )
+    # default
+    return "".join(
+        random.choice(string.ascii_letters + string.digits)
+        for _ in range(random.randint(1, max_len))
+    )
 
 
 # === Tools ===
@@ -161,8 +165,8 @@ def generate_payload(mode: str, max_length: int) -> str:
 @register_tool(
     name="fuzz_external_command",
     input_model=FuzzExternalCommandInput,
-    description="Fuzz an external shell command by injecting randomized payloads as arguments.",
-    tags=["fuzz", "external", "cli", "wrapper"],
+    description="Run an external command multiple times with fuzzed inputs substituted into a template.",
+    tags=["fuzz", "external", "command", "wrapper"],
     category="wrapper",
     safe_mode=False,
 )
@@ -189,16 +193,29 @@ def fuzz_external_command(input_data: FuzzExternalCommandInput) -> Dict[str, Any
         payload = generate_payload(input_data.mode, input_data.max_length)
         cmd = input_data.command.replace("{}", payload)
         try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, timeout=5, text=True, check=False
-            )
+            # Execute with central helper
+            if input_data.allow_shell:
+                exec_res = run_subprocess(
+                    cmd, timeout=5, allow_shell=True, text_mode=True
+                )
+            else:
+                # Safe path: '{}' must be a standalone argv token
+                tokens = shlex.split(input_data.command)
+                if "{}" not in tokens:
+                    raise ToolExecutionError(
+                        "When allow_shell=False, '{}' must be a standalone token in the command template."
+                    )
+                tokens = [payload if t == "{}" else t for t in tokens]
+                exec_res = run_subprocess(
+                    tokens, timeout=5, allow_shell=False, text_mode=True
+                )
             results.append(
                 {
                     "iteration": i + 1,
                     "input": payload,
-                    "returncode": result.returncode,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
+                    "returncode": exec_res.returncode,
+                    "stdout": exec_res.stdout_text(),
+                    "stderr": exec_res.stderr_text(),
                 }
             )
         except subprocess.TimeoutExpired:
@@ -258,9 +275,10 @@ def fuzz_file_input(input_data: FuzzFileInputInput) -> Dict[str, Any]:
 
     logger.info(f"Starting file input fuzzing for: {input_data.command_template}")
     results: List[Dict[str, Any]] = []
+
     for i in range(input_data.iterations):
         content = generate_payload(input_data.file_mode, input_data.max_length)
-        tmp_file = None
+        tmp_file_name: str | None = None
         try:
             with tempfile.NamedTemporaryFile(
                 "w+",
@@ -277,25 +295,30 @@ def fuzz_file_input(input_data: FuzzFileInputInput) -> Dict[str, Any]:
 
             # tmp is now closed, but file still exists due to delete=False
             cmd = input_data.command_template.replace("{}", tmp_file_name)
-            proc = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                timeout=10,  # Increased timeout for file I/O + command
-                text=True,
-                check=False,
-                encoding="utf-8",
-                errors="surrogateescape",
-            )
+            # Execute with central helper
+            if input_data.allow_shell:
+                exec_res = run_subprocess(
+                    cmd, timeout=10, allow_shell=True, text_mode=True
+                )
+            else:
+                tokens = shlex.split(input_data.command_template)
+                if "{}" not in tokens:
+                    raise ToolExecutionError(
+                        "When allow_shell=False, '{}' must be a standalone token in the command template."
+                    )
+                tokens = [tmp_file_name if t == "{}" else t for t in tokens]
+                exec_res = run_subprocess(
+                    tokens, timeout=10, allow_shell=False, text_mode=True
+                )
             results.append(
                 {
                     "iteration": i + 1,
                     "file_content_preview": content[:100]
                     + ("..." if len(content) > 100 else ""),
                     "file_path": tmp_file_name,
-                    "returncode": proc.returncode,
-                    "stdout": proc.stdout,
-                    "stderr": proc.stderr,
+                    "returncode": exec_res.returncode,
+                    "stdout": exec_res.stdout_text(),
+                    "stderr": exec_res.stderr_text(),
                 }
             )
         except subprocess.TimeoutExpired:
@@ -341,13 +364,13 @@ def fuzz_file_input(input_data: FuzzFileInputInput) -> Dict[str, Any]:
 @register_tool(
     name="fuzz_api_request",
     input_model=FuzzAPIRequestInput,
-    description="Send fuzzed payloads to an HTTP API endpoint.",
-    tags=["fuzz", "api", "network", "wrapper"],
+    description="Send fuzzed JSON bodies to an HTTP API endpoint.",
+    tags=["fuzz", "api", "http", "wrapper"],
     category="wrapper",
     safe_mode=False,
 )
 def fuzz_api_request(input_data: FuzzAPIRequestInput) -> Dict[str, Any]:
-    """Sends multiple HTTP requests with fuzzed bodies to a target URL.
+    """Send fuzzed HTTP requests to a target API with varying payloads and methods.
     This tool returns a summary. It will raise ToolExecutionError for critical setup issues.
 
     :param input_data: Configuration for the API fuzzing session.
@@ -362,91 +385,31 @@ def fuzz_api_request(input_data: FuzzAPIRequestInput) -> Dict[str, Any]:
     for i in range(input_data.iterations):
         payload = generate_payload(
             input_data.mode, 200
-        )  # Max length 200 for API payloads
+        )  # keep API payloads moderate in size
         try:
-            # Use data=payload for non-JSON, json=payload_dict for JSON
-            request_kwargs = {
-                "method": input_data.method,
-                "url": input_data.url,
-                "timeout": 10,
-            }
-            if input_data.mode == "json":
-                try:
-                    payload_dict = json.loads(payload)
-                    request_kwargs["json"] = payload_dict
-                except json.JSONDecodeError:
-                    request_kwargs["content"] = payload.encode(
-                        "utf-8", errors="surrogateescape"
-                    )
-                    request_kwargs["headers"] = {"Content-Type": "text/plain"}
-            else:
-                request_kwargs["content"] = payload.encode(
-                    "utf-8", errors="surrogateescape"
-                )
-                request_kwargs["headers"] = {
-                    "Content-Type": (
-                        "application/octet-stream"
-                        if input_data.mode == "bytes"
-                        else "text/plain"
-                    )
-                }
-
-            resp = httpx.request(**request_kwargs)  # type: ignore
+            resp = httpx.request(
+                method=input_data.method,
+                url=input_data.url,
+                json=json.loads(payload) if input_data.mode == "json" else payload,
+                timeout=10.0,
+            )
             results.append(
                 {
                     "iteration": i + 1,
-                    "input_payload": payload,
                     "status_code": resp.status_code,
-                    "response_body_preview": resp.text.strip()[:200]
-                    + ("..." if len(resp.text.strip()) > 200 else ""),
-                }
-            )
-        except httpx.Timeout as e:
-            logger.warning(
-                f"API fuzzing iteration {i + 1} with payload '{payload[:50]}...' timed out."
-            )
-            results.append(
-                {
-                    "iteration": i + 1,
-                    "input_payload": payload,
-                    "error": "Timeout",
-                    "status_code": -1,
-                }
-            )
-        except httpx.RequestError as e:
-            logger.warning(
-                f"API fuzzing iteration {i + 1} failed with a RequestError: {e}"
-            )
-            results.append(
-                {
-                    "iteration": i + 1,
-                    "input_payload": payload,
-                    "error": str(e),
-                    "status_code": -1,
+                    "ok": resp.is_success,
+                    "text_preview": resp.text[:200],
                 }
             )
         except Exception as e:
-            logger.exception(
-                f"API fuzzing iteration {i + 1} failed with an unexpected exception."
-            )
+            logger.exception(f"API fuzzing iteration {i + 1} failed.")
             results.append(
-                {
-                    "iteration": i + 1,
-                    "input_payload": payload,
-                    "error": str(e),
-                    "status_code": -1,
-                }
+                {"iteration": i + 1, "error": str(e), "status_code": -1, "ok": False}
             )
 
-    failures = sum(
-        1
-        for r in results
-        if r.get("status_code", 200) >= 400
-        or r.get("status_code", 200) == -1
-        or "error" in r
-    )
+    failures = sum(1 for r in results if not r.get("ok", False) or "error" in r)
     return {
-        "summary": {"requests_sent": input_data.iterations, "failures": failures},
+        "summary": {"attempted": input_data.iterations, "failures": failures},
         "results": results,
     }
 
@@ -454,93 +417,75 @@ def fuzz_api_request(input_data: FuzzAPIRequestInput) -> Dict[str, Any]:
 @register_tool(
     name="fuzz_tool_via_registry",
     input_model=FuzzToolRegistryInput,
-    description="Fuzzes an internal AEGIS tool by calling it with default-constructed Pydantic models.",
+    description="Invoke a registered AEGIS tool repeatedly with fuzzed inputs.",
     tags=["fuzz", "internal", "registry", "wrapper"],
     category="wrapper",
-    safe_mode=True,  # Fuzzing itself is a read-only operation on the tool's definition
+    safe_mode=False,
 )
 def fuzz_tool_via_registry(input_data: FuzzToolRegistryInput) -> Dict[str, Any]:
-    """Attempts to call an internal tool with an empty/default input model.
-    This tool returns a summary. It will raise ToolExecutionError for setup issues
-    (e.g., tool not found, or if the target tool's input model CANNOT be default constructed).
+    """Invoke a registered AEGIS tool by name, supplying fuzzed inputs.
+    This tool demonstrates how fuzzing can exercise tool schemas and validation.
 
-    This is a basic smoke test to see if a tool can handle default or empty inputs
-    without crashing. It is most effective on tools whose input models have
-    optional fields or fields with default values.
-
-    :param input_data: An object containing the name of the tool to fuzz.
+    :param input_data: Configuration for internal tool fuzzing.
     :type input_data: FuzzToolRegistryInput
-    :return: A dictionary summarizing the results of the invocations.
+    :return: Summary of successes/failures across invocations.
     :rtype: Dict[str, Any]
-    :raises ToolExecutionError: If the tool is not found or its input model cannot be default-constructed.
     """
-    logger.info(f"Fuzzing internal tool via registry: {input_data.tool_name}")
-
-    try:
-        # Use get_tool to ensure safe_mode checks are respected if this fuzz tool
-        # were ever run in a context where safe_mode=True mattered for the target.
-        # For this specific fuzz tool, it's generally okay to fuzz unsafe tools too,
-        # as we are just constructing their input model.
-        tool_entry: ToolEntry = get_tool(input_data.tool_name, safe_mode=False)
-    except ToolNotFoundError as e:
-        raise ToolExecutionError(f"Cannot fuzz tool: {e}")
+    logger.info(f"Fuzzing internal tool: {input_data.tool_name}")
+    entry: ToolEntry | None = get_tool(input_data.tool_name)
+    if not entry:
+        raise ToolNotFoundError(f"Tool '{input_data.tool_name}' is not registered.")
 
     results: List[Dict[str, Any]] = []
     for i in range(input_data.iterations):
-        model_instance = None
         try:
-            # Construct a default instance of the tool's input model.
-            # This will fail if the model has required fields without defaults.
-            model_instance = tool_entry.input_model()
-            # We don't actually run the tool here, as that could be unsafe
-            # and is not the purpose of *this specific* fuzzing tool.
-            # This tool only checks if default construction of input model works.
-            # A different fuzz tool could be made to actually *run* with fuzzed inputs.
-            output_str = f"Successfully default-constructed input model: {tool_entry.input_model.__name__}"
+            # For 'json' mode, try to fuzz the model by partial dicts, else send a string payload
+            if input_data.mode == "json" and entry.input_model:
+                # naive model fuzz: keep fields optional-ish by skipping some
+                sample = {}
+                for fname, f in entry.input_model.model_fields.items():  # type: ignore[attr-defined]
+                    if random.choice([True, False]):
+                        # very naive: assign random text or small ints
+                        sample[fname] = random.choice(
+                            [
+                                "".join(
+                                    random.choice(string.ascii_letters)
+                                    for _ in range(6)
+                                ),
+                                random.randint(0, 10),
+                                True,
+                                None,
+                            ]
+                        )
+                res = entry.func(input_data=entry.input_model(**sample))  # type: ignore
+            else:
+                res = entry.func(input_data=generate_payload("ascii", 40))  # type: ignore
+
+            results.append(
+                {"iteration": i + 1, "ok": True, "result_preview": str(res)[:200]}
+            )
+        except ValidationError as ve:
             results.append(
                 {
                     "iteration": i + 1,
-                    "input_model_type": tool_entry.input_model.__name__,
-                    "default_constructed_input": model_instance.model_dump_json(
-                        indent=2
-                    ),
-                    "outcome": output_str,
+                    "ok": False,
+                    "error": "ValidationError",
+                    "detail": str(ve)[:200],
                 }
             )
-        except (
-            ValidationError
-        ) as ve:  # If default construction fails due to required fields
-            logger.warning(
-                f"Internal tool fuzzing (default construction) iteration {i + 1} "
-                f"failed for {input_data.tool_name}: {ve}"
-            )
+        except Exception as e:
+            logger.exception("Internal tool fuzzing iteration failed.")
             results.append(
                 {
                     "iteration": i + 1,
-                    "input_model_type": tool_entry.input_model.__name__,
-                    "error": f"Pydantic ValidationError on default construction: {ve}",
-                }
-            )
-            # This is an expected outcome for some models, so we don't re-raise ToolExecutionError here.
-            # The summary will show it as a "failure" for this specific test type.
-        except Exception as e:  # Other unexpected errors during model instantiation
-            logger.exception(
-                f"Internal tool fuzzing (default model instantiation) iteration {i + 1} "
-                f"failed for {input_data.tool_name} with unexpected error."
-            )
-            results.append(
-                {
-                    "iteration": i + 1,
-                    "input_model_type": tool_entry.input_model.__name__,
-                    "error": str(e),
+                    "ok": False,
+                    "error": type(e).__name__,
+                    "detail": str(e)[:200],
                 }
             )
 
-    failures = sum(1 for r in results if "error" in r)
+    failures = sum(1 for r in results if not r.get("ok", False))
     return {
-        "summary": {
-            "invocations_attempted": input_data.iterations,
-            "construction_failures": failures,
-        },
+        "summary": {"attempted": input_data.iterations, "failures": failures},
         "results": results,
     }

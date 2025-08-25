@@ -1,61 +1,72 @@
 # aegis/utils/dryrun.py
 """
-Dry-run controller for safe previews.
+Unified dry-run controller.
 
-Import this and check `dry_run.enabled` before executing any side-effecting tool.
-Emit a preview record instead of performing the action when enabled.
-
-Environment controls:
-    - Set AEGIS_DRY_RUN=1 (or "true"/"yes"/"on") to enable globally at process start.
-
-Typical usage in a step/executor:
-    from aegis.utils.dryrun import dry_run
-
-    if dry_run.enabled:
-        return ToolResult.ok_result(
-            stdout="[DRY-RUN] would execute ssh.exec",
-            meta={"preview": {"tool": "ssh.exec", "args": args}},
-            target_host=host, interface=iface
-        )
-    else:
-        # real execution...
+Supports both legacy callable usage (dry_run()) and the newer property style
+(dry_run.enabled), plus a stable preview payload helper used across executors.
+Environment:
+  AEGIS_DRY_RUN = 1|true|on|yes  -> enables dry-run at process start
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+import time
+from contextlib import contextmanager
 from typing import Any, Dict
 
 
 def _env_truthy(val: str | None) -> bool:
-    if val is None:
+    if not val:
         return False
-    return val.strip().lower() in {"1", "true", "yes", "on", "y"}
+    return val.strip().lower() in {"1", "true", "on", "yes"}
 
 
-@dataclass
-class DryRun:
-    enabled: bool = False
-    metadata: Dict[str, Any] = field(default_factory=dict)
+class _DryRun:
+    def __init__(self) -> None:
+        self.enabled: bool = _env_truthy(os.getenv("AEGIS_DRY_RUN"))
 
-    def preview_payload(self, *, tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Shape a standard preview blob for logs/observability."""
-        return {"tool": tool, "args": args, "mode": "dry-run"}
+    # Legacy callable form: dry_run() -> bool
+    def __call__(self) -> bool:
+        return bool(self.enabled)
 
-    def enable(self) -> None:
-        self.enabled = True
-
-    def disable(self) -> None:
-        self.enabled = False
-
-    def set(self, flag: bool) -> None:
+    # Programmatic toggle
+    def set(self, flag: bool) -> bool:
         self.enabled = bool(flag)
+        return self.enabled
+
+    # Standard preview payload used in tests/executors
+    def preview_payload(self, *, tool: str, args: Any) -> Dict[str, Any]:
+        ts = int(time.time() * 1000)
+        try:
+            # args can be any JSON-serializable or plain Python structure
+            return {"tool": tool, "args": args, "ts_ms": ts}
+        except Exception:
+            # Fallback if args isn't representable
+            return {"tool": tool, "args": "<unserializable>", "ts_ms": ts}
+
+    # Convenience context managers
+    @contextmanager
+    def activate(self):
+        """Temporarily enable dry-run."""
+        prev = self.enabled
+        self.enabled = True
+        try:
+            yield
+        finally:
+            self.enabled = prev
+
+    @contextmanager
+    def override(self, flag: bool):
+        """Temporarily set dry-run to a specific value."""
+        prev = self.enabled
+        self.enabled = bool(flag)
+        try:
+            yield
+        finally:
+            self.enabled = prev
 
 
-# Singleton-style instance you can import anywhere.
-dry_run = DryRun()
+dry_run = _DryRun()
 
-# Initialize from environment (opt-in safe default for new deployments).
-if _env_truthy(os.getenv("AEGIS_DRY_RUN")) or _env_truthy(os.getenv("AEGIS_DRYRUN")):
-    dry_run.enable()
+__all__ = ["dry_run"]

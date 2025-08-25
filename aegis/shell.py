@@ -13,6 +13,7 @@ from rich.console import Console
 
 from aegis.registry import TOOL_REGISTRY
 from aegis.utils.tool_loader import import_all_tools
+from aegis.utils.dryrun import dry_run
 from aegis.cli import register_all_cli_commands
 
 
@@ -46,6 +47,12 @@ class AegisShell(cmd2.Cmd):
             parts.append(f"| preset:{self.session_preset}")
         if self.session_backend:
             parts.append(f"| backend:{self.session_backend}")
+        # NEW: show dry-run flag
+        try:
+            if dry_run.enabled:
+                parts.append("| dryrun")
+        except Exception:
+            pass
         parts.append(") > ")
         return cmd2.ansi.style(" ".join(parts), bold=True)
 
@@ -355,10 +362,18 @@ class AegisShell(cmd2.Cmd):
     parser_set_session = session_subparsers.add_parser(
         "set",
         help="Set a default preset or backend for the current session.",
-        epilog="Example:\n  session set preset verified_flow\n  session set backend openai_gpt4",
+        epilog=(
+            "Example:\n"
+            "  session set preset verified_flow\n"
+            "  session set backend openai_gpt4\n"
+            "  session set dryrun on"
+        ),
     )
     parser_set_session.add_argument(
-        "key", nargs="?", choices=["backend", "preset"], help="The setting to change."
+        "key",
+        nargs="?",
+        choices=["backend", "preset", "dryrun"],
+        help="The setting to change.",
     )
     parser_set_session.add_argument(
         "value",
@@ -367,6 +382,12 @@ class AegisShell(cmd2.Cmd):
         completer=lambda self, text, line, begidx, endidx: self._session_set_value_completer(
             text, line, begidx, endidx
         ),
+    )
+    parser_set_session.add_argument(
+        "key",
+        nargs="?",
+        choices=["backend", "preset", "dryrun"],
+        help="The setting to change.",
     )
 
     parser_view_session = session_subparsers.add_parser(

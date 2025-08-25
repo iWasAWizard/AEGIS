@@ -1,93 +1,147 @@
 # tests/executors/test_compose_exec.py
-import json
+import types
+from pathlib import Path
+
 import pytest
 
-from aegis.executors.compose_exec import ComposeExecutor
-from aegis.utils import dryrun as _dryrun_mod
+import aegis.executors.compose_exec as cexec
+from aegis.exceptions import ToolExecutionError
 
 
-def _mk_executor(monkeypatch):
-    # Avoid touching a real CLI by monkeypatching __init__ and methods directly
-    def fake_init(self, compose_cmd=None, default_timeout=10):
-        self._compose_cmd = ["docker", "compose"]
-        self.default_timeout = default_timeout
-
-    monkeypatch.setattr(ComposeExecutor, "__init__", fake_init, raising=True)
-    return ComposeExecutor()  # type: ignore[call-arg]
+class _FakeRes:
+    def __init__(self, rc=0, out=b"", err=b""):
+        self.returncode = rc
+        self.stdout = out
+        self.stderr = err
 
 
-def test_up_down_results_success(monkeypatch):
-    exe = _mk_executor(monkeypatch)
-    monkeypatch.setattr(exe, "up", lambda **kw: None, raising=True)
-    monkeypatch.setattr(exe, "down", lambda **kw: None, raising=True)
+def test_up_builds_expected_argv_and_uses_cwd(monkeypatch, tmp_path: Path):
+    seen = {}
 
-    r1 = exe.up_result(project_dir=".", build=True, detach=True)
-    assert r1.ok is True and r1.stdout == "ok" and r1.exit_code == 0
+    def fake_run(argv, **kw):
+        # capture for assertions
+        seen["argv"] = list(argv)
+        seen["cwd"] = kw.get("cwd")
+        seen["timeout"] = kw.get("timeout")
+        return _FakeRes(rc=0, out=b"ok")
 
-    r2 = exe.down_result(project_dir=".")
-    assert r2.ok is True and r2.stdout == "ok" and r2.exit_code == 0
+    monkeypatch.setattr(cexec, "run_subprocess", fake_run, raising=True)
 
-
-def test_ps_result_json_list(monkeypatch):
-    exe = _mk_executor(monkeypatch)
-    data = [{"Name": "web-1", "State": "running"}]
-    monkeypatch.setattr(exe, "ps", lambda **kw: data, raising=True)
-
-    r = exe.ps_result(project_dir=".")
-    assert r.ok is True
-    assert json.loads(r.stdout) == data
-    assert r.meta.get("count") == 1
-
-
-def test_logs_result_success(monkeypatch):
-    exe = _mk_executor(monkeypatch)
-    monkeypatch.setattr(exe, "logs", lambda **kw: "web-1 | up\n", raising=True)
-
-    r = exe.logs_result(project_dir=".", services=["web"])
-    assert r.ok is True
-    assert "web-1" in (r.stdout or "")
-
-
-def test_error_mapping_auth(monkeypatch):
-    exe = _mk_executor(monkeypatch)
-
-    def boom(**kw):
-        raise RuntimeError("permission denied: docker socket")
-
-    monkeypatch.setattr(exe, "up", boom, raising=True)
-    r = exe.up_result(project_dir=".")
-    assert r.ok is False
-    assert r.error_type == "Auth"
-    assert "permission" in (r.stderr or "").lower()
-
-
-def test_dry_run_previews(monkeypatch):
-    exe = _mk_executor(monkeypatch)
-    # enable dry-run with deterministic preview
-    monkeypatch.setattr(_dryrun_mod.dry_run, "enabled", True, raising=False)
-    monkeypatch.setattr(
-        _dryrun_mod.dry_run,
-        "preview_payload",
-        lambda **kw: {"tool": kw.get("tool"), "args": kw.get("args")},
-        raising=False,
+    exe = cexec.ComposeExecutor(project_dir=tmp_path, default_timeout=42)
+    out = exe.up(
+        file="docker-compose.yaml",
+        profiles=["dev", "featA"],
+        services=["web", "db"],
+        build=True,
+        detach=True,
+        remove_orphans=True,
+        pull="always",
+        project_name="proj",
+        scales={"web": 3, "worker": 2},
     )
 
-    r_up = exe.up_result(project_dir=".", services=["web"], build=True)
-    r_ps = exe.ps_result(project_dir=".")
-    r_logs = exe.logs_result(project_dir=".", services=["web"])
+    assert out.strip() == "ok"
+    argv = seen["argv"]
+    # first two elements are the selected compose binary; we assert subcommand area
+    assert "up" in argv
+    assert "-d" in argv
+    assert "--build" in argv
+    assert "--remove-orphans" in argv
+    assert ["--pull", "always"][0] in argv
+    assert "-f" in argv and "docker-compose.yaml" in argv
+    assert "-p" in argv and "proj" in argv
+    # profiles
+    assert "--profile" in argv and "dev" in argv and "featA" in argv
+    # scales
+    assert "--scale" in argv and "web=3" in argv and "worker=2" in argv
+    # services at the end (not strictly required, but good sanity)
+    assert argv[-2:] == ["web", "db"]
+    # cwd + timeout
+    assert seen["cwd"] == str(tmp_path)
+    assert seen["timeout"] == 42
 
-    for r, tool in [
-        (r_up, "compose.up"),
-        (r_ps, "compose.ps"),
-        (r_logs, "compose.logs"),
-    ]:
-        assert r.ok is True
-        assert (
-            r.stdout
-            == f"[DRY-RUN] {tool.split('.')[-1].replace('_', '.') if tool.startswith('compose.') else tool}"
-        )
-        assert isinstance(r.meta.get("preview"), dict)
-        assert r.meta["preview"]["tool"] == tool
 
-    # reset flag to avoid leaking
-    monkeypatch.setattr(_dryrun_mod.dry_run, "enabled", False, raising=False)
+def test_falls_back_to_legacy_docker_compose(monkeypatch):
+    calls = []
+
+    def fake_run(argv, **kw):
+        calls.append(list(argv))
+        if argv[:2] == ["docker", "compose"]:
+            raise FileNotFoundError("docker compose not found")
+        # legacy works
+        return _FakeRes(rc=0, out=b"legacy-ok")
+
+    monkeypatch.setattr(cexec, "run_subprocess", fake_run, raising=True)
+
+    exe = cexec.ComposeExecutor()
+    out = exe.ps()
+    assert out.strip() == "legacy-ok"
+
+    # first try docker compose, then docker-compose
+    assert calls[0][:2] == ["docker", "compose"]
+    assert calls[1][0] == "docker-compose"
+
+
+def test_ps_json_then_fallback_to_plain(monkeypatch):
+    calls = []
+
+    def fake_run(argv, **kw):
+        calls.append(list(argv))
+        # Fail when asking for JSON to trigger fallback
+        if "--format" in argv:
+            return _FakeRes(rc=2, out=b"", err=b"unsupported")
+        return _FakeRes(rc=0, out=b"plain-ok")
+
+    monkeypatch.setattr(cexec, "run_subprocess", fake_run, raising=True)
+
+    exe = cexec.ComposeExecutor()
+    out = exe.ps()
+    assert out.strip() == "plain-ok"
+
+    # first call had --format json, second was plain
+    assert "--format" in calls[0]
+    assert calls[1][0] in ("docker", "docker-compose")  # whichever candidate worked
+    assert "--format" not in calls[1]
+
+
+def test_logs_follow_uses_no_timeout(monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["timeout"] = kw.get("timeout")
+        return _FakeRes(rc=0, out=b"logs")
+
+    monkeypatch.setattr(cexec, "run_subprocess", fake_run, raising=True)
+
+    exe = cexec.ComposeExecutor(default_timeout=77)
+    out = exe.logs(services=["web"], follow=True)  # should not pass a timeout
+    assert out == "logs"
+    assert seen["timeout"] is None
+
+
+def test_logs_non_follow_uses_default_timeout(monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["timeout"] = kw.get("timeout")
+        return _FakeRes(rc=0, out=b"logs")
+
+    monkeypatch.setattr(cexec, "run_subprocess", fake_run, raising=True)
+
+    exe = cexec.ComposeExecutor(default_timeout=77)
+    out = exe.logs(services=["web"], follow=False)
+    assert out == "logs"
+    assert seen["timeout"] == 77
+
+
+def test_up_nonzero_exit_raises_with_stderr(monkeypatch):
+    def fake_run(argv, **kw):
+        return _FakeRes(rc=1, out=b"", err=b"boom")
+
+    monkeypatch.setattr(cexec, "run_subprocess", fake_run, raising=True)
+
+    exe = cexec.ComposeExecutor()
+    with pytest.raises(ToolExecutionError) as ei:
+        exe.up(services=["web"])
+    assert "exit code 1" in str(ei.value).lower()
+    assert "boom" in str(ei.value).lower()

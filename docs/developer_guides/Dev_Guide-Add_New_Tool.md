@@ -1,9 +1,3 @@
-Of course. Here is the expanded version of the **Developer Guide for Creating a New Tool**.
-
-This version is more comprehensive, providing deeper explanations of the core concepts, more detailed code annotations, and an entirely new section on the philosophy and best practices of tool design within the AEGIS framework.
-
----
-
 # Developer Guide: Creating a New Tool
 
 This guide provides a complete walkthrough for adding a new tool to the AEGIS framework. Adding new tools is the primary way to extend an agent's capabilities, and the framework is designed to make this process as simple and robust as possible.

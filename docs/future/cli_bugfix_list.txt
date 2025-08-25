@@ -1,0 +1,49 @@
+You’re right—we veered into feature-land. Here’s a tight punch list to finish the CLI effort and button up bugs, in priority order:
+
+Must-do (bug fixes & correctness)
+
+Exit code propagation in one-shot mode
+
+python -m aegis -c "..."
+
+Today we don’t guarantee a non-zero exit when a subcommand fails because onecmd_plus_hooks returns a stop flag, not status.
+
+Fix: have a central place (e.g. aegis/cli/_common.print_result) set self._last_exit_code on the shell; in __main__.py read it and return 1 if the last command produced an error ToolResult.
+
+Uniform JSON/text output
+
+Ensure every command set honors a --json flag (you already have this pattern) and that print_result emits a consistent envelope (stdout, stderr, exit_code, error_type, meta, latency_ms).
+
+Quick audit: http, docker, kubernetes, ssh, redis, gitlab, local, compose all go through print_result.
+
+Dry-run toggling from the CLI
+
+Right now dry_run.enabled exists but isn’t wired to the CLI.
+
+Add a session command: session set dryrun on|off (or a global --dry-run in __main__, which flips the flag before shell construction). This prevents “it executed for real” surprises.
+
+Streaming operations behavior
+
+compose logs -f, docker exec -it, future kube logs -f.
+
+Define clear behavior: block until Ctrl-C, and show a friendly note (“Press Ctrl-C to stop streaming”). Respect --timeout if provided.
+
+Redaction sanity
+
+We added redaction in executors; verify CLI prints never show secrets even when --json is on. If using ToolResult.meta, keep it already-redacted.
+
+Should-do (consistency, UX, tests)
+
+Command registration sanity
+
+register_all_cli_commands(self) should include compose alongside the existing sets.
+
+Ensure aegis/cli/__init__.py exports register_all_cli_commands and each command set has a register(app).
+
+Entry point polish
+
+Keep your --debug env knob.
+
+Add -c/--command (done), --no-intro (done).
+
+In pyproject.toml add:

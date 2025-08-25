@@ -45,3 +45,4 @@ numpy<2.0
 docker==7.1.0
 python-gitlab==4.6.0
 slack_sdk==3.27.1
+kubernetes

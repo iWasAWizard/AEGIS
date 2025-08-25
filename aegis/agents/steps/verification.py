@@ -1,3 +1,4 @@
+# aegis/agents/steps/verification.py
 import json
 from typing import Dict, Any, Callable, Awaitable, Literal, List, cast
 
@@ -91,9 +92,13 @@ async def verify_outcome(state: TaskState) -> Dict[str, Any]:
 
         provider = get_provider_for_profile(state.runtime.backend_profile)
         with span(
-            "verify",
+            "verifier.judge",  # standardized span name
             run_id=state.task_id,
-            tool=plan.tool_name if "plan" in locals() else None,
+            tool=(
+                getattr(last_history_entry.plan, "tool_name", None)
+                if hasattr(last_history_entry, "plan")
+                else None
+            ),
         ):
             response = await provider.get_structured_completion(
                 messages=messages,

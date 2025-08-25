@@ -15,10 +15,6 @@ from aegis.utils.logger import setup_logger
 from aegis.schemas.tool_result import ToolResult
 from aegis.utils.dryrun import dry_run
 from aegis.utils.redact import redact_for_log
-from aegis.utils.exec_common import (
-    now_ms as _common_now_ms,
-    map_exception_to_error_type as _common_map_error,
-)  # <-- added
 
 logger = setup_logger(__name__)
 
@@ -29,6 +25,12 @@ try:
     KUBERNETES_AVAILABLE = True
 except Exception:
     KUBERNETES_AVAILABLE = False
+
+# NEW: we actually send YAML when using application/apply-patch+yaml
+try:
+    import yaml
+except Exception:  # pragma: no cover
+    yaml = None  # type: ignore
 
 
 class KubernetesExecutor:
@@ -146,8 +148,17 @@ class KubernetesExecutor:
 
             # Use generic REST call with server-side apply if available
             api = client.ApiClient()
+
+            # We are sending YAML, so use the apply-patch+yaml media type.
             headers = {"Content-Type": "application/apply-patch+yaml"}
-            body = json.dumps(manifest)
+
+            if yaml is None:
+                # Fallback: best-effort JSON merge patch when PyYAML is unavailable.
+                headers = {"Content-Type": "application/merge-patch+json"}
+                body = json.dumps(manifest)
+            else:
+                body = yaml.safe_dump(manifest, sort_keys=False)
+
             # crude path resolver for a few core kinds
             if kind == "ConfigMap":
                 path = f"/api/v1/namespaces/{namespace}/configmaps/{name}"
@@ -242,26 +253,16 @@ class KubernetesExecutor:
 
 
 def _now_ms() -> int:
-    # Delegate to shared clock for consistency/testability
-    return _common_now_ms()
+    return int(time.time() * 1000)
 
 
 def _errtype(e: Exception) -> str:
-    """
-    Preserve existing labels while consulting the shared mapper for consistency.
-    """
     m = str(e).lower()
-    mapped = (_common_map_error(e) or "").lower()
-    if "timeout" in m or mapped == "timeout":
+    if "timeout" in m:
         return "Timeout"
-    if (
-        "forbidden" in m
-        or "unauthorized" in m
-        or "auth" in m
-        or mapped == "permission_denied"
-    ):
+    if "forbidden" in m or "unauthorized" in m or "auth" in m:
         return "Auth"
-    if "not found" in m or "404" in m or mapped == "not_found":
+    if "not found" in m or "404" in m:
         return "NotFound"
     if "parse" in m or "json" in m:
         return "Parse"

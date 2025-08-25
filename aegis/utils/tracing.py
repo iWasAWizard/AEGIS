@@ -2,17 +2,29 @@
 """
 Lightweight tracing shim with optional Langfuse integration.
 
+Conventions:
+- Span names follow **phase.component** style, e.g.:
+    - planner.preselect / planner.plan / planner.repair
+    - executor.run
+    - verifier.judge
+    - wrapper.docker.run / wrapper.compose.up / wrapper.slack.send
+- Pass contextual fields as kwargs; they will be redacted for logs and forwarded
+  best-effort to Langfuse as input metadata.
+
 Usage:
     from aegis.utils.tracing import span
 
-    with span("reflect_and_plan", run_id=state.task_id, toolset=len(allowed_tools)):
+    with span("wrapper.docker.run", image="nginx:latest", name="web-1"):
         ... your code ...
 
 Behavior:
-- Always logs SpanStart / SpanEnd with duration_ms (redacted attrs).
+- Always logs SpanStart / SpanEnd with duration_ms (attrs redacted in logs).
 - If LANGFUSE_* keys are present and installation succeeds, initializes a
-  Langfuse client once per process. Actual Langfuse calls are best-effort
+  Langfuse client once per process. All Langfuse calls are best-effort
   and fully wrapped in try/except so they never break the run.
+
+Env:
+- AEGIS_TRACE_SPANS=0 disables span logging entirely.
 """
 
 from __future__ import annotations
@@ -85,7 +97,7 @@ def span(name: str, *, run_id: Optional[str] = None, **attrs: Any):
     """
     Context manager for a tracing span. Always logs start/end; optionally reports to Langfuse.
     Example:
-        with span("execute_tool", run_id=state.task_id, tool=plan.tool_name):
+        with span("wrapper.compose.up", run_id=task_id, project_name="app", services=2):
             ...
     """
     # Global off-switch for span logging/telemetry
@@ -140,7 +152,7 @@ def span(name: str, *, run_id: Optional[str] = None, **attrs: Any):
         duration_ms = int((time.time() - start) * 1000)
 
         try:
-            _RUN_ID.reset(_token)  # add
+            _RUN_ID.reset(_token)
         except Exception:
             pass
 

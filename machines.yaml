@@ -16,42 +16,51 @@
 #   tags: [ prod, windows, scan-target ]
 #   notes: "Internal QA testbed - Win10 22H2"
 
-# # === UBUNTU 24.04 ON QEMU ===
+# Ubuntu on QEMU/KVM
 ubuntu-qemu:
   name: ubuntu-qemu
-  ip: 10.0.0.200
   platform: linux
   provider: qemu
   type: vm
   shell: bash
   username: joey
   password: ${UBUNTU_PASSWORD}
-  ssh_port: 22
   vmtools_path: /usr/bin/qemu-guest-agent
-  tags: [ linux, infra, scanner-target ]
-  notes: "Fresh Ubuntu LTS image, minimal install."
+  tags: [linux, infra, scanner-target]
+  notes: Fresh Ubuntu LTS image, minimal install.
+  interfaces:
+    - name: primary
+      address: 10.0.0.200
+      port: 22
+      is_primary: true
 
-# === LOCALHOST ===
+# Localhost entry
 localhost:
   name: localhost
-  ip: 127.0.0.1
   platform: linux
   provider: local
   type: physical
   shell: bash
   username: root
-  password: "${ROOT_PASSWORD}"
-  tags: [ local, dev, "don't-touch" ]
+  password: ${ROOT_PASSWORD}
+  tags: [local, dev, "don't-touch"]
+  interfaces:
+    - name: primary
+      address: 127.0.0.1
+      is_primary: true
 
-  # === PHYSICAL REMOTE HOST ===
+# Tower server entry
 tower:
   name: tower
-  ip: 10.0.0.100
   platform: linux
   provider: physical
   type: physical
   shell: bash
   username: root
-  password: "${TOWER_ROOT_PASSWORD}"
-  ssh_port: 22
-  tags: [ remote, dev, "don't-touch" ]
+  password: ${TOWER_ROOT_PASSWORD}
+  tags: [remote, dev, "don't-touch"]
+  interfaces:
+    - name: primary
+      address: 10.0.0.100
+      port: 22
+      is_primary: true

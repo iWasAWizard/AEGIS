@@ -67,14 +67,14 @@ def smoke_vectors() -> Dict[str, Dict[str, Any]]:
             "dest": "/tmp/hosts.copy",
         },
         # Kubernetes
-        "k8s.list_pods": {"namespace": "default"},
-        "k8s.pod_logs": {"name": "dummy-pod", "namespace": "default"},
-        "k8s.exec": {
+        "kubernetes.list_pods": {"namespace": "default"},
+        "kubernetes.pod_logs": {"name": "dummy-pod", "namespace": "default"},
+        "kubernetes.exec": {
             "name": "dummy-pod",
             "namespace": "default",
             "command": ["echo", "ok"],
         },
-        "k8s.apply": {
+        "kubernetes.apply": {
             "manifest": {
                 "apiVersion": "v1",
                 "kind": "ConfigMap",
@@ -82,12 +82,12 @@ def smoke_vectors() -> Dict[str, Dict[str, Any]]:
                 "data": {"k": "v"},
             }
         },
-        "k8s.delete": {
+        "kubernetes.delete": {
             "kind": "ConfigMap",
             "name": "aegis-smoke",
             "namespace": "default",
         },
-        "k8s.create_job": {
+        "kubernetes.create_job": {
             "namespace": "default",
             "name": "aegis-smoke",
             "image": "alpine",

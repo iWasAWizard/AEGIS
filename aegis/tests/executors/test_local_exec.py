@@ -4,6 +4,7 @@ import pytest
 
 from aegis.executors.local_exec import LocalExecutor
 from aegis.utils import dryrun as _dryrun_mod
+from aegis.utils import exec_common as _exec_common_mod
 
 
 def _mk_executor():
@@ -112,3 +113,27 @@ def test_run_result_timeout_mapping(monkeypatch):
     assert res.ok is False
     assert res.error_type == "Timeout"
     assert "timeout" in (res.stderr or "").lower()
+
+
+def test_run_decodes_bytes_from_runner(monkeypatch):
+    """
+    Extra coverage: ensure the hardened runner's bytes stdout/stderr are normalized
+    to text by LocalExecutor._run_subprocess.
+    """
+
+    class R:
+        def __init__(self, code=0, out=b"", err=b""):
+            self.returncode = code
+            self.stdout = out
+            self.stderr = err
+
+    def fake_run_subprocess(argv_or_str, **kwargs):
+        return R(0, out=b"ok\n", err=b"")
+
+    monkeypatch.setattr(
+        _exec_common_mod, "run_subprocess", fake_run_subprocess, raising=True
+    )
+
+    exe = _mk_executor()
+    out = exe.run("echo ok", shell=False)
+    assert out.strip() == "ok"

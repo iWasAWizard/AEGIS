@@ -15,7 +15,7 @@ New fields:
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ArtifactRefModel(BaseModel):
@@ -27,6 +27,26 @@ class ArtifactRefModel(BaseModel):
 
 
 class ToolResult(BaseModel):
+
+    @model_validator(mode="after")
+    def _auto_tag_json_meta(self) -> "ToolResult":
+        """
+        Auto-tag JSON-ish stdout for UI pretty rendering.
+        Non-invasive: only sets meta["format"] when stdout starts with '{' or '['
+        and meta.format isn't already set.
+        """
+        try:
+            s = (self.stdout or "").lstrip()
+            if s and s[0] in "{[":
+                meta = dict(self.meta or {})
+                if meta.get("format") != "json":
+                    meta["format"] = "json"
+                    self.meta = meta
+        except Exception:
+            # Never fail object creation due to tagging
+            pass
+        return self
+
     # Basic outcome
     success: bool = Field(..., description="True on success, False on error")
     stdout: Optional[str] = Field(
@@ -129,6 +149,39 @@ class ToolResult(BaseModel):
             machine_id=machine_id,
             meta=meta or None,
         )
+
+    # ----- Compatibility & convenience -----
+
+    @property
+    def ok(self) -> bool:
+        # Back-compat alias for older tests/usages
+        return bool(self.success)
+
+    def enforce_truncation(self, max_stdio_bytes: int) -> None:
+        """
+        Backward-compatible helper: truncate stdout/stderr in-place if they exceed `max_stdio_bytes`.
+        Unlike `attach_artifacts_and_truncate`, this does NOT write artifacts; it only trims.
+        """
+        if not isinstance(max_stdio_bytes, int) or max_stdio_bytes <= 0:
+            return
+
+        trunc: Dict[str, bool] = dict(self.truncated or {})
+
+        def _trim(field: str, value: Optional[str]) -> Optional[str]:
+            if value is None:
+                return None
+            b = value.encode("utf-8", errors="replace")
+            if len(b) <= max_stdio_bytes:
+                trunc[field] = False
+                return value
+            head = b[:max_stdio_bytes]
+            trunc[field] = True
+            return head.decode("utf-8", errors="replace")
+
+        self.stdout = _trim("stdout", self.stdout)
+        self.stderr = _trim("stderr", self.stderr)
+        if trunc:
+            self.truncated = trunc
 
     # ----- Enrichment & guardrails helpers -----
 

@@ -27,12 +27,12 @@ from aegis.schemas.tool_inputs import (
     DockerExecInput,
     DockerCopyToInput,
     DockerCopyFromInput,
-    K8sListPodsInput,
-    K8sPodLogsInput,
-    K8sExecInput,
-    K8sApplyManifestInput,
-    K8sDeleteObjectInput,
-    K8sCreateJobInput,
+    KubernetesListPodsInput,
+    KubernetesPodLogsInput,
+    KubernetesExecInput,
+    KubernetesApplyManifestInput,
+    KubernetesDeleteObjectInput,
+    KubernetesCreateJobInput,
     RedisSetInput,
     RedisGetInput,
     RedisDelInput,
@@ -62,7 +62,7 @@ from aegis.schemas.tool_inputs import (
 from aegis.executors.local_exec import LocalExecutor
 from aegis.executors.http_exec import HttpExecutor
 from aegis.executors.docker_exec import DockerExecutor
-from aegis.executors.k8s_exec import K8sExecutor
+from aegis.executors.kubernetes_exec import KubernetesExecutor
 from aegis.executors.redis_exec import RedisExecutor
 from aegis.executors.scapy_exec import ScapyExecutor
 from aegis.executors.slack_exec import SlackExecutor
@@ -175,9 +175,9 @@ def docker_cp_from_adapter(*, input_data: DockerCopyFromInput, **_: Any):
 # ---- Kubernetes ----
 
 
-@tool("k8s.list_pods", K8sListPodsInput, timeout=120)
-def k8s_list_pods_adapter(*, input_data: K8sListPodsInput, **_: Any):
-    ex = K8sExecutor(
+@tool("kubernetes.list_pods", KubernetesListPodsInput, timeout=120)
+def kubernetes_list_pods_adapter(*, input_data: KubernetesListPodsInput, **_: Any):
+    ex = KubernetesExecutor(
         kubeconfig_path=input_data.kubeconfig,
         context=input_data.context,
         in_cluster=input_data.in_cluster,
@@ -187,9 +187,9 @@ def k8s_list_pods_adapter(*, input_data: K8sListPodsInput, **_: Any):
     )
 
 
-@tool("k8s.pod_logs", K8sPodLogsInput, timeout=180)
-def k8s_pod_logs_adapter(*, input_data: K8sPodLogsInput, **_: Any):
-    ex = K8sExecutor(
+@tool("kubernetes.pod_logs", KubernetesPodLogsInput, timeout=180)
+def kubernetes_pod_logs_adapter(*, input_data: KubernetesPodLogsInput, **_: Any):
+    ex = KubernetesExecutor(
         kubeconfig_path=input_data.kubeconfig,
         context=input_data.context,
         in_cluster=input_data.in_cluster,
@@ -202,9 +202,9 @@ def k8s_pod_logs_adapter(*, input_data: K8sPodLogsInput, **_: Any):
     )
 
 
-@tool("k8s.exec", K8sExecInput, timeout=300)
-def k8s_exec_adapter(*, input_data: K8sExecInput, **_: Any):
-    ex = K8sExecutor(
+@tool("kubernetes.exec", KubernetesExecInput, timeout=300)
+def kubernetes_exec_adapter(*, input_data: KubernetesExecInput, **_: Any):
+    ex = KubernetesExecutor(
         kubeconfig_path=input_data.kubeconfig,
         context=input_data.context,
         in_cluster=input_data.in_cluster,
@@ -218,9 +218,9 @@ def k8s_exec_adapter(*, input_data: K8sExecInput, **_: Any):
     )
 
 
-@tool("k8s.apply", K8sApplyManifestInput, timeout=300)
-def k8s_apply_adapter(*, input_data: K8sApplyManifestInput, **_: Any):
-    ex = K8sExecutor(
+@tool("kubernetes.apply", KubernetesApplyManifestInput, timeout=300)
+def kubernetes_apply_adapter(*, input_data: KubernetesApplyManifestInput, **_: Any):
+    ex = KubernetesExecutor(
         kubeconfig_path=input_data.kubeconfig,
         context=input_data.context,
         in_cluster=input_data.in_cluster,
@@ -228,9 +228,9 @@ def k8s_apply_adapter(*, input_data: K8sApplyManifestInput, **_: Any):
     return ex.apply_manifest_result(manifest=input_data.manifest)
 
 
-@tool("k8s.delete", K8sDeleteObjectInput, timeout=180)
-def k8s_delete_adapter(*, input_data: K8sDeleteObjectInput, **_: Any):
-    ex = K8sExecutor(
+@tool("kubernetes.delete", KubernetesDeleteObjectInput, timeout=180)
+def kubernetes_delete_adapter(*, input_data: KubernetesDeleteObjectInput, **_: Any):
+    ex = KubernetesExecutor(
         kubeconfig_path=input_data.kubeconfig,
         context=input_data.context,
         in_cluster=input_data.in_cluster,
@@ -240,9 +240,9 @@ def k8s_delete_adapter(*, input_data: K8sDeleteObjectInput, **_: Any):
     )
 
 
-@tool("k8s.create_job", K8sCreateJobInput, timeout=300)
-def k8s_create_job_adapter(*, input_data: K8sCreateJobInput, **_: Any):
-    ex = K8sExecutor(
+@tool("kubernetes.create_job", KubernetesCreateJobInput, timeout=300)
+def kubernetes_create_job_adapter(*, input_data: KubernetesCreateJobInput, **_: Any):
+    ex = KubernetesExecutor(
         kubeconfig_path=input_data.kubeconfig,
         context=input_data.context,
         in_cluster=input_data.in_cluster,
